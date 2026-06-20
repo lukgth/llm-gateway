@@ -367,7 +367,9 @@ export class GatewayProxy {
     if (req.__gatewayStreamKind === "bridge") {
       headers["content-type"] = "text/event-stream";
     }
-    res.writeHead(proxyRes.statusCode || 200, headers);
+    if (!res.headersSent) {
+      res.writeHead(proxyRes.statusCode || 200, headers);
+    }
 
     let transform: NodeJS.ReadWriteStream;
     if (req.__gatewayStreamKind === "anthropic") {
@@ -410,7 +412,9 @@ export class GatewayProxy {
   // For SSE streams, adds a ping keep-alive to prevent proxy timeouts.
   private pipeThrough(proxyRes: IncomingMessage, res: Response): void {
     const headers = filteredHeaders(proxyRes.headers);
-    res.writeHead(proxyRes.statusCode || 200, headers);
+    if (!res.headersSent) {
+      res.writeHead(proxyRes.statusCode || 200, headers);
+    }
 
     // Check if this is an SSE stream by content-type
     const ct = String(headers["content-type"] || "").toLowerCase();
@@ -560,7 +564,9 @@ export class GatewayProxy {
       const out = Buffer.from(JSON.stringify(transformed), "utf8");
       const headers = filteredHeaders(proxyRes.headers);
       headers["content-length"] = String(out.length);
-      res.writeHead(proxyRes.statusCode || 200, headers);
+      if (!res.headersSent) {
+        res.writeHead(proxyRes.statusCode || 200, headers);
+      }
       res.end(out);
     });
 
@@ -588,6 +594,10 @@ export class GatewayProxy {
   }
 
   private sendRaw(proxyRes: IncomingMessage, res: Response, buf: Buffer): void {
+    if (res.headersSent) {
+      try { res.destroy(); } catch (_) { /* noop */ }
+      return;
+    }
     res.writeHead(
       proxyRes.statusCode || 200,
       filteredHeaders(proxyRes.headers),
