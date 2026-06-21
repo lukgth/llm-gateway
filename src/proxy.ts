@@ -170,6 +170,13 @@ export class GatewayProxy {
       }
     }
 
+    // Log reasoning-related fields on the outgoing body. This is the single
+    // chokepoint for all request flows (Anthropic /v1/messages, OpenAI
+    // /v1/chat/completions, and bridged /v1/responses), so it sees exactly
+    // what's going on the wire — after middleware mutation, before the
+    // upstream reply. Silent when no such field is present.
+    this.logThinkingRequest(req, body);
+
     const serialized = JSON.stringify(body);
     // Stash a BOUNDED copy for the proxyRes handler to log on non-2xx.
     // Keeping the full body would pin potentially-megabytes of memory per
@@ -661,6 +668,44 @@ export class GatewayProxy {
           /* noop */
         }
       }
+    });
+  }
+
+  // Emit a `thinking_request` log line when the outgoing body carries any
+  // reasoning-related field. Covers the three shapes that cross the wire:
+  //   - thinking          (Anthropic /v1/messages: { type, budget_tokens })
+  //   - reasoning_effort  (OpenAI /v1/chat/completions: "low"|"medium"|...)
+  //   - reasoning         (OpenAI /v1/responses: { effort } | string)
+  // Only fires when at least one field is present, so reasoning-less requests
+  // stay silent. `body` is the post-middleware, pre-flush body — i.e. exactly
+  // what the upstream will see (post-bridge translation for /v1/responses).
+  private logThinkingRequest(
+    req: GatewayRequest,
+    body: Record<string, unknown>,
+  ): void {
+    const fields: Record<string, unknown> = {};
+    if (body.thinking !== undefined) fields.thinking = body.thinking;
+    if (body.reasoning_effort !== undefined)
+      fields.reasoning_effort = body.reasoning_effort;
+    if (body.reasoning !== undefined) fields.reasoning = body.reasoning;
+    if (Object.keys(fields).length === 0) return;
+
+    const path = String(req.originalUrl || req.url || "").split("?")[0];
+    const flow = req.__gatewayResponsesBridge
+      ? "responses->chat"
+      : path.endsWith("/messages")
+        ? "anthropic"
+        : path.endsWith("/chat/completions")
+          ? "chat"
+          : path.endsWith("/responses")
+            ? "responses"
+            : "other";
+
+    this.logger.info("thinking_request", {
+      flow,
+      client: req.__gatewayResolvedFrom || body.model || null,
+      upstream: req.__gatewayResolvedTo || body.model || null,
+      ...fields,
     });
   }
 
