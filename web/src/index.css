@@ -26,6 +26,11 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -84,6 +89,13 @@
   --sidebar-accent-foreground: oklch(0.205 0.012 70);
   --sidebar-border: oklch(0.922 0.008 70);
   --sidebar-ring: oklch(0.708 0.012 70);
+  /* Chart series palette. --chart-1 is the app's violet accent (token usage);
+     the rest are distinct hues for any future multi-series charts. */
+  --chart-1: oklch(0.606 0.25 292.717);
+  --chart-2: oklch(0.65 0.16 232);
+  --chart-3: oklch(0.7 0.15 162);
+  --chart-4: oklch(0.75 0.16 82);
+  --chart-5: oklch(0.68 0.2 22);
 }
 
 .dark {
@@ -114,6 +126,12 @@
   --sidebar-accent-foreground: oklch(0.93 0.004 70);
   --sidebar-border: oklch(0.92 0.005 70 / 7%);
   --sidebar-ring: oklch(0.5 0.008 70);
+  /* Chart series palette (dark) — slightly brighter for contrast on dark bg. */
+  --chart-1: oklch(0.646 0.24 292.717);
+  --chart-2: oklch(0.7 0.15 232);
+  --chart-3: oklch(0.74 0.14 162);
+  --chart-4: oklch(0.79 0.15 82);
+  --chart-5: oklch(0.72 0.19 22);
 }
 
 @layer base {

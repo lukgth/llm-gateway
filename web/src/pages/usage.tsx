@@ -120,15 +120,11 @@ export default function Usage() {
           </CardHeader>
           <CardContent>
             <TokenChart
-              data={data.history}
-              label={(h, isLast) =>
-                `${h.day} — ${fmtNum(h.tokens)} tokens${isLast ? " · so far today" : ""}`
-              }
+              data={data.history.map((h) => ({
+                label: h.day.slice(5),
+                tokens: h.tokens,
+              }))}
             />
-            <div className="mt-2 flex justify-between pl-10 text-xs font-medium text-muted-foreground">
-              <span>{data.history[0]?.day.slice(5) ?? ""}</span>
-              <span>{data.history[data.history.length - 1]?.day.slice(5) ?? ""}</span>
-            </div>
           </CardContent>
         </Card>
 

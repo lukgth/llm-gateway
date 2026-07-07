@@ -104,18 +104,12 @@ export default function Dashboard() {
             {hourly.every((h) => h.tokens === 0) ? (
               <EmptyState msg="No usage in the last 24 hours" />
             ) : (
-              <>
-                <TokenChart
-                  data={hourly}
-                  label={(h, isLast) =>
-                    `${fmtHourLabel(h.hour)} — ${fmtNum(h.tokens)} tokens${isLast ? " · current hour" : ""}`
-                  }
-                />
-                <div className="mt-2 flex justify-between pl-10 text-xs font-medium text-muted-foreground">
-                  <span>{fmtHourLabel(hourly[0]?.hour)}</span>
-                  <span>now</span>
-                </div>
-              </>
+              <TokenChart
+                data={hourly.map((h) => ({
+                  label: fmtHourLabel(h.hour),
+                  tokens: h.tokens,
+                }))}
+              />
             )}
           </CardContent>
         </Card>

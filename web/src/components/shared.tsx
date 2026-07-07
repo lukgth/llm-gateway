@@ -1,8 +1,15 @@
 import { memo, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { cn, fmtTokens } from "@/lib/utils";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { cn, fmtNum, fmtTokens } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 
 export function PageHeader({
   title,
@@ -129,133 +136,81 @@ export function EmptyState({ msg }: { msg: string }) {
   );
 }
 
-// Round a raw max up to a "nice" axis ceiling (1/2/5 × 10ⁿ), so gridline
-// labels land on readable round numbers (10, 20, 50, 100, 200, 500, 1k, …)
-// rather than arbitrary values. Returns at least 10 so an empty/tiny chart
-// still shows a sane axis.
-function niceCeil(max: number): number {
-  if (max <= 10) return 10;
-  const pow = Math.pow(10, Math.floor(Math.log10(max)));
-  const frac = max / pow;
-  const mult = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
-  return mult * pow;
-}
+const tokenChartConfig = {
+  tokens: { label: "Tokens", color: "var(--chart-1)" },
+} satisfies ChartConfig;
 
-// A compact filled area/line chart with a labelled, auto-scaled Y-axis.
-// Reads well for both trending and sparse data — a single non-zero bucket
-// still shows a clear peak with filled area beneath, rather than one lone bar.
-// Values are scaled against a "nice" round ceiling; points are evenly spaced
-// across the width so the series always fills the plot. `highlightLast` marks
-// the final point (e.g. the still-accumulating current hour/day) with a dot.
-// `label(point)` builds each point's hover tooltip.
-export function TokenChart<T extends { tokens: number }>({
+// Gradient-filled area chart for token usage over time, built on Recharts via
+// the shadcn chart primitives. Reads well for sparse and trending data alike
+// (a single non-zero bucket shows a clear peak, not a lone bar). Each point is
+// `{ label, tokens }`; `label` is the X-axis tick + tooltip title.
+export function TokenChart({
   data,
-  label,
-  axisTicks = 4,
-  highlightLast = true,
-  height = "h-40",
+  height = 160,
 }: {
-  data: T[];
-  label: (point: T, isLast: boolean) => string;
-  axisTicks?: number;
-  highlightLast?: boolean;
-  height?: string;
+  data: Array<{ label: string; tokens: number }>;
+  height?: number;
 }) {
-  const rawMax = Math.max(0, ...data.map((d) => d.tokens));
-  const ceil = niceCeil(rawMax);
-  // Gridline values from top (ceil) down to 0, inclusive.
-  const ticks = Array.from(
-    { length: axisTicks + 1 },
-    (_, i) => (ceil / axisTicks) * (axisTicks - i),
-  );
-
-  const n = data.length;
-  // Point coordinates in a 100×100 viewBox (y inverted: 0 = top = ceil).
-  const x = (i: number) => (n <= 1 ? 50 : (i / (n - 1)) * 100);
-  const y = (v: number) => 100 - (v / ceil) * 100;
-  const pts = data.map((d, i) => ({ x: x(i), y: y(d.tokens) }));
-
-  const linePath = pts.length
-    ? pts.map((p, i) => `${i ? "L" : "M"}${p.x},${p.y}`).join(" ")
-    : "";
-  // Close the area down to the baseline at both ends so the fill sits under
-  // the line.
-  const areaPath = pts.length
-    ? `${linePath} L${pts[pts.length - 1].x},100 L${pts[0].x},100 Z`
-    : "";
-  const last = pts[pts.length - 1];
-
   return (
-    <div className="flex gap-2">
-      {/* Y-axis: nice round tick labels aligned to the gridlines. */}
-      <div
-        className={cn(
-          "flex shrink-0 flex-col justify-between text-right text-[0.6rem] tabular-nums text-muted-foreground",
-          height,
-        )}
-      >
-        {ticks.map((t, i) => (
-          <span key={i} className="leading-none">
-            {fmtTokens(t)}
-          </span>
-        ))}
-      </div>
-
-      {/* Plot: gridlines behind, area+line SVG, invisible hover cells on top. */}
-      <div className={cn("relative flex-1", height)}>
-        <div className="absolute inset-0 flex flex-col justify-between">
-          {ticks.map((_, i) => (
-            <div key={i} className="border-t border-border/40" />
-          ))}
-        </div>
-
-        <svg
-          className="absolute inset-0 h-full w-full overflow-visible"
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          aria-hidden
-        >
-          <defs>
-            <linearGradient id="tokenFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--color-violet-500)" stopOpacity="0.35" />
-              <stop offset="100%" stopColor="var(--color-violet-500)" stopOpacity="0.02" />
-            </linearGradient>
-          </defs>
-          {areaPath && <path d={areaPath} fill="url(#tokenFill)" stroke="none" />}
-          {linePath && (
-            <path
-              d={linePath}
-              fill="none"
-              stroke="var(--color-violet-500)"
-              strokeWidth="1.5"
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
+    <ChartContainer
+      config={tokenChartConfig}
+      className="w-full"
+      style={{ height }}
+    >
+      <AreaChart data={data} margin={{ left: 4, right: 8, top: 4 }}>
+        <defs>
+          <linearGradient id="fillTokens" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="var(--color-tokens)" stopOpacity={0.7} />
+            <stop offset="95%" stopColor="var(--color-tokens)" stopOpacity={0.05} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid vertical={false} strokeOpacity={0.4} />
+        <XAxis
+          dataKey="label"
+          tickLine={false}
+          axisLine={false}
+          tickMargin={8}
+          minTickGap={24}
+          interval="preserveStartEnd"
+          className="text-[0.6rem]"
+        />
+        <YAxis
+          width={40}
+          tickLine={false}
+          axisLine={false}
+          tickMargin={4}
+          tickCount={5}
+          allowDecimals={false}
+          tickFormatter={(v: number) => fmtTokens(v)}
+          className="text-[0.6rem]"
+        />
+        <ChartTooltip
+          cursor={{ strokeOpacity: 0.3 }}
+          content={
+            <ChartTooltipContent
+              indicator="line"
+              formatter={(value) => (
+                <span className="flex w-full items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Tokens</span>
+                  <span className="font-mono font-medium tabular-nums text-foreground">
+                    {fmtNum(value as number)}
+                  </span>
+                </span>
+              )}
             />
-          )}
-          {highlightLast && last && (
-            <circle
-              cx={last.x}
-              cy={last.y}
-              r="2.5"
-              fill="var(--color-violet-500)"
-              vectorEffect="non-scaling-stroke"
-            />
-          )}
-        </svg>
-
-        {/* Per-point hover targets for tooltips (invisible, full-height). */}
-        <div className="absolute inset-0 flex">
-          {data.map((d, i) => (
-            <div
-              key={i}
-              className="h-full flex-1"
-              title={label(d, i === n - 1)}
-            />
-          ))}
-        </div>
-      </div>
-    </div>
+          }
+        />
+        <Area
+          dataKey="tokens"
+          type="monotone"
+          fill="url(#fillTokens)"
+          stroke="var(--color-tokens)"
+          strokeWidth={2}
+          dot={false}
+          activeDot={{ r: 4 }}
+        />
+      </AreaChart>
+    </ChartContainer>
   );
 }
 
