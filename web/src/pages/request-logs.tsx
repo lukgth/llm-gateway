@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { fmtTime, fmtNum } from "@/lib/utils";
 import { ModelIcon, useModelTypes } from "@/components/model-icon";
+import { JsonTree } from "@/components/json-tree";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
@@ -249,8 +250,9 @@ const LogRow = memo(function LogRow({
   );
 });
 
-// Pretty-print a captured JSON blob, or show a fallback when absent. The blob
-// is already truncated server-side, so this just formats it for reading.
+// Show a captured JSON blob as an interactive, syntax-highlighted tree (or a
+// fallback while loading / when nothing was captured). The blob is already
+// truncated server-side; the tree parses it and lets you open/close nodes.
 function DebugPanel({
   title,
   subtitle,
@@ -262,25 +264,49 @@ function DebugPanel({
   json: string | null | undefined;
   loading: boolean;
 }) {
-  let body: string;
-  if (loading) body = "loading…";
-  else if (!json) body = "— not captured —";
-  else {
+  const copy = () => {
+    if (!json) return;
+    let text = json;
     try {
-      body = JSON.stringify(JSON.parse(json), null, 2);
+      text = JSON.stringify(JSON.parse(json), null, 2);
     } catch {
-      body = json;
+      /* copy raw on parse failure */
     }
-  }
+    navigator.clipboard.writeText(text);
+  };
+
   return (
     <div className="min-w-0">
-      <div className="mb-1.5 flex items-baseline gap-2">
-        <span className="text-xs font-semibold text-foreground">{title}</span>
-        <span className="text-[0.6rem] text-muted-foreground">{subtitle}</span>
+      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+        <div className="flex items-baseline gap-2">
+          <span className="text-xs font-semibold text-foreground">{title}</span>
+          <span className="text-[0.6rem] text-muted-foreground">
+            {subtitle}
+          </span>
+        </div>
+        {json && (
+          <button
+            type="button"
+            onClick={copy}
+            className="text-[0.6rem] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            copy
+          </button>
+        )}
       </div>
-      <pre className="max-h-96 overflow-auto rounded-md border border-border bg-background p-3 font-mono text-[0.7rem] leading-relaxed text-foreground/90">
-        {body}
-      </pre>
+      <div className="max-h-96 overflow-auto rounded-md border border-border bg-background p-3">
+        {loading ? (
+          <span className="font-mono text-[0.7rem] text-muted-foreground">
+            loading…
+          </span>
+        ) : !json ? (
+          <span className="font-mono text-[0.7rem] text-muted-foreground">
+            — not captured —
+          </span>
+        ) : (
+          <JsonTree json={json} />
+        )}
+      </div>
     </div>
   );
 }
