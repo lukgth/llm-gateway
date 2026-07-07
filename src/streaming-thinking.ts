@@ -20,7 +20,8 @@ import { stripInvisible } from "./utils";
 // Regex patterns for matching opening and closing tags.
 // The `antml` namespace prefix is only supported on <thinking> (Anthropic),
 // not on <reasoning> or <think>.
-const OPEN_TAG_RE = /<\s*(?:(?:antml(?:[:\s]+))?think(?:ing)?|reasoning|thinking_mode)\s*>/i;
+const OPEN_TAG_RE =
+  /<\s*(?:(?:antml(?:[:\s]+))?think(?:ing)?|reasoning|thinking_mode)\s*>/i;
 const CLOSE_TAG_RE =
   /<\s*\/\s*(?:(?:antml(?:[:\s]+))?think(?:ing)?|reasoning|thinking_mode)\s*>/i;
 

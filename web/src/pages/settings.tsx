@@ -1,0 +1,239 @@
+import { useEffect, useState } from "react";
+import { Check } from "lucide-react";
+import { toast } from "sonner";
+import { api, ApiError } from "@/lib/api";
+import type { Settings as SettingsT } from "@/lib/types";
+import { Spinner, Field } from "@/components/shared";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
+
+const SECTIONS = [
+  { id: "models", label: "Models" },
+  { id: "limits", label: "Limits" },
+  { id: "password", label: "Password" },
+] as const;
+
+type SectionId = (typeof SECTIONS)[number]["id"];
+
+export default function Settings() {
+  const [s, setS] = useState<SettingsT | null>(null);
+  const [exempt, setExempt] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [active, setActive] = useState<SectionId>("models");
+
+  const [pw, setPw] = useState("");
+  const [pwSaving, setPwSaving] = useState(false);
+
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((data) => {
+        setS(data);
+        setExempt((data.exposeExempt || []).join(", "));
+      })
+      .catch(toast.error);
+  }, []);
+
+  if (!s) return <Spinner />;
+
+  const set = <K extends keyof SettingsT>(k: K, v: SettingsT[K]) =>
+    setS((prev) => (prev ? { ...prev, [k]: v } : prev));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.updateSettings({
+        ...s,
+        exposeExempt: exempt
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean),
+      });
+      toast.success("Settings saved");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : (e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const changePw = async () => {
+    if (pw.length < 4) {
+      toast.error("Password must be at least 4 characters");
+      return;
+    }
+    setPwSaving(true);
+    try {
+      await api.changePassword(pw);
+      toast.success("Admin password changed");
+      setPw("");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : (e as Error).message);
+    } finally {
+      setPwSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            Settings
+          </h1>
+          <p className="mt-1 text-xs font-medium text-muted-foreground">
+            Global gateway configuration
+          </p>
+        </div>
+        <Button onClick={save} disabled={saving}>
+          <Check className="h-3.5 w-3.5" />
+          {saving ? "Saving\u2026" : "Save Settings"}
+        </Button>
+      </div>
+
+      <div className="flex flex-col gap-6">
+        <div className="flex gap-1 border-b border-border/60">
+          {SECTIONS.map((sec) => (
+            <button
+              key={sec.id}
+              type="button"
+              onClick={() => setActive(sec.id)}
+              className={cn(
+                "relative cursor-pointer px-3 py-2 text-sm font-medium transition-colors",
+                active === sec.id
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {sec.label}
+              {active === sec.id && (
+                <span className="absolute right-0 bottom-0 left-0 h-0.5 rounded-full bg-primary" />
+              )}
+            </button>
+          ))}
+        </div>
+
+        {active === "models" && (
+          <div className="rounded-lg border border-border bg-card p-5">
+            <h2 className="font-heading text-lg font-medium text-foreground mb-4">
+              Model Exposure
+            </h2>
+            <div className="grid gap-4">
+              <Field
+                label="Global model prefix"
+                hint="Prepended to every exposed ID"
+              >
+                <Input
+                  value={s.modelPrefix}
+                  onChange={(e) => set("modelPrefix", e.target.value)}
+                />
+              </Field>
+              <Field
+                label="Expose prefix"
+                hint="Prepended unless alias starts with an exempt prefix"
+              >
+                <Input
+                  value={s.exposePrefix}
+                  onChange={(e) => set("exposePrefix", e.target.value)}
+                />
+              </Field>
+              <Field
+                label="Expose-exempt prefixes"
+                hint="Comma-separated, e.g. claude"
+              >
+                <Input
+                  value={exempt}
+                  onChange={(e) => setExempt(e.target.value)}
+                />
+              </Field>
+              <label className="flex items-center gap-2">
+                <Switch
+                  checked={s.allowUnknown}
+                  onCheckedChange={(v) => set("allowUnknown", v)}
+                />
+                <span className="text-sm text-foreground">
+                  Allow unknown models (passthrough)
+                </span>
+              </label>
+            </div>
+          </div>
+        )}
+
+        {active === "limits" && (
+          <div className="rounded-lg border border-border bg-card p-5">
+            <h2 className="font-heading text-lg font-medium text-foreground mb-4">
+              Limits & Timeouts
+            </h2>
+            <div className="grid gap-4">
+              <Field label="Default max output tokens">
+                <Input
+                  type="number"
+                  value={s.defaultMaxOutputTokens}
+                  onChange={(e) =>
+                    set("defaultMaxOutputTokens", Number(e.target.value))
+                  }
+                />
+              </Field>
+              <Field
+                label="SSE ping interval (ms)"
+                hint="0 = disabled; prevents idle proxy timeouts"
+              >
+                <Input
+                  type="number"
+                  value={s.ssePingInterval}
+                  onChange={(e) =>
+                    set("ssePingInterval", Number(e.target.value))
+                  }
+                />
+              </Field>
+              <Field label="Request log retention (days)">
+                <Input
+                  type="number"
+                  value={s.requestLogRetentionDays}
+                  onChange={(e) =>
+                    set("requestLogRetentionDays", Number(e.target.value))
+                  }
+                />
+              </Field>
+            </div>
+          </div>
+        )}
+
+        {active === "password" && (
+          <div className="rounded-lg border border-border bg-card p-5">
+            <h2 className="font-heading text-lg font-medium text-foreground mb-4">
+              Admin Password
+            </h2>
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <Field label="New password">
+                  <Input
+                    type="password"
+                    value={pw}
+                    onChange={(e) => setPw(e.target.value)}
+                    placeholder="New password"
+                  />
+                </Field>
+              </div>
+              <Button onClick={changePw} disabled={pwSaving || !pw}>
+                {pwSaving ? "Updating\u2026" : "Update Password"}
+              </Button>
+            </div>
+            <Separator className="my-4" />
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              The gateway listens on{" "}
+              <code className="text-primary font-medium">/v1/*</code> for LLM
+              traffic (OpenAI + Anthropic compatible) and{" "}
+              <code className="text-primary font-medium">/api/*</code> for this
+              dashboard. Point your client (Claude Code, OpenAI SDK, ...) at
+              this server with a gateway API key.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,208 @@
+// Daily token-usage repository (replaces the old JSON-file usage tracker).
+//
+// Each (api_key, UTC day) pair has a single integer counter. Day rollover is
+// implicit — a new day key starts at zero. Quota enforcement reads today's row
+// and optimistically debits projected tokens before proxying; the engine later
+// reconciles with the upstream-reported actual usage (subtract estimate, add
+// actual).
+
+import type { Database as DB } from "better-sqlite3";
+import type { KeyUsage } from "../shared/types";
+
+export function utcDay(d = new Date()): string {
+  return d.toISOString().slice(0, 10);
+}
+
+export function nextUtcMidnight(): Date {
+  const d = new Date();
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1),
+  );
+}
+
+export function getUsage(db: DB, apiKeyId: string): KeyUsage {
+  const day = utcDay();
+  const row = db
+    .prepare("SELECT tokens, day FROM usage WHERE api_key_id = ? AND day = ?")
+    .get(apiKeyId, day) as { tokens: number; day: string } | undefined;
+  return row ?? { tokens: 0, day };
+}
+
+export function addUsage(db: DB, apiKeyId: string, tokens: number): void {
+  if (!apiKeyId || tokens <= 0) return;
+  const day = utcDay();
+  db.prepare(
+    `INSERT INTO usage (api_key_id, day, tokens) VALUES (@id, @day, @tokens)
+     ON CONFLICT(api_key_id, day) DO UPDATE SET tokens = tokens + @tokens`,
+  ).run({ id: apiKeyId, day, tokens });
+}
+
+export function subtractUsage(db: DB, apiKeyId: string, tokens: number): void {
+  if (!apiKeyId || tokens <= 0) return;
+  const day = utcDay();
+  db.prepare(
+    `UPDATE usage SET tokens = MAX(0, tokens - @tokens)
+     WHERE api_key_id = @id AND day = @day`,
+  ).run({ id: apiKeyId, day, tokens });
+}
+
+// Today's usage joined with the API key for the dashboard's "keys" view.
+export interface UsageRow {
+  apiKeyId: string;
+  keyName: string | null;
+  keyPrefix: string;
+  userName: string | null;
+  limit: number | null;
+  used: number;
+  day: string;
+}
+
+export function listUsageToday(db: DB): UsageRow[] {
+  const day = utcDay();
+  const rows = db
+    .prepare(
+      `SELECT k.id AS apiKeyId, k.name AS keyName, k.key_prefix AS keyPrefix,
+              u.name AS userName, k.tokens_per_day AS \`limit\`,
+              COALESCE(usg.tokens, 0) AS used, @day AS day
+       FROM api_keys k
+       LEFT JOIN users u ON u.id = k.user_id
+       LEFT JOIN usage usg ON usg.api_key_id = k.id AND usg.day = @day
+       ORDER BY used DESC, k.created_at DESC`,
+    )
+    .all({ day }) as UsageRow[];
+  return rows;
+}
+
+// Daily token totals across all keys for the last `days` days (oldest first),
+// for the dashboard's usage-over-time chart.
+export function totalUsageHistory(
+  db: DB,
+  days = 14,
+): Array<{ day: string; tokens: number }> {
+  const rows = db
+    .prepare(
+      `SELECT day, SUM(tokens) AS tokens FROM usage
+       WHERE day >= date('now', ?)
+       GROUP BY day ORDER BY day`,
+    )
+    .all(`-${days} days`) as Array<{ day: string; tokens: number | null }>;
+  return rows.map((r) => ({ day: r.day, tokens: r.tokens ?? 0 }));
+}
+
+export function totalUsageToday(db: DB): number {
+  const day = utcDay();
+  const row = db
+    .prepare("SELECT COALESCE(SUM(tokens), 0) AS t FROM usage WHERE day = ?")
+    .get(day) as { t: number };
+  return row.t;
+}
+
+// --- Per (key, model, provider) breakdown ---------------------------------
+//
+// Records the token cost of each request attributed to the model alias the
+// client requested and the provider the request actually resolved to (after
+// fallback). Powers the dashboard's "what did this key resolve to" view —
+// e.g. a key using gpt-5.5 shows the token count and the provider chosen.
+
+export interface UsageBreakdownRow {
+  apiKeyId: string;
+  model: string;
+  providerId: string | null;
+  providerName: string | null;
+  tokens: number;
+  requests: number;
+}
+
+export function addBreakdown(
+  db: DB,
+  apiKeyId: string,
+  model: string,
+  providerId: string | null,
+  tokens: number,
+): void {
+  if (!apiKeyId || tokens <= 0) return;
+  const day = utcDay();
+  db.prepare(
+    `INSERT INTO usage_breakdown (api_key_id, day, model, provider_id, tokens)
+     VALUES (@id, @day, @model, @provider, @tokens)
+     ON CONFLICT(api_key_id, day, model, provider_id)
+     DO UPDATE SET tokens = tokens + @tokens`,
+  ).run({ id: apiKeyId, day, model, provider: providerId, tokens });
+}
+
+// Breakdown for a single key for today (or a given day), grouped by model +
+// provider. Ordered by tokens desc.
+export function breakdownForKey(
+  db: DB,
+  apiKeyId: string,
+  day: string = utcDay(),
+): UsageBreakdownRow[] {
+  return db
+    .prepare(
+      `SELECT b.api_key_id AS apiKeyId, b.model AS model,
+              b.provider_id AS providerId, p.name AS providerName,
+              SUM(b.tokens) AS tokens, COUNT(*) AS requests
+       FROM usage_breakdown b LEFT JOIN providers p ON p.id = b.provider_id
+       WHERE b.api_key_id = @id AND b.day = @day
+       GROUP BY b.model, b.provider_id
+       ORDER BY tokens DESC`,
+    )
+    .all({ id: apiKeyId, day }) as UsageBreakdownRow[];
+}
+
+// Breakdown across ALL keys for today: rows of {key, model, provider, tokens,
+// requests}, with the key identity attached. Used by the Usage page top table.
+export interface FullBreakdownRow extends UsageBreakdownRow {
+  keyName: string | null;
+  keyPrefix: string;
+  userName: string | null;
+}
+
+export function fullBreakdownToday(
+  db: DB,
+  day: string = utcDay(),
+): FullBreakdownRow[] {
+  return db
+    .prepare(
+      `SELECT b.api_key_id AS apiKeyId, k.name AS keyName, k.key_prefix AS keyPrefix,
+              u.name AS userName, b.model AS model,
+              b.provider_id AS providerId, p.name AS providerName,
+              SUM(b.tokens) AS tokens, COUNT(*) AS requests
+       FROM usage_breakdown b
+       LEFT JOIN api_keys k ON k.id = b.api_key_id
+       LEFT JOIN users u ON u.id = k.user_id
+       LEFT JOIN providers p ON p.id = b.provider_id
+       WHERE b.day = @day
+       GROUP BY b.api_key_id, b.model, b.provider_id
+       ORDER BY tokens DESC`,
+    )
+    .all({ day }) as FullBreakdownRow[];
+}
+
+// Aggregate "what did requests for model X resolve to" — which providers and
+// how many tokens. Answers "if the user uses gpt-5.5 show what provider it
+// resolved to".
+export interface ModelResolutionRow {
+  model: string;
+  providerId: string | null;
+  providerName: string | null;
+  tokens: number;
+  requests: number;
+}
+
+export function modelResolution(
+  db: DB,
+  model: string,
+  day: string = utcDay(),
+): ModelResolutionRow[] {
+  return db
+    .prepare(
+      `SELECT b.model AS model, b.provider_id AS providerId, p.name AS providerName,
+              SUM(b.tokens) AS tokens, COUNT(*) AS requests
+       FROM usage_breakdown b LEFT JOIN providers p ON p.id = b.provider_id
+       WHERE b.day = @day AND b.model = @model
+       GROUP BY b.provider_id
+       ORDER BY tokens DESC`,
+    )
+    .all({ day, model }) as ModelResolutionRow[];
+}

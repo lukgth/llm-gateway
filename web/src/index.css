@@ -1,0 +1,185 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-heading: "Inter Variable", sans-serif;
+  --font-sans: "Inter Variable", sans-serif;
+  --font-mono: "JetBrains Mono Variable", monospace;
+  /* App-wide defaults for every transition-* utility: symmetric ease-in-out
+     so hovers feel as smooth leaving as entering, 200ms to match the sidebar
+     width animation. */
+  --default-transition-duration: 200ms;
+  --default-transition-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+  /* Sidebar collapse/expand: a stronger symmetric S-curve (easeInOutCubic)
+     shared by the width, label fades and group-header collapse so they all
+     move as one. */
+  --ease-sidebar: cubic-bezier(0.65, 0, 0.35, 1);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  color-scheme: light;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  --background: oklch(0.972 0.006 70);
+  --foreground: oklch(0.145 0.008 70);
+  --card: oklch(0.998 0.003 70);
+  --card-foreground: oklch(0.145 0.008 70);
+  --popover: oklch(0.995 0.004 70);
+  --popover-foreground: oklch(0.145 0.008 70);
+  --primary: oklch(0.205 0.012 70);
+  --primary-foreground: oklch(0.985 0.004 70);
+  --secondary: oklch(0.965 0.007 70);
+  --secondary-foreground: oklch(0.205 0.012 70);
+  --muted: oklch(0.965 0.007 70);
+  --muted-foreground: oklch(0.556 0.012 70);
+  --accent: oklch(0.965 0.007 70);
+  --accent-foreground: oklch(0.205 0.012 70);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0.008 70);
+  --input: oklch(0.922 0.008 70);
+  --ring: oklch(0.708 0.012 70);
+  --radius: 0.375rem;
+  --sidebar: oklch(0.965 0.007 70);
+  --sidebar-foreground: oklch(0.145 0.008 70);
+  --sidebar-primary: oklch(0.205 0.012 70);
+  --sidebar-primary-foreground: oklch(0.985 0.004 70);
+  --sidebar-accent: oklch(0.965 0.007 70);
+  --sidebar-accent-foreground: oklch(0.205 0.012 70);
+  --sidebar-border: oklch(0.922 0.008 70);
+  --sidebar-ring: oklch(0.708 0.012 70);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.105 0.004 70);
+  --foreground: oklch(0.93 0.004 70);
+  --card: oklch(0.145 0.005 70);
+  --card-foreground: oklch(0.93 0.004 70);
+  --popover: oklch(0.155 0.005 70);
+  --popover-foreground: oklch(0.93 0.004 70);
+  --primary: oklch(0.9 0.008 70);
+  --primary-foreground: oklch(0.145 0.005 70);
+  --secondary: oklch(0.2 0.006 70);
+  --secondary-foreground: oklch(0.93 0.004 70);
+  --muted: oklch(0.19 0.006 70);
+  --muted-foreground: oklch(0.66 0.008 70);
+  --accent: oklch(0.2 0.006 70);
+  --accent-foreground: oklch(0.93 0.004 70);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(0.92 0.005 70 / 9%);
+  --input: oklch(0.92 0.005 70 / 13%);
+  --ring: oklch(0.5 0.008 70);
+  --sidebar: oklch(0.125 0.004 70);
+  --sidebar-foreground: oklch(0.88 0.004 70);
+  --sidebar-primary: oklch(0.9 0.008 70);
+  --sidebar-primary-foreground: oklch(0.145 0.005 70);
+  --sidebar-accent: oklch(0.19 0.006 70);
+  --sidebar-accent-foreground: oklch(0.93 0.004 70);
+  --sidebar-border: oklch(0.92 0.005 70 / 7%);
+  --sidebar-ring: oklch(0.5 0.008 70);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    scrollbar-width: none;
+  }
+  *::-webkit-scrollbar {
+    display: none;
+  }
+  body {
+    @apply bg-background text-foreground min-h-svh font-sans;
+  }
+  code,
+  kbd,
+  samp,
+  pre,
+  textarea,
+  [data-sonner-toast] {
+    @apply font-mono;
+  }
+  /* Every enabled clickable gets a pointer cursor (Tailwind v4 resets buttons
+     to cursor-default). Covers native buttons, links, radix triggers with
+     role=button, and summary — disabled states are excluded. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  a[href],
+  select:not(:disabled),
+  summary,
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="file"]:not(:disabled),
+  label:has(> input[type="checkbox"]:not(:disabled)),
+  label:has(> input[type="radio"]:not(:disabled)),
+  label:has(> button:not(:disabled)) {
+    cursor: pointer;
+  }
+  button:disabled,
+  [role="button"]:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@layer base {
+  .theme-transition {
+    will-change: background-color, color;
+    transition:
+      background-color 200ms cubic-bezier(0.45, 0, 0.55, 1),
+      color 200ms cubic-bezier(0.45, 0, 0.55, 1);
+  }
+  .theme-transition body,
+  .theme-transition [data-slot="card"],
+  .theme-transition header {
+    will-change: background-color, border-color, box-shadow;
+    transition:
+      background-color 200ms cubic-bezier(0.45, 0, 0.55, 1),
+      border-color 200ms cubic-bezier(0.45, 0, 0.55, 1),
+      box-shadow 200ms cubic-bezier(0.45, 0, 0.55, 1);
+  }
+  [data-slot="card"] {
+    contain: layout style;
+  }
+  [data-slot="dialog-content"] {
+    contain: layout style;
+  }
+  [data-slot="sheet-content"] {
+    contain: layout style;
+  }
+}

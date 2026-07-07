@@ -1,0 +1,953 @@
+// Multi-provider forwarding engine with wire-format conversion.
+//
+// For each proxied request the engine walks the resolved model's fallback
+// chain (ordered provider links). For each provider it computes a "route":
+// which endpoint to hit and whether the gateway must convert between the
+// client's wire format (Anthropic Messages / OpenAI Chat / OpenAI Responses)
+// and the provider's endpoint format. Providers flagged `nativeConversion`
+// accept the client's request as-is (the provider converts internally, e.g.
+// LiteLLM/9router); otherwise the gateway translates request + response.
+//
+// Per provider, it retries up to `retryAttempts`, round-robin rotating the
+// provider's API keys between attempts. The first 2xx commits the response.
+// On a committed 2xx the thinking/responses/anthropic-openai transforms are
+// applied (streaming SSE is piped through transform streams; non-streaming
+// JSON is buffered + converted). Every request is logged, and per-key usage
+// is reconciled with the upstream-reported actual token count and attributed
+// to (key, model, provider) in usage_breakdown.
+
+import http from "http";
+import https from "https";
+import { URL } from "url";
+import { Transform, pipeline as streamPipeline } from "stream";
+import type { IncomingMessage } from "http";
+import type { Request, Response } from "express";
+import type { Database as DB } from "better-sqlite3";
+import type { Logger } from "../logger";
+import type { ApiKey, Model, Provider } from "../shared/types";
+import { ThinkingConverter } from "../thinking";
+import { ResponsesBridge } from "../responses-bridge";
+import { StreamingResponsesBridgeTransform } from "../responses-bridge";
+import { SseThinkingTransform } from "../streaming-thinking";
+import { AnthropicThinkingTransform } from "../streaming-anthropic";
+import { SsePingKeepAlive } from "../sse-ping";
+import { stripInvisible } from "../utils";
+import { readResponseUsage } from "../tokens";
+import { listProviders } from "../repo/providers";
+import { addUsage, subtractUsage, addBreakdown } from "../repo/usage";
+import { insertRequestLog } from "../repo/request-logs";
+import {
+  chatRequestToMessages,
+  chatResponseToMessages,
+  messagesRequestToChat,
+  messagesResponseToChat,
+  ChatToMessagesSseTransform,
+  MessagesToChatSseTransform,
+} from "../anthropic-openai-bridge";
+
+const HOP_BY_HOP = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "trailers",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+const RETRY_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+
+// The three wire formats the gateway understands.
+type Fmt = "chat" | "messages" | "responses";
+
+function pathFmt(p: string | undefined | null): Fmt | null {
+  if (!p) return null;
+  const x = p.split("?")[0];
+  if (x.endsWith("/chat/completions")) return "chat";
+  if (x.endsWith("/messages")) return "messages";
+  if (x.endsWith("/responses")) return "responses";
+  return null;
+}
+
+// Per-attempt route plan: where to send + how to convert.
+interface Route {
+  forwardPath: string;
+  providerFmt: Fmt;
+  convert: boolean;
+  reqConvert: ((b: Record<string, unknown>) => Record<string, unknown>) | null;
+  respConvert: ((b: Record<string, unknown>) => Record<string, unknown>) | null;
+  streamBridge: (() => Transform) | null;
+  unsupported?: string;
+}
+
+export interface ForwardContext {
+  clientPath: string;
+  requestBody: Record<string, unknown>;
+  resolvedModel: Model | null;
+  alias: string;
+  apiKey: ApiKey | null;
+  inputTokens: number;
+  isStream: boolean;
+  client: string | null;
+}
+
+interface AttemptResult {
+  committed: boolean;
+  status?: number;
+  inputTokens?: number;
+  outputTokens?: number | null;
+  reason?: string;
+  error?: string | null;
+}
+
+export class ForwardingEngine {
+  private keyCursor = new Map<string, number>();
+
+  constructor(
+    private readonly db: DB,
+    private readonly logger: Logger,
+    private readonly thinking: ThinkingConverter,
+    private readonly bridge: ResponsesBridge,
+    private readonly ssePingInterval: number,
+  ) {}
+
+  // --- chain + route --------------------------------------------------------
+
+  private buildChain(
+    model: Model | null,
+  ): Array<{
+    provider: Provider;
+    upstreamModel: string;
+    endpoint: string | null;
+  }> {
+    if (!model) return [];
+    const enabledProviders = new Map(
+      listProviders(this.db, false).map((p) => [p.id, p]),
+    );
+    const chain: Array<{
+      provider: Provider;
+      upstreamModel: string;
+      endpoint: string | null;
+    }> = [];
+    for (const link of model.providers) {
+      if (!link.enabled) continue;
+      const provider = enabledProviders.get(link.providerId);
+      if (provider && provider.enabled)
+        chain.push({
+          provider,
+          upstreamModel: link.upstreamModel,
+          endpoint: link.endpoint ?? null,
+        });
+    }
+    if (chain.length === 0) {
+      for (const provider of enabledProviders.values())
+        chain.push({ provider, upstreamModel: model.alias, endpoint: null });
+    }
+    return chain;
+  }
+
+  // Resolve the endpoint path for a provider link: explicit link endpoint ->
+  // first supported provider endpoint -> format default.
+  private resolveEndpoint(provider: Provider, endpoint: string | null): string {
+    if (endpoint && pathFmt(endpoint)) return endpoint;
+    if (provider.endpoints?.length && pathFmt(provider.endpoints[0]))
+      return provider.endpoints[0];
+    return provider.format === "anthropic"
+      ? "/v1/messages"
+      : "/v1/chat/completions";
+  }
+
+  // Build the conversion plan for one attempt.
+  private buildRoute(
+    clientPath: string,
+    provider: Provider,
+    endpoint: string | null,
+  ): Route {
+    const clientFmt = pathFmt(clientPath) ?? "chat";
+    // nativeConversion: provider accepts the client's format/endpoint directly.
+    if (provider.nativeConversion) {
+      return {
+        forwardPath: clientPath.split("?")[0],
+        providerFmt: clientFmt,
+        convert: false,
+        reqConvert: null,
+        respConvert: null,
+        streamBridge: null,
+      };
+    }
+    const forwardPath = this.resolveEndpoint(provider, endpoint);
+    const providerFmt = pathFmt(forwardPath) ?? "chat";
+    const convert = clientFmt !== providerFmt;
+    if (!convert) {
+      return {
+        forwardPath,
+        providerFmt,
+        convert: false,
+        reqConvert: null,
+        respConvert: null,
+        streamBridge: null,
+      };
+    }
+    const reqConvert = reqConverter(clientFmt, providerFmt);
+    const respConvert = respConverter(providerFmt, clientFmt);
+    const streamBridge = streamBridgeFactory(providerFmt, clientFmt);
+    if (!reqConvert || !respConvert) {
+      return {
+        forwardPath,
+        providerFmt,
+        convert: true,
+        reqConvert,
+        respConvert,
+        streamBridge,
+        unsupported: `gateway cannot convert ${clientFmt} <-> ${providerFmt} for provider '${provider.id}'`,
+      };
+    }
+    return {
+      forwardPath,
+      providerFmt,
+      convert: true,
+      reqConvert,
+      respConvert,
+      streamBridge,
+    };
+  }
+
+  // --- forward ---------------------------------------------------------------
+
+  async forward(
+    req: Request,
+    res: Response,
+    ctx: ForwardContext,
+  ): Promise<void> {
+    const startedAt = Date.now();
+    const chain = this.buildChain(ctx.resolvedModel);
+    if (chain.length === 0) {
+      this.logger.error("no_providers", { model: ctx.alias });
+      this.finish502(res, "No provider is configured for this model.");
+      this.recordLog(
+        ctx,
+        null,
+        null,
+        502,
+        null,
+        null,
+        "no providers",
+        startedAt,
+      );
+      return;
+    }
+
+    let lastReason = "no attempts";
+    let first: {
+      provider: Provider;
+      upstreamModel: string;
+      endpoint: string | null;
+    } | null = null;
+    for (const entry of chain) {
+      if (!first) first = entry;
+      const route = this.buildRoute(
+        ctx.clientPath,
+        entry.provider,
+        entry.endpoint,
+      );
+      if (route.unsupported) {
+        lastReason = route.unsupported;
+        this.logger.warn("conversion_unsupported", {
+          provider: entry.provider.id,
+          model: entry.upstreamModel,
+          detail: lastReason,
+        });
+        continue; // try the next provider in the chain
+      }
+      const attempts = Math.max(1, entry.provider.retryAttempts);
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        if (res.headersSent || res.writableEnded) return;
+        const result = await this.attemptOnce(req, res, ctx, entry, route);
+        if (result.committed) {
+          this.recordLog(
+            ctx,
+            entry.provider,
+            entry.upstreamModel,
+            result.status ?? null,
+            result.inputTokens ?? (ctx.inputTokens || null),
+            result.outputTokens ?? null,
+            result.error ?? null,
+            startedAt,
+          );
+          return;
+        }
+        lastReason = result.reason || lastReason;
+        const more = attempt < attempts;
+        this.logger.warn("provider_attempt_failed", {
+          provider: entry.provider.id,
+          attempt: `${attempt}/${attempts}`,
+          model: entry.upstreamModel,
+          reason: lastReason,
+          failover: more
+            ? "retry"
+            : entry === chain[chain.length - 1]
+              ? "exhausted"
+              : "next-provider",
+        });
+        if (more) await sleep(entry.provider.retryIntervalMs);
+      }
+    }
+
+    if (!res.headersSent && !res.writableEnded)
+      this.finish502(res, `All providers failed (last reason: ${lastReason}).`);
+    this.recordLog(
+      ctx,
+      first?.provider ?? null,
+      first?.upstreamModel ?? null,
+      502,
+      ctx.inputTokens || null,
+      null,
+      lastReason,
+      startedAt,
+    );
+  }
+
+  private finish502(res: Response, message: string): void {
+    if (res.headersSent) {
+      try {
+        if (!res.writableEnded) res.end();
+      } catch {
+        /* noop */
+      }
+      return;
+    }
+    res.status(502).json({
+      error: { type: "upstream_error", message, source: "gateway" },
+    });
+  }
+
+  // --- one attempt ----------------------------------------------------------
+
+  private attemptOnce(
+    req: Request,
+    res: Response,
+    ctx: ForwardContext,
+    entry: {
+      provider: Provider;
+      upstreamModel: string;
+      endpoint: string | null;
+    },
+    route: Route,
+  ): Promise<AttemptResult> {
+    const { provider, upstreamModel } = entry;
+
+    // Convert the client body into the provider's format, then stamp the
+    // upstream model id. Falls back to the original body on conversion error.
+    let body: Record<string, unknown>;
+    try {
+      body = route.reqConvert
+        ? route.reqConvert({ ...ctx.requestBody })
+        : { ...ctx.requestBody };
+    } catch (err) {
+      return Promise.resolve({
+        committed: false,
+        reason: `request conversion failed: ${(err as Error).message}`,
+      });
+    }
+    body.model = upstreamModel;
+    const serialized = Buffer.from(JSON.stringify(body), "utf8");
+
+    let upstreamUrl: URL;
+    try {
+      upstreamUrl = new URL(route.forwardPath, provider.baseUrl);
+    } catch {
+      return Promise.resolve({
+        committed: false,
+        reason: `bad provider baseUrl: ${provider.baseUrl}`,
+      });
+    }
+    const key = this.pickKey(provider);
+    const headers = this.buildHeaders(req, provider, key, serialized.length);
+    const transport = upstreamUrl.protocol === "https:" ? https : http;
+
+    return new Promise((resolvePromise) => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let timedOut = false;
+      let clientGone = false;
+
+      // If the client disconnects while we're still waiting on upstream
+      // headers, abort the upstream request instead of letting it run to its
+      // timeout. Listener is removed when this attempt settles so retries
+      // don't stack listeners on `res`.
+      const onClientClose = () => {
+        clientGone = true;
+        proxyReq.destroy(new Error("client disconnected"));
+      };
+      const resolve = (r: AttemptResult) => {
+        res.off("close", onClientClose);
+        resolvePromise(r);
+      };
+
+      const proxyReq = transport.request(
+        {
+          protocol: upstreamUrl.protocol,
+          hostname: upstreamUrl.hostname,
+          port:
+            upstreamUrl.port || (upstreamUrl.protocol === "https:" ? 443 : 80),
+          method: req.method,
+          path: `${upstreamUrl.pathname}${upstreamUrl.search}`,
+          headers,
+          rejectUnauthorized: provider.tlsVerify,
+        },
+        (upRes) => {
+          if (timer) {
+            clearTimeout(timer);
+            timer = null;
+          }
+          this.handleUpstreamResponse(
+            upRes,
+            res,
+            ctx,
+            provider,
+            upstreamModel,
+            route,
+          ).then(resolve, (err) =>
+            resolve({ committed: false, reason: err.message }),
+          );
+        },
+      );
+
+      timer = setTimeout(() => {
+        timedOut = true;
+        proxyReq.destroy(new Error("upstream request timeout"));
+      }, provider.requestTimeoutMs);
+      if (typeof (timer as { unref?: () => void }).unref === "function")
+        (timer as { unref: () => void }).unref();
+
+      proxyReq.on("error", (err: Error & { code?: string }) => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        if (clientGone) {
+          // Nobody is listening — commit so the chain doesn't retry.
+          resolve({
+            committed: true,
+            status: 499,
+            error: "client disconnected",
+          });
+          return;
+        }
+        const reason = timedOut
+          ? `timeout after ${provider.requestTimeoutMs}ms`
+          : err.code
+            ? `${err.code}: ${err.message}`
+            : err.message;
+        this.logger.warn("upstream_error", {
+          provider: provider.id,
+          model: upstreamModel,
+          err: reason,
+        });
+        resolve({ committed: false, reason });
+      });
+
+      res.once("close", onClientClose);
+      proxyReq.write(serialized);
+      proxyReq.end();
+    });
+  }
+
+  private async handleUpstreamResponse(
+    upRes: IncomingMessage,
+    res: Response,
+    ctx: ForwardContext,
+    provider: Provider,
+    upstreamModel: string,
+    route: Route,
+  ): Promise<AttemptResult> {
+    const status = upRes.statusCode || 502;
+    const headers = upRes.headers || {};
+
+    if (RETRY_STATUS.has(status)) {
+      upRes.resume();
+      return { committed: false, status, reason: `status ${status}` };
+    }
+
+    if (status < 200 || status >= 300) {
+      const chunks: Buffer[] = [];
+      for await (const c of upRes) chunks.push(c as Buffer);
+      const errBody = Buffer.concat(chunks);
+      this.logger.warn("upstream_non_2xx", {
+        status,
+        provider: provider.id,
+        upstreamModel,
+        path: ctx.clientPath,
+        body: errBody.toString("utf8").slice(0, 2000),
+      });
+      if (!res.headersSent) {
+        res.writeHead(status, filteredHeaders(headers));
+        res.end(errBody);
+      }
+      return { committed: true, status, error: `upstream ${status}` };
+    }
+
+    // 2xx — streaming vs buffered. Conversion decisions use the PROVIDER format
+    // (the shape upstream returns), then we bridge to the client format.
+    if (ctx.isStream && isEventStream(headers)) {
+      this.streamConvert(upRes, res, route, status, headers);
+      return {
+        committed: true,
+        status,
+        inputTokens: ctx.inputTokens || undefined,
+        outputTokens: null,
+      };
+    }
+    if (isJson(headers)) {
+      const { outputTokens } = await this.bufferConvert(
+        upRes,
+        res,
+        ctx,
+        provider,
+        route,
+        status,
+        headers,
+      );
+      return {
+        committed: true,
+        status,
+        inputTokens: ctx.inputTokens,
+        outputTokens,
+      };
+    }
+    this.pipeThrough(upRes, res, status, headers);
+    return {
+      committed: true,
+      status,
+      inputTokens: ctx.inputTokens,
+      outputTokens: null,
+    };
+  }
+
+  // --- streaming 2xx --------------------------------------------------------
+  //
+  // Pipeline: providerSSE -> thinkingTransform(providerFmt) -> [streamBridge]
+  //         -> ping -> client. The thinking transform runs first so <thinking>
+  // extraction happens in the provider's native shape; the streamBridge then
+  // converts SSE event shapes from providerFmt to the client's format.
+  private streamConvert(
+    upRes: IncomingMessage,
+    res: Response,
+    route: Route,
+    status: number,
+    headers: IncomingMessage["headers"],
+  ): void {
+    const out = filteredHeaders(headers);
+    delete out["content-length"];
+    delete out["Content-Length"];
+    if (route.convert) out["content-type"] = "text/event-stream";
+
+    const thinking = thinkingStream(route.providerFmt);
+    const bridge =
+      route.convert && route.streamBridge ? route.streamBridge() : null;
+
+    // Unsupported streaming conversion — end gracefully with a clear note.
+    if (route.convert && !bridge) {
+      this.logger.warn("stream_conversion_unsupported", {
+        providerFmt: route.providerFmt,
+      });
+      if (!res.headersSent) {
+        res.writeHead(502, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: {
+              type: "upstream_error",
+              message: "Gateway cannot stream-convert this provider format",
+              source: "gateway",
+            },
+          }),
+        );
+      }
+      upRes.resume();
+      return;
+    }
+
+    const ping =
+      this.ssePingInterval > 0
+        ? new SsePingKeepAlive({ interval: this.ssePingInterval })
+        : null;
+
+    res.on("error", (err: Error) =>
+      this.logger.warn("client_res_error", { err: err.message }),
+    );
+    if (!res.headersSent) res.writeHead(status, out);
+
+    // stream.pipeline propagates errors and destroy() across every stage, so a
+    // client abort mid-stream tears down the upstream socket (and vice versa)
+    // instead of leaking it. Plain .pipe() does not do this.
+    const stages = [thinking, bridge, ping].filter(
+      Boolean,
+    ) as NodeJS.ReadWriteStream[];
+    streamPipeline([upRes, ...stages, res], (err) => {
+      if (!err) return;
+      const e = err as NodeJS.ErrnoException;
+      // Client disconnects surface as ERR_STREAM_PREMATURE_CLOSE — routine.
+      if (e.code !== "ERR_STREAM_PREMATURE_CLOSE") {
+        this.logger.warn("stream_pipeline_error", { err: e.message });
+      }
+      try {
+        if (!res.writableEnded) res.end();
+      } catch {
+        /* noop */
+      }
+    });
+  }
+
+  // --- buffered non-streaming 2xx ------------------------------------------
+
+  private async bufferConvert(
+    upRes: IncomingMessage,
+    res: Response,
+    ctx: ForwardContext,
+    provider: Provider,
+    route: Route,
+    status: number,
+    headers: IncomingMessage["headers"],
+  ): Promise<{ outputTokens: number | null }> {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const c of upRes) {
+      const chunk = c as Buffer;
+      size += chunk.length;
+      if (size > MAX_BUFFER_BYTES) {
+        if (!res.headersSent)
+          res.status(502).json({
+            error: {
+              type: "upstream_error",
+              message: "Upstream response too large to convert",
+              source: "gateway",
+            },
+          });
+        return { outputTokens: null };
+      }
+      chunks.push(chunk);
+    }
+
+    const stripped = Buffer.from(
+      stripInvisible(Buffer.concat(chunks).toString("utf8")),
+      "utf8",
+    );
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(stripped.toString("utf8")) as Record<string, unknown>;
+    } catch {
+      this.sendRaw(res, status, headers, stripped);
+      return { outputTokens: null };
+    }
+
+    // Reconcile per-key usage (reads usage from the PROVIDER-shape response).
+    const actual = this.reconcileUsage(ctx, parsed, provider, route);
+
+    // 1) thinking extraction in PROVIDER format.
+    applyThinking(this.thinking, route.providerFmt, parsed);
+
+    // 2) bridge PROVIDER shape -> CLIENT shape (when converting).
+    let outBody: unknown = parsed;
+    if (route.convert && route.respConvert) {
+      try {
+        outBody = route.respConvert(parsed);
+      } catch (err) {
+        this.logger.warn("response_conversion_failed", {
+          err: (err as Error).message,
+        });
+        this.sendRaw(res, status, headers, stripped);
+        return { outputTokens: actual.output ?? null };
+      }
+    }
+
+    const out = Buffer.from(JSON.stringify(outBody), "utf8");
+    const outHeaders = filteredHeaders(headers);
+    outHeaders["content-length"] = String(out.length);
+    if (route.convert) outHeaders["content-type"] = "application/json";
+    if (!res.headersSent) res.writeHead(status, outHeaders);
+    res.end(out);
+    return { outputTokens: actual.output ?? null };
+  }
+
+  // --- pass-through (non-SSE, non-JSON, or no conversion needed) -----------
+
+  private pipeThrough(
+    upRes: IncomingMessage,
+    res: Response,
+    status: number,
+    headers: IncomingMessage["headers"],
+  ): void {
+    const out = filteredHeaders(headers);
+    res.on("error", (err: Error) =>
+      this.logger.warn("client_res_error", { err: err.message }),
+    );
+    if (!res.headersSent) res.writeHead(status, out);
+    const ct = String(out["content-type"] || "").toLowerCase();
+    const ping =
+      ct.includes("text/event-stream") && this.ssePingInterval > 0
+        ? new SsePingKeepAlive({ interval: this.ssePingInterval })
+        : null;
+    const stages = (ping ? [ping] : []) as NodeJS.ReadWriteStream[];
+    streamPipeline([upRes, ...stages, res], (err) => {
+      if (!err) return;
+      const e = err as NodeJS.ErrnoException;
+      if (e.code !== "ERR_STREAM_PREMATURE_CLOSE") {
+        this.logger.warn("pipe_stream_error", { err: e.message });
+      }
+      try {
+        if (!res.writableEnded) res.end();
+      } catch {
+        /* noop */
+      }
+    });
+  }
+
+  private sendRaw(
+    res: Response,
+    status: number,
+    headers: IncomingMessage["headers"],
+    buf: Buffer,
+  ): void {
+    if (res.headersSent) {
+      try {
+        if (!res.writableEnded) res.end();
+      } catch {
+        /* noop */
+      }
+      return;
+    }
+    res.writeHead(status, filteredHeaders(headers));
+    res.end(buf);
+  }
+
+  // Reconcile the optimistic input-token estimate against the upstream-reported
+  // actual usage, then attribute the real total to (key, model, provider).
+  private reconcileUsage(
+    ctx: ForwardContext,
+    parsed: Record<string, unknown>,
+    provider: Provider,
+    _route: Route,
+  ): { input?: number; output?: number } {
+    if (!ctx.apiKey || !ctx.inputTokens) return {};
+    const actual = readResponseUsage(parsed);
+    if (actual.input == null && actual.output == null) return {};
+    const total = (actual.input ?? 0) + (actual.output ?? 0);
+    if (total <= 0) return {};
+    subtractUsage(this.db, ctx.apiKey.id, ctx.inputTokens);
+    addUsage(this.db, ctx.apiKey.id, total);
+    addBreakdown(this.db, ctx.apiKey.id, ctx.alias, provider.id, total);
+    return actual;
+  }
+
+  // --- request logging ------------------------------------------------------
+
+  private recordLog(
+    ctx: ForwardContext,
+    provider: Provider | null,
+    upstreamModel: string | null,
+    status: number | null,
+    inputTokens: number | null,
+    outputTokens: number | null,
+    error: string | null,
+    startedAt?: number,
+  ): void {
+    try {
+      insertRequestLog(this.db, {
+        apiKeyId: ctx.apiKey?.id ?? null,
+        apiKeyName: ctx.apiKey?.name ?? null,
+        userId: ctx.apiKey?.userId ?? null,
+        model: ctx.alias,
+        providerId: provider?.id ?? null,
+        providerName: provider?.name ?? null,
+        upstreamModel,
+        status,
+        inputTokens,
+        outputTokens,
+        latencyMs: startedAt ? Date.now() - startedAt : null,
+        client: ctx.client,
+        path: ctx.clientPath,
+        stream: ctx.isStream,
+        error,
+      });
+    } catch (err) {
+      this.logger.warn("log_insert_failed", { err: (err as Error).message });
+    }
+  }
+
+  // --- headers + round-robin key rotation -----------------------------------
+
+  // Pick the next API key for the provider, round-robin. With N keys the call
+  // cycles 0,1,…,N-1,0,1,… so load is spread evenly across requests. Returns
+  // null when the provider has no keys configured.
+  private pickKey(provider: Provider): string | null {
+    const keys = provider.apiKeys;
+    if (!keys.length) return null;
+    const idx = this.keyCursor.get(provider.id) ?? 0;
+    this.keyCursor.set(provider.id, (idx + 1) % keys.length);
+    return keys[idx % keys.length];
+  }
+
+  private buildHeaders(
+    req: Request,
+    provider: Provider,
+    key: string | null,
+    bodyLen: number,
+  ): Record<string, string> {
+    const out: Record<string, string> = {};
+    const clientHeaders = (req.headers || {}) as Record<string, unknown>;
+    for (const [k, v] of Object.entries(clientHeaders)) {
+      const lk = k.toLowerCase();
+      if (HOP_BY_HOP.has(lk)) continue;
+      if (
+        lk === "host" ||
+        lk === "content-length" ||
+        lk === "authorization" ||
+        lk === "x-api-key"
+      )
+        continue;
+      if (v === undefined) continue;
+      out[k] = Array.isArray(v) ? (v[0] as string) : (v as string);
+    }
+    out["host"] = provider.host || hostFromUrl(provider.baseUrl);
+    if (key) {
+      if (provider.authScheme === "bearer" || provider.authScheme === "both")
+        out["authorization"] = `Bearer ${key}`;
+      if (provider.authScheme === "xapikey" || provider.authScheme === "both")
+        out["x-api-key"] = key;
+    }
+    for (const [k, v] of Object.entries(provider.extraHeaders || {}))
+      out[k] = v;
+    out["content-length"] = String(bodyLen);
+    if (!out["content-type"]) out["content-type"] = "application/json";
+    if (!out["accept"]) out["accept"] = "application/json";
+    return out;
+  }
+}
+
+// ===========================================================================
+// Conversion tables (clientFmt <-> providerFmt)
+// ===========================================================================
+
+type BodyConverter = (b: Record<string, unknown>) => Record<string, unknown>;
+
+function identity(b: Record<string, unknown>): Record<string, unknown> {
+  return b;
+}
+
+// Request: from -> to.
+function reqConverter(from: Fmt, to: Fmt): BodyConverter | null {
+  if (from === to) return identity;
+  if (from === "messages" && to === "chat") return messagesRequestToChat;
+  if (from === "chat" && to === "messages") return chatRequestToMessages;
+  if (from === "responses" && to === "chat")
+    return (b) => responsesRequestToChat(b);
+  return null;
+}
+
+// Non-streaming response: from -> to.
+function respConverter(from: Fmt, to: Fmt): BodyConverter | null {
+  if (from === to) return identity;
+  if (from === "chat" && to === "messages") return chatResponseToMessages;
+  if (from === "messages" && to === "chat") return messagesResponseToChat;
+  if (from === "chat" && to === "responses")
+    return (b) => responsesResponseFromChat(b);
+  return null;
+}
+
+// Streaming response bridge factory: providerFmt -> clientFmt SSE transform.
+function streamBridgeFactory(from: Fmt, to: Fmt): (() => Transform) | null {
+  if (from === to) return null;
+  if (from === "chat" && to === "messages")
+    return () => new ChatToMessagesSseTransform();
+  if (from === "messages" && to === "chat")
+    return () => new MessagesToChatSseTransform();
+  if (from === "chat" && to === "responses")
+    return () => new StreamingResponsesBridgeTransform();
+  return null;
+}
+
+// Lazily-bound wrappers around ResponsesBridge (kept instance-bound on the
+// engine via module-singleton to avoid per-request allocation).
+const responsesBridgeSingleton = new ResponsesBridge();
+function responsesRequestToChat(
+  b: Record<string, unknown>,
+): Record<string, unknown> {
+  return responsesBridgeSingleton.requestToChatCompletions(b);
+}
+function responsesResponseFromChat(
+  b: Record<string, unknown>,
+): Record<string, unknown> {
+  const r = responsesBridgeSingleton.responseFromChatCompletions(b);
+  return (r ?? b) as Record<string, unknown>;
+}
+
+// --- thinking helpers ------------------------------------------------------
+
+function applyThinking(
+  conv: ThinkingConverter,
+  fmt: Fmt,
+  body: Record<string, unknown>,
+): void {
+  try {
+    if (fmt === "chat") conv.applyToChatCompletion(body as never);
+    else if (fmt === "messages") conv.applyToAnthropicMessage(body as never);
+    else if (fmt === "responses") conv.applyToResponse(body as never);
+  } catch {
+    /* leave body untouched on transform error */
+  }
+}
+
+// Pick the streaming thinking transform for a provider format. Returns null
+// when there's no streaming thinking transform (e.g. responses).
+function thinkingStream(fmt: Fmt): NodeJS.ReadWriteStream | null {
+  if (fmt === "chat") return new SseThinkingTransform();
+  if (fmt === "messages") return new AnthropicThinkingTransform();
+  return null;
+}
+
+// --- header helpers --------------------------------------------------------
+
+function isEventStream(headers: IncomingMessage["headers"]): boolean {
+  return String(headers?.["content-type"] || "")
+    .toLowerCase()
+    .includes("text/event-stream");
+}
+function isJson(headers: IncomingMessage["headers"]): boolean {
+  if (
+    String(headers?.["content-type"] || "")
+      .toLowerCase()
+      .includes("application/json")
+  ) {
+    const enc = String(headers?.["content-encoding"] || "").toLowerCase();
+    return !enc || enc === "identity";
+  }
+  return false;
+}
+
+function filteredHeaders(
+  raw: IncomingMessage["headers"] | undefined,
+): Record<string, string | string[]> {
+  const out: Record<string, string | string[]> = {};
+  if (!raw) return out;
+  for (const [k, v] of Object.entries(raw)) {
+    if (v === undefined) continue;
+    if (HOP_BY_HOP.has(k.toLowerCase())) continue;
+    out[k] = v as string | string[];
+  }
+  return out;
+}
+
+function hostFromUrl(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return "";
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}

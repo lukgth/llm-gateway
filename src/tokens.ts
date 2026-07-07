@@ -5,7 +5,7 @@
 // stable across every model the gateway serves, and accurate enough in
 // aggregate for quota enforcement. Exact token counts reported by the
 // upstream (when available) are reconciled after the response arrives; see
-// proxy.ts reconcileUsage().
+// reconcileUsage() in gateway/engine.ts.
 //
 // All public functions are synchronous and safe to call from request
 // middleware. Counting never throws.
@@ -67,7 +67,8 @@ function countAnthropicBody(body: Record<string, unknown>): number {
   if (Array.isArray(body.messages)) {
     for (const m of body.messages) {
       if (!m || typeof m !== "object") continue;
-      total += PER_MSG_OVERHEAD + countContent((m as Record<string, unknown>).content);
+      total +=
+        PER_MSG_OVERHEAD + countContent((m as Record<string, unknown>).content);
     }
   }
   if (Array.isArray(body.tools)) {
@@ -109,7 +110,8 @@ function countResponsesBody(body: Record<string, unknown>): number {
     for (const item of body.input) {
       if (!item || typeof item !== "object") continue;
       const it = item as Record<string, unknown>;
-      if (it.content != null) total += PER_MSG_OVERHEAD + countContent(it.content);
+      if (it.content != null)
+        total += PER_MSG_OVERHEAD + countContent(it.content);
       else if (typeof it.arguments === "string")
         total += PER_MSG_OVERHEAD + countTextTokens(it.arguments);
       else if (it.output != null)
@@ -130,9 +132,12 @@ export function countInputTokens(body: unknown, path: string): number {
   if (!body || typeof body !== "object") return 0;
   const p = path.split("?")[0];
   try {
-    if (p.endsWith("/messages")) return countAnthropicBody(body as Record<string, unknown>);
-    if (p.endsWith("/chat/completions")) return countChatBody(body as Record<string, unknown>);
-    if (p.endsWith("/responses")) return countResponsesBody(body as Record<string, unknown>);
+    if (p.endsWith("/messages"))
+      return countAnthropicBody(body as Record<string, unknown>);
+    if (p.endsWith("/chat/completions"))
+      return countChatBody(body as Record<string, unknown>);
+    if (p.endsWith("/responses"))
+      return countResponsesBody(body as Record<string, unknown>);
   } catch {
     return 0;
   }
@@ -142,14 +147,17 @@ export function countInputTokens(body: unknown, path: string): number {
 // Read the requested max output tokens from a request body across shapes.
 // Returns undefined when the request didn't specify one (caller falls back
 // to the model's maxOutputTokens).
-export function readMaxOutputTokens(body: Record<string, unknown>): number | undefined {
+export function readMaxOutputTokens(
+  body: Record<string, unknown>,
+): number | undefined {
   const m = body as {
     max_tokens?: number;
     max_completion_tokens?: number;
     max_output_tokens?: number;
   };
   if (typeof m.max_tokens === "number") return m.max_tokens;
-  if (typeof m.max_completion_tokens === "number") return m.max_completion_tokens;
+  if (typeof m.max_completion_tokens === "number")
+    return m.max_completion_tokens;
   if (typeof m.max_output_tokens === "number") return m.max_output_tokens;
   return undefined;
 }

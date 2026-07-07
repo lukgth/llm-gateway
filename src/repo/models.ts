@@ -1,0 +1,296 @@
+// Models repository. Each model is an exposed alias with metadata plus an
+// ordered list of provider links (the fallback chain). The chain is stored in
+// `model_providers`; this module joins it back so callers always see the full
+// Model with its providers[] in priority order.
+
+import type { Database as DB } from "better-sqlite3";
+import {
+  DEFAULT_CAPABILITIES,
+  type Model,
+  type ModelCapabilities,
+  type ModelProviderLink,
+} from "../shared/types";
+import { stockAnthropicModel } from "../gateway/anthropic-stock-models";
+import { slugify } from "./providers";
+
+interface ModelRow {
+  id: string;
+  alias: string;
+  display_name: string | null;
+  context_window: number | null;
+  max_output_tokens: number | null;
+  enabled: number;
+  responses_native: number;
+  type: string;
+  capabilities: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface LinkRow {
+  model_id: string;
+  provider_id: string;
+  upstream_model: string;
+  priority: number;
+  enabled: number;
+  endpoint: string | null;
+}
+
+interface LinkJoinedRow extends LinkRow {
+  provider_name: string | null;
+  provider_enabled: number;
+}
+
+function parseCapabilities(raw: string): ModelCapabilities {
+  if (!raw) return DEFAULT_CAPABILITIES;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return { ...DEFAULT_CAPABILITIES, ...(parsed as ModelCapabilities) };
+    }
+  } catch {
+    /* fall through */
+  }
+  return DEFAULT_CAPABILITIES;
+}
+
+function mapModel(r: ModelRow, links: LinkJoinedRow[]): Model {
+  // Claude aliases always carry the official Anthropic capabilities (thinking
+  // types, effort levels, etc.) — the stock entry is authoritative and takes
+  // priority over whatever was saved in the DB, so the admin UI, admin API,
+  // and gateway listings can never drift from the real API's metadata.
+  const stock = stockAnthropicModel(r.alias);
+  return {
+    id: r.id,
+    alias: r.alias,
+    displayName: r.display_name,
+    contextWindow: r.context_window,
+    maxOutputTokens: r.max_output_tokens,
+    enabled: !!r.enabled,
+    responsesNative: !!r.responses_native,
+    type: r.type,
+    capabilities: stock
+      ? stock.capabilities
+      : parseCapabilities(r.capabilities),
+    capabilitiesLocked: !!stock,
+    providers: links
+      .filter((l) => l.model_id === r.id)
+      .sort((a, b) => a.priority - b.priority)
+      .map<ModelProviderLink>((l) => ({
+        providerId: l.provider_id,
+        providerName: l.provider_name,
+        upstreamModel: l.upstream_model,
+        priority: l.priority,
+        enabled: !!l.enabled,
+        endpoint: l.endpoint ?? null,
+      })),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+const LINK_JOIN =
+  "SELECT mp.model_id, mp.provider_id, mp.upstream_model, mp.priority, mp.enabled, mp.endpoint, " +
+  "p.name AS provider_name, p.enabled AS provider_enabled " +
+  "FROM model_providers mp LEFT JOIN providers p ON p.id = mp.provider_id";
+
+export function listModels(db: DB, includeDisabled = true): Model[] {
+  const rows = db
+    .prepare("SELECT * FROM models ORDER BY sort_order, alias")
+    .all() as ModelRow[];
+  const links = db.prepare(LINK_JOIN).all() as LinkJoinedRow[];
+  const all = rows.map((r) => mapModel(r, links));
+  return includeDisabled ? all : all.filter((m) => m.enabled);
+}
+
+export function getModel(db: DB, id: string): Model | null {
+  const row = db.prepare("SELECT * FROM models WHERE id = ?").get(id) as
+    ModelRow | undefined;
+  if (!row) return null;
+  const links = db
+    .prepare(`${LINK_JOIN} WHERE mp.model_id = ?`)
+    .all(id) as LinkJoinedRow[];
+  return mapModel(row, links);
+}
+
+export function getModelByAlias(db: DB, alias: string): Model | null {
+  const row = db.prepare("SELECT * FROM models WHERE alias = ?").get(alias) as
+    ModelRow | undefined;
+  if (!row) return null;
+  return getModel(db, row.id);
+}
+
+export interface ModelInput {
+  id?: string;
+  alias: string;
+  displayName?: string | null;
+  contextWindow?: number | null;
+  maxOutputTokens?: number | null;
+  enabled?: boolean;
+  responsesNative?: boolean;
+  type?: string;
+  capabilities?: ModelCapabilities;
+  providers?: Array<{
+    providerId: string;
+    upstreamModel: string;
+    enabled?: boolean;
+    endpoint?: string | null;
+  }>;
+}
+
+export function createModel(db: DB, input: ModelInput): Model {
+  const now = new Date().toISOString();
+  const id = input.id || slugify(input.alias) || `model-${Date.now()}`;
+  if (getModel(db, id)) throw new Error(`Model '${id}' already exists`);
+  if (getModelByAlias(db, input.alias))
+    throw new Error(`Model alias '${input.alias}' is already in use`);
+
+  writeModel(db, "insert", id, now, now, input);
+
+  const providers = input.providers ?? [];
+  let priority = 0;
+  for (const p of providers) {
+    upsertLink(
+      db,
+      id,
+      p.providerId,
+      p.upstreamModel,
+      priority++,
+      p.enabled,
+      p.endpoint,
+    );
+  }
+  return getModel(db, id)!;
+}
+
+export function updateModel(
+  db: DB,
+  id: string,
+  input: Partial<ModelInput>,
+): Model | null {
+  const existing = getModel(db, id);
+  if (!existing) return null;
+  const now = new Date().toISOString();
+  const merged: ModelInput = {
+    alias: input.alias ?? existing.alias,
+    displayName:
+      input.displayName !== undefined
+        ? input.displayName
+        : existing.displayName,
+    contextWindow:
+      input.contextWindow !== undefined
+        ? input.contextWindow
+        : existing.contextWindow,
+    maxOutputTokens:
+      input.maxOutputTokens !== undefined
+        ? input.maxOutputTokens
+        : existing.maxOutputTokens,
+    enabled: input.enabled !== undefined ? input.enabled : existing.enabled,
+    responsesNative:
+      input.responsesNative !== undefined
+        ? input.responsesNative
+        : existing.responsesNative,
+    type: input.type ?? existing.type,
+    capabilities: input.capabilities ?? existing.capabilities,
+  };
+  // Alias uniqueness check on change.
+  if (merged.alias !== existing.alias && getModelByAlias(db, merged.alias)) {
+    throw new Error(`Model alias '${merged.alias}' is already in use`);
+  }
+  writeModel(db, "update", id, existing.createdAt, now, merged);
+
+  if (input.providers) {
+    db.prepare("DELETE FROM model_providers WHERE model_id = ?").run(id);
+    let priority = 0;
+    for (const p of input.providers) {
+      upsertLink(
+        db,
+        id,
+        p.providerId,
+        p.upstreamModel,
+        priority++,
+        p.enabled,
+        p.endpoint,
+      );
+    }
+  }
+  return getModel(db, id);
+}
+
+function writeModel(
+  db: DB,
+  mode: "insert" | "update",
+  id: string,
+  createdAt: string,
+  updatedAt: string,
+  input: ModelInput,
+): void {
+  // For Claude aliases the official Anthropic capabilities win over whatever
+  // the client submitted — keeps the stored row in sync with what mapModel
+  // serves.
+  const stock = stockAnthropicModel(input.alias);
+  const params = {
+    id,
+    alias: input.alias,
+    display_name: input.displayName ?? null,
+    context_window: input.contextWindow ?? null,
+    max_output_tokens: input.maxOutputTokens ?? null,
+    enabled: input.enabled === false ? 0 : 1,
+    responses_native: input.responsesNative ? 1 : 0,
+    type: input.type ?? "openai",
+    capabilities: JSON.stringify(
+      stock?.capabilities ?? input.capabilities ?? DEFAULT_CAPABILITIES,
+    ),
+    sort_order: 0,
+    created_at: createdAt,
+    updated_at: updatedAt,
+  };
+  if (mode === "insert") {
+    db.prepare(
+      `INSERT INTO models
+        (id, alias, display_name, context_window, max_output_tokens, enabled,
+         responses_native, type, capabilities, sort_order, created_at, updated_at)
+       VALUES (@id, @alias, @display_name, @context_window, @max_output_tokens,
+         @enabled, @responses_native, @type, @capabilities, @sort_order, @created_at, @updated_at)`,
+    ).run(params);
+  } else {
+    db.prepare(
+      `UPDATE models SET
+         alias=@alias, display_name=@display_name, context_window=@context_window,
+         max_output_tokens=@max_output_tokens, enabled=@enabled,
+         responses_native=@responses_native, type=@type, capabilities=@capabilities,
+         updated_at=@updated_at
+       WHERE id=@id`,
+    ).run(params);
+  }
+}
+
+function upsertLink(
+  db: DB,
+  modelId: string,
+  providerId: string,
+  upstreamModel: string,
+  priority: number,
+  enabled?: boolean,
+  endpoint?: string | null,
+): void {
+  db.prepare(
+    `INSERT INTO model_providers (model_id, provider_id, upstream_model, priority, enabled, endpoint)
+     VALUES (@model_id, @provider_id, @upstream_model, @priority, @enabled, @endpoint)
+     ON CONFLICT(model_id, provider_id) DO UPDATE SET
+       upstream_model=@upstream_model, priority=@priority, enabled=@enabled, endpoint=@endpoint`,
+  ).run({
+    model_id: modelId,
+    provider_id: providerId,
+    upstream_model: upstreamModel,
+    priority,
+    enabled: enabled === false ? 0 : 1,
+    endpoint: endpoint || null,
+  });
+}
+
+export function deleteModel(db: DB, id: string): boolean {
+  const r = db.prepare("DELETE FROM models WHERE id = ?").run(id);
+  return r.changes > 0;
+}

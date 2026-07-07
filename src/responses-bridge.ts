@@ -233,8 +233,7 @@ export class ResponsesBridge {
         const detail =
           imageUrl && typeof imageUrl === "object"
             ? ((imageUrl as Record<string, unknown>).detail as
-                | string
-                | undefined)
+                string | undefined)
             : undefined;
         const img: Record<string, unknown> = {
           type: "image_url",
@@ -630,7 +629,13 @@ export class StreamingResponsesBridgeTransform extends Transform {
   private textOutputIndex = -1;
   private toolCallBlocks = new Map<
     number,
-    { index: string; name: string; blockIndex: number; itemId: string; outputIndex: number }
+    {
+      index: string;
+      name: string;
+      blockIndex: number;
+      itemId: string;
+      outputIndex: number;
+    }
   >();
   private finished = false;
   // Track all output items for correct type/id in output_item.done events
