@@ -577,9 +577,7 @@ interface ProviderLike {
 
 // GET {baseUrl}/v1/models with the provider's auth, preserving any path
 // prefix in baseUrl (e.g. https://host/api -> /api/v1/models).
-function probeModels(
-  p: ProviderLike,
-): Promise<{
+function probeModels(p: ProviderLike): Promise<{
   status: number | null;
   body: string;
   ms: number;

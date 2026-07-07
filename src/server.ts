@@ -109,11 +109,9 @@ export function createServerApp(
         err: (err as Error)?.stack || String(err),
       });
       if (!res.headersSent)
-        res
-          .status(500)
-          .json({
-            error: { type: "internal_error", message: "Internal error" },
-          });
+        res.status(500).json({
+          error: { type: "internal_error", message: "Internal error" },
+        });
     },
   );
 

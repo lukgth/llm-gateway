@@ -115,7 +115,9 @@ export default function Usage() {
           <CardHeader>
             <CardTitle>14-Day History</CardTitle>
             <CardAction>
-              <Badge variant="secondary">{fmtNum(data.today.total)} today</Badge>
+              <Badge variant="secondary">
+                {fmtNum(data.today.total)} today
+              </Badge>
             </CardAction>
           </CardHeader>
           <CardContent>

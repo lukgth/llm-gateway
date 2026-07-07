@@ -50,7 +50,9 @@ export default function Settings() {
     setBusy(scope);
     try {
       const r = await api.clearLogs(scope);
-      toast.success(`Removed ${fmtNum(r.removed)} log row${r.removed === 1 ? "" : "s"}`);
+      toast.success(
+        `Removed ${fmtNum(r.removed)} log row${r.removed === 1 ? "" : "s"}`,
+      );
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : (e as Error).message);
     } finally {

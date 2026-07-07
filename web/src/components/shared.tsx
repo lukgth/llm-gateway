@@ -160,8 +160,16 @@ export function TokenChart({
       <AreaChart data={data} margin={{ left: 4, right: 8, top: 4 }}>
         <defs>
           <linearGradient id="fillTokens" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="var(--color-tokens)" stopOpacity={0.7} />
-            <stop offset="95%" stopColor="var(--color-tokens)" stopOpacity={0.05} />
+            <stop
+              offset="5%"
+              stopColor="var(--color-tokens)"
+              stopOpacity={0.7}
+            />
+            <stop
+              offset="95%"
+              stopColor="var(--color-tokens)"
+              stopOpacity={0.05}
+            />
           </linearGradient>
         </defs>
         <CartesianGrid vertical={false} strokeOpacity={0.4} />

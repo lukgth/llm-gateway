@@ -125,9 +125,7 @@ export class ForwardingEngine {
 
   // --- chain + route --------------------------------------------------------
 
-  private buildChain(
-    model: Model | null,
-  ): Array<{
+  private buildChain(model: Model | null): Array<{
     provider: Provider;
     upstreamModel: string;
     endpoint: string | null;
@@ -844,7 +842,13 @@ export class ForwardingEngine {
     const total = (usage.input ?? 0) + (usage.output ?? 0);
     if (total > 0) {
       addUsage(this.db, ctx.apiKey.id, total);
-      addBreakdown(this.db, ctx.apiKey.id, ctx.alias, provider?.id ?? null, total);
+      addBreakdown(
+        this.db,
+        ctx.apiKey.id,
+        ctx.alias,
+        provider?.id ?? null,
+        total,
+      );
     }
   }
 

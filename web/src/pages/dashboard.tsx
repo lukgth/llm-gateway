@@ -137,7 +137,10 @@ export default function Dashboard() {
                     <TableRow key={m.model}>
                       <TableCell className="font-mono text-primary">
                         <span className="flex items-center gap-2">
-                          <ModelIcon alias={m.model} type={modelTypes[m.model]} />
+                          <ModelIcon
+                            alias={m.model}
+                            type={modelTypes[m.model]}
+                          />
                           {m.model}
                         </span>
                       </TableCell>

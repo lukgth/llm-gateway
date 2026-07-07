@@ -278,10 +278,7 @@ export interface RebuildResult {
 // successful (2xx) requests with a known key contribute, matching how the live
 // settle path attributes usage. Runs in a single transaction so the counters
 // are never observed half-rebuilt.
-export function rebuildUsageFromLogs(
-  db: DB,
-  day?: string,
-): RebuildResult {
+export function rebuildUsageFromLogs(db: DB, day?: string): RebuildResult {
   const result: RebuildResult = {
     days: 0,
     usageRows: 0,

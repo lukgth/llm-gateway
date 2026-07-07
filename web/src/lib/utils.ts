@@ -21,7 +21,8 @@ export function fmtTokens(n: number | null | undefined): string {
   if (n == null) return "—";
   const abs = Math.abs(n);
   if (abs < 1000) return String(Math.round(n));
-  if (abs < 1_000_000) return `${trimDecimals(n / 1000, abs < 10_000 ? 1 : 0)}k`;
+  if (abs < 1_000_000)
+    return `${trimDecimals(n / 1000, abs < 10_000 ? 1 : 0)}k`;
   return `${trimDecimals(n / 1_000_000, abs < 10_000_000 ? 2 : 1)}M`;
 }
 

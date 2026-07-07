@@ -83,7 +83,9 @@ export class SseUsageObserver extends Transform {
     // Usage can live at a few nesting levels depending on the wire format.
     this.readUsage(obj.usage);
     this.readUsage((obj.message as Record<string, unknown> | undefined)?.usage);
-    this.readUsage((obj.response as Record<string, unknown> | undefined)?.usage);
+    this.readUsage(
+      (obj.response as Record<string, unknown> | undefined)?.usage,
+    );
     // Fallback: accumulate streamed assistant text so we can estimate output
     // tokens when the upstream never sends a usage block.
     this.readDelta(obj);
@@ -92,12 +94,9 @@ export class SseUsageObserver extends Transform {
   private readUsage(u: unknown): void {
     if (!u || typeof u !== "object") return;
     const o = u as Record<string, unknown>;
-    const input =
-      num(o.input_tokens) ?? num(o.prompt_tokens) ?? null;
-    const output =
-      num(o.output_tokens) ?? num(o.completion_tokens) ?? null;
-    if (input != null)
-      this.seenInput = Math.max(this.seenInput ?? 0, input);
+    const input = num(o.input_tokens) ?? num(o.prompt_tokens) ?? null;
+    const output = num(o.output_tokens) ?? num(o.completion_tokens) ?? null;
+    if (input != null) this.seenInput = Math.max(this.seenInput ?? 0, input);
     if (output != null)
       this.seenOutput = Math.max(this.seenOutput ?? 0, output);
     const cached = readCachedTokens(o);
@@ -118,8 +117,7 @@ export class SseUsageObserver extends Transform {
     if (Array.isArray(choices)) {
       for (const c of choices) {
         const cd = (c as Record<string, unknown>)?.delta as
-          | Record<string, unknown>
-          | undefined;
+          Record<string, unknown> | undefined;
         if (cd && typeof cd.content === "string")
           this.fallbackChars += cd.content.length;
       }
