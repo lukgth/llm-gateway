@@ -9,8 +9,14 @@
 
 // Per-field cap. Big enough to show structure + tool calls + the head of long
 // content; small enough to keep the DB bounded. Truncation is marked inline.
-export const MAX_DEBUG_FIELD = 16_000;
+export const MAX_DEBUG_FIELD = 64_000;
 const MAX_STR = 2_000; // per individual string (a message's text, an arg blob)
+// Message-window budget so a long conversation can't blow past the field cap.
+// We keep the FIRST few messages unconditionally (system/setup turns that frame
+// the whole conversation) plus the most recent ones (the live context), with a
+// marker noting how many middle turns were dropped.
+const KEEP_HEAD = 5; // always-kept opening messages
+const KEEP_TAIL = 35; // most-recent messages
 
 // Truncate a string with a visible marker so debuggers know it was clipped.
 function clip(s: string, max = MAX_STR): string {
@@ -18,17 +24,71 @@ function clip(s: string, max = MAX_STR): string {
   return `${s.slice(0, max)}…[+${s.length - max} chars]`;
 }
 
-// Serialize + hard-cap the whole blob (defence in depth against huge inputs).
+// Serialize the distilled summary, always returning VALID JSON. On overflow it
+// does NOT slice the serialized string (that yields un-parseable JSON). If the
+// summary carries a `messages` array (the usual bloat source), it drops older
+// messages a chunk at a time until the blob fits, so the result stays a
+// browsable tree. Only when even a message-free summary overflows does it fall
+// back to a small valid marker object.
 function pack(obj: unknown): string {
-  let s: string;
+  const fits = (o: unknown): string | null => {
+    let s: string;
+    try {
+      s = JSON.stringify(o);
+    } catch {
+      return null;
+    }
+    return s.length <= MAX_DEBUG_FIELD ? s : null;
+  };
+
+  const first = fits(obj);
+  if (first) return first;
+
+  // Structured degradation: keep the first KEEP_HEAD messages unconditionally,
+  // then shrink the recent-tail window until the blob fits. The opening turns
+  // (system/setup) are preserved even under heavy truncation.
+  const maybe = obj as Record<string, unknown> | null;
+  if (maybe && typeof maybe === "object" && Array.isArray(maybe.messages)) {
+    const base = maybe as Record<string, unknown> & { messages: unknown[] };
+    for (let tail = KEEP_TAIL; tail >= 0; tail = Math.floor(tail / 2)) {
+      const s = fits({
+        ...base,
+        messages: windowMessages(base.messages, KEEP_HEAD, tail),
+      });
+      if (s) return s;
+      if (tail === 0) break;
+    }
+  }
+
+  // Last resort: a compact, always-parseable marker (e.g. one giant single
+  // message). _preview is a JSON-escaped string, so the whole thing parses.
+  let raw = "";
   try {
-    s = JSON.stringify(obj);
+    raw = JSON.stringify(obj);
   } catch {
     return '{"_error":"unserializable"}';
   }
-  return s.length <= MAX_DEBUG_FIELD
-    ? s
-    : `${s.slice(0, MAX_DEBUG_FIELD)}…[+${s.length - MAX_DEBUG_FIELD} chars]`;
+  return JSON.stringify({
+    _truncated: `payload exceeded ${MAX_DEBUG_FIELD} chars (was ${raw.length})`,
+    _preview: raw.slice(0, 4_000),
+  });
+}
+
+// Trim a distilled messages array to KEEP_HEAD opening turns + `tail` most
+// recent turns, with a `_dropped` marker in the middle for the omitted span.
+// When head+tail already covers everything, the array is returned unchanged.
+function windowMessages<T>(
+  messages: T[],
+  head = KEEP_HEAD,
+  tail = KEEP_TAIL,
+): Array<T | { _dropped: string }> {
+  if (messages.length <= head + tail) return messages;
+  const dropped = messages.length - head - tail;
+  return [
+    ...messages.slice(0, head),
+    { _dropped: `${dropped} message${dropped === 1 ? "" : "s"} omitted` },
+    ...messages.slice(-tail),
+  ];
 }
 
 // Reduce a message `content` field (string or array of parts) to a compact,
@@ -96,12 +156,16 @@ function summarizeTools(tools: unknown): unknown {
 // model. Captures messages, system prompt, tools, tool_choice and sampling.
 export function captureRequest(body: Record<string, unknown>): string {
   const messages = Array.isArray(body.messages)
-    ? (body.messages as Array<Record<string, unknown>>).map((m) => ({
-        role: m.role,
-        content: summarizeContent(m.content),
-        ...(m.tool_calls ? { tool_calls: summarizeContent(m.tool_calls) } : {}),
-        ...(m.name ? { name: m.name } : {}),
-      }))
+    ? windowMessages(
+        (body.messages as Array<Record<string, unknown>>).map((m) => ({
+          role: m.role,
+          content: summarizeContent(m.content),
+          ...(m.tool_calls
+            ? { tool_calls: summarizeContent(m.tool_calls) }
+            : {}),
+          ...(m.name ? { name: m.name } : {}),
+        })),
+      )
     : undefined;
 
   // Responses API uses `input` + `instructions` instead of messages/system.

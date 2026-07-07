@@ -201,3 +201,98 @@
     contain: layout style;
   }
 }
+
+/* --- JSON tree (react-json-view-lite, fully re-themed) -------------------- */
+/* Values render inline with their key + the tree bracket on one row; children
+   indent under a subtle guide line. Colors use the app's palette so it reads
+   like an editor in both themes. */
+@layer components {
+  .jt-container {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1.55;
+    color: var(--foreground);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  /* Each object/array row + its indented children. The library nests these as
+     <ul>/<li>; strip list styling and add a left guide rule. */
+  .jt-children {
+    margin: 0;
+    padding: 0 0 0 0.75rem;
+    list-style: none;
+    border-left: 1px solid color-mix(in oklch, var(--border) 65%, transparent);
+  }
+  .jt-row {
+    list-style: none;
+    padding: 0.5px 0;
+  }
+  /* Key + arrow + value all sit on the same baseline row. */
+  .jt-label {
+    color: var(--color-sky-700);
+    margin-right: 0.1rem;
+  }
+  .dark .jt-label {
+    color: var(--color-sky-300);
+  }
+  .jt-clickable {
+    cursor: pointer;
+    border-radius: 0.25rem;
+  }
+  .jt-clickable:hover {
+    background: color-mix(in oklch, var(--muted) 70%, transparent);
+  }
+  /* Disclosure arrow, inline before the key. */
+  .jt-arrow {
+    display: inline-block;
+    width: 0.85rem;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.7rem;
+  }
+  .jt-arrow-closed::after {
+    content: "\25B8"; /* ▸ */
+  }
+  .jt-arrow-open::after {
+    content: "\25BE"; /* ▾ */
+  }
+  /* "…" shown on a collapsed node, between its brackets. */
+  .jt-collapsed {
+    color: var(--muted-foreground);
+    opacity: 0.6;
+    margin: 0 0.15rem;
+  }
+  .jt-collapsed::after {
+    content: "\2026"; /* … */
+  }
+  .jt-punct {
+    color: color-mix(in oklch, var(--muted-foreground) 80%, transparent);
+  }
+  /* Value colors by type. */
+  .jt-string {
+    color: var(--color-emerald-600);
+  }
+  .dark .jt-string {
+    color: var(--color-emerald-400);
+  }
+  .jt-number {
+    color: var(--color-amber-600);
+  }
+  .dark .jt-number {
+    color: var(--color-amber-400);
+  }
+  .jt-boolean {
+    color: var(--color-violet-600);
+  }
+  .dark .jt-boolean {
+    color: var(--color-violet-400);
+  }
+  .jt-null {
+    color: var(--muted-foreground);
+    opacity: 0.75;
+  }
+  .jt-other {
+    color: var(--foreground);
+  }
+}
