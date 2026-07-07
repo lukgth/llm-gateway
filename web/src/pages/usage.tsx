@@ -15,7 +15,7 @@ import {
   Stat,
   Field,
   Pagination,
-  TokenBarChart,
+  TokenChart,
 } from "@/components/shared";
 import {
   Card,
@@ -119,7 +119,7 @@ export default function Usage() {
             </CardAction>
           </CardHeader>
           <CardContent>
-            <TokenBarChart
+            <TokenChart
               data={data.history}
               label={(h, isLast) =>
                 `${h.day} — ${fmtNum(h.tokens)} tokens${isLast ? " · so far today" : ""}`

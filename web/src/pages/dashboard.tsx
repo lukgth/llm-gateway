@@ -8,7 +8,7 @@ import {
   Stat,
   Spinner,
   EmptyState,
-  TokenBarChart,
+  TokenChart,
 } from "@/components/shared";
 import {
   Card,
@@ -105,7 +105,7 @@ export default function Dashboard() {
               <EmptyState msg="No usage in the last 24 hours" />
             ) : (
               <>
-                <TokenBarChart
+                <TokenChart
                   data={hourly}
                   label={(h, isLast) =>
                     `${fmtHourLabel(h.hour)} — ${fmtNum(h.tokens)} tokens${isLast ? " · current hour" : ""}`

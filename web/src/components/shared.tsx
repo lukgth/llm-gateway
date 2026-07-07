@@ -141,12 +141,14 @@ function niceCeil(max: number): number {
   return mult * pow;
 }
 
-// A compact bar chart with a labelled, auto-scaled Y-axis. Points are
-// value-scaled against a "nice" ceiling and evenly spaced across the width, so
-// the series always fills the plot regardless of how many buckets it has.
-// `highlightLast` renders the final bar solid (e.g. the still-accumulating
-// current hour/day). `label(point)` builds each bar's hover tooltip.
-export function TokenBarChart<T extends { tokens: number }>({
+// A compact filled area/line chart with a labelled, auto-scaled Y-axis.
+// Reads well for both trending and sparse data — a single non-zero bucket
+// still shows a clear peak with filled area beneath, rather than one lone bar.
+// Values are scaled against a "nice" round ceiling; points are evenly spaced
+// across the width so the series always fills the plot. `highlightLast` marks
+// the final point (e.g. the still-accumulating current hour/day) with a dot.
+// `label(point)` builds each point's hover tooltip.
+export function TokenChart<T extends { tokens: number }>({
   data,
   label,
   axisTicks = 4,
@@ -167,6 +169,22 @@ export function TokenBarChart<T extends { tokens: number }>({
     (_, i) => (ceil / axisTicks) * (axisTicks - i),
   );
 
+  const n = data.length;
+  // Point coordinates in a 100×100 viewBox (y inverted: 0 = top = ceil).
+  const x = (i: number) => (n <= 1 ? 50 : (i / (n - 1)) * 100);
+  const y = (v: number) => 100 - (v / ceil) * 100;
+  const pts = data.map((d, i) => ({ x: x(i), y: y(d.tokens) }));
+
+  const linePath = pts.length
+    ? pts.map((p, i) => `${i ? "L" : "M"}${p.x},${p.y}`).join(" ")
+    : "";
+  // Close the area down to the baseline at both ends so the fill sits under
+  // the line.
+  const areaPath = pts.length
+    ? `${linePath} L${pts[pts.length - 1].x},100 L${pts[0].x},100 Z`
+    : "";
+  const last = pts[pts.length - 1];
+
   return (
     <div className="flex gap-2">
       {/* Y-axis: nice round tick labels aligned to the gridlines. */}
@@ -183,38 +201,58 @@ export function TokenBarChart<T extends { tokens: number }>({
         ))}
       </div>
 
-      {/* Plot: gridlines behind, bars in front. */}
+      {/* Plot: gridlines behind, area+line SVG, invisible hover cells on top. */}
       <div className={cn("relative flex-1", height)}>
         <div className="absolute inset-0 flex flex-col justify-between">
           {ticks.map((_, i) => (
             <div key={i} className="border-t border-border/40" />
           ))}
         </div>
-        <div className="absolute inset-0 flex items-end gap-px">
-          {data.map((d, i) => {
-            const isLast = i === data.length - 1;
-            const solid = highlightLast && isLast;
-            return (
-              <div
-                key={i}
-                className="group relative flex-1"
-                title={label(d, isLast)}
-              >
-                <div
-                  className={cn(
-                    "w-full rounded-t-sm transition-colors",
-                    solid
-                      ? "bg-violet-500 group-hover:bg-violet-400"
-                      : "bg-violet-500/30 group-hover:bg-violet-500/60",
-                  )}
-                  style={{
-                    height: `${(d.tokens / ceil) * 100}%`,
-                    minHeight: d.tokens > 0 ? "2px" : "0",
-                  }}
-                />
-              </div>
-            );
-          })}
+
+        <svg
+          className="absolute inset-0 h-full w-full overflow-visible"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          <defs>
+            <linearGradient id="tokenFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--color-violet-500)" stopOpacity="0.35" />
+              <stop offset="100%" stopColor="var(--color-violet-500)" stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+          {areaPath && <path d={areaPath} fill="url(#tokenFill)" stroke="none" />}
+          {linePath && (
+            <path
+              d={linePath}
+              fill="none"
+              stroke="var(--color-violet-500)"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+          {highlightLast && last && (
+            <circle
+              cx={last.x}
+              cy={last.y}
+              r="2.5"
+              fill="var(--color-violet-500)"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+        </svg>
+
+        {/* Per-point hover targets for tooltips (invisible, full-height). */}
+        <div className="absolute inset-0 flex">
+          {data.map((d, i) => (
+            <div
+              key={i}
+              className="h-full flex-1"
+              title={label(d, i === n - 1)}
+            />
+          ))}
         </div>
       </div>
     </div>
