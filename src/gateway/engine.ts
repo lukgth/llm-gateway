@@ -32,6 +32,9 @@ import { SseThinkingTransform } from "../streaming-thinking";
 import { AnthropicThinkingTransform } from "../streaming-anthropic";
 import { SsePingKeepAlive } from "../sse-ping";
 import { SseUsageObserver } from "./sse-usage";
+import { requestJson, type JsonResponse } from "./http-json";
+import { detectWebTools } from "./web-tools";
+import { runWebToolLoop } from "./web-tool-loop";
 import { stripInvisible } from "../utils";
 import { readResponseUsage } from "../tokens";
 import { listProviders } from "../repo/providers";
@@ -108,6 +111,13 @@ export interface ForwardContext {
   debug: boolean;
   /** Distilled client request JSON, computed once when debug is on. */
   debugRequest?: string | null;
+  /** Firecrawl-backed web tools config; when enabled, requests carrying the
+   *  hosted web_search / web_fetch tools are handled by the gateway's loop. */
+  webTools?: {
+    enabled: boolean;
+    firecrawlBaseUrl: string;
+    firecrawlApiKey: string;
+  };
 }
 
 interface AttemptResult {
@@ -123,6 +133,13 @@ interface AttemptResult {
   debugResponse?: string | null;
   reason?: string;
   error?: string | null;
+}
+
+// Upstream-reported usage shape (subset of readResponseUsage's return).
+interface StreamUsageLike {
+  input?: number;
+  output?: number;
+  cached?: number;
 }
 
 export class ForwardingEngine {
@@ -252,6 +269,21 @@ export class ForwardingEngine {
         ctx.debugRequest = null;
       }
     }
+
+    // Firecrawl-backed web tools: if enabled and this Messages request asks for
+    // the hosted web_search / web_fetch tools, hand the whole request to the
+    // agent loop (which the gateway runs itself) instead of a single proxied
+    // turn. Only Messages-format clients (e.g. Claude Code) use these tools;
+    // other paths fall through to the normal proxy untouched.
+    if (
+      ctx.webTools?.enabled &&
+      pathFmt(ctx.clientPath) === "messages" &&
+      this.hasWebTools(ctx.requestBody)
+    ) {
+      await this.forwardWebToolLoop(req, res, ctx, startedAt);
+      return;
+    }
+
     const chain = this.buildChain(ctx.resolvedModel);
     if (chain.length === 0) {
       this.logger.error("no_providers", { model: ctx.alias });
@@ -896,6 +928,230 @@ export class ForwardingEngine {
         total,
       );
     }
+  }
+
+  // --- single non-streaming turn (for the web-tool loop) --------------------
+  //
+  // Runs ONE upstream turn in Anthropic Messages shape and returns the parsed
+  // Messages response. Reuses the same provider chain, routing and conversion
+  // as forward(), but always non-streaming and self-contained (no client `res`
+  // involvement). Used by the web-tool agent loop; the normal forward() path is
+  // untouched. Returns { ok:false } with a reason on total failure.
+  async runMessagesTurn(
+    req: Request,
+    ctx: ForwardContext,
+    messagesBody: Record<string, unknown>,
+  ): Promise<
+    | { ok: true; body: Record<string, unknown>; usage: StreamUsageLike }
+    | { ok: false; status: number; reason: string }
+  > {
+    const chain = this.buildChain(ctx.resolvedModel);
+    if (chain.length === 0)
+      return { ok: false, status: 502, reason: "no providers" };
+
+    let lastReason = "no attempts";
+    let lastStatus = 502;
+    for (const entry of chain) {
+      const route = this.buildRoute(
+        "/v1/messages",
+        entry.provider,
+        entry.endpoint,
+      );
+      if (route.unsupported) {
+        lastReason = route.unsupported;
+        continue;
+      }
+      const attempts = Math.max(1, entry.provider.retryAttempts);
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        const r = await this.runOneTurnAttempt(
+          req,
+          entry.provider,
+          entry.upstreamModel,
+          route,
+          messagesBody,
+        );
+        if (r.ok) return r;
+        lastReason = r.reason;
+        lastStatus = r.status;
+        if (r.retryable && attempt < attempts)
+          await sleep(entry.provider.retryIntervalMs);
+        else if (!r.retryable) break; // move to next provider
+      }
+    }
+    return { ok: false, status: lastStatus, reason: lastReason };
+  }
+
+  private async runOneTurnAttempt(
+    req: Request,
+    provider: Provider,
+    upstreamModel: string,
+    route: Route,
+    messagesBody: Record<string, unknown>,
+  ): Promise<
+    | { ok: true; body: Record<string, unknown>; usage: StreamUsageLike }
+    | { ok: false; status: number; reason: string; retryable: boolean }
+  > {
+    // Convert Messages -> provider format, force non-streaming, stamp model.
+    let body: Record<string, unknown>;
+    try {
+      body = route.reqConvert
+        ? route.reqConvert({ ...messagesBody })
+        : { ...messagesBody };
+    } catch (err) {
+      return {
+        ok: false,
+        status: 500,
+        reason: `request conversion failed: ${(err as Error).message}`,
+        retryable: false,
+      };
+    }
+    body.model = upstreamModel;
+    delete body.stream;
+    const serialized = JSON.stringify(body);
+
+    let upstreamUrl: URL;
+    try {
+      upstreamUrl = new URL(route.forwardPath, provider.baseUrl);
+    } catch {
+      return {
+        ok: false,
+        status: 500,
+        reason: `bad provider baseUrl: ${provider.baseUrl}`,
+        retryable: false,
+      };
+    }
+    const key = this.pickKey(provider);
+    const headers = this.buildHeaders(
+      req,
+      provider,
+      key,
+      Buffer.byteLength(serialized),
+    );
+
+    let res: JsonResponse;
+    try {
+      res = await requestJson({
+        url: upstreamUrl.toString(),
+        headers,
+        body: serialized,
+        timeoutMs: provider.requestTimeoutMs,
+        tlsVerify: provider.tlsVerify,
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        status: 502,
+        reason: (err as Error).message,
+        retryable: true,
+      };
+    }
+
+    if (RETRY_STATUS.has(res.status))
+      return {
+        ok: false,
+        status: res.status,
+        reason: `status ${res.status}`,
+        retryable: true,
+      };
+    if (res.status < 200 || res.status >= 300)
+      return {
+        ok: false,
+        status: res.status,
+        reason: `upstream ${res.status}: ${res.text.slice(0, 300)}`,
+        retryable: false,
+      };
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(stripInvisible(res.text)) as Record<string, unknown>;
+    } catch (err) {
+      return {
+        ok: false,
+        status: 502,
+        reason: `bad upstream JSON: ${(err as Error).message}`,
+        retryable: false,
+      };
+    }
+
+    // Bridge provider-shape -> Messages shape so the loop always sees Messages.
+    applyThinking(this.thinking, route.providerFmt, parsed);
+    let messages: Record<string, unknown> = parsed;
+    if (route.convert && route.respConvert) {
+      try {
+        messages = route.respConvert(parsed);
+      } catch {
+        messages = parsed;
+      }
+    }
+    const usage = readResponseUsage(parsed);
+    return { ok: true, body: messages, usage };
+  }
+
+  // --- web-tool loop hook ---------------------------------------------------
+
+  private hasWebTools(body: Record<string, unknown>): boolean {
+    const p = detectWebTools(body);
+    return p.search || p.fetch;
+  }
+
+  // Drive the Firecrawl-backed web-tool loop for one request, then settle usage
+  // + write the request log exactly once (same accounting as a normal request).
+  private async forwardWebToolLoop(
+    req: Request,
+    res: Response,
+    ctx: ForwardContext,
+    startedAt: number,
+  ): Promise<void> {
+    const present = detectWebTools(ctx.requestBody);
+    const cfg = ctx.webTools!;
+    // Pick a provider just for logging attribution (the loop selects internally
+    // per turn via runMessagesTurn -> buildChain).
+    const chain = this.buildChain(ctx.resolvedModel);
+    const provider = chain[0]?.provider ?? null;
+    const upstreamModel = chain[0]?.upstreamModel ?? null;
+
+    this.logger.info("web_tool_loop_start", {
+      model: ctx.alias,
+      search: present.search,
+      fetch: present.fetch,
+      stream: ctx.isStream,
+    });
+
+    let result: { status: number; usage: StreamUsageLike; error: string | null };
+    try {
+      result = await runWebToolLoop(req, res, ctx, present, {
+        engine: this,
+        logger: this.logger,
+        firecrawl: {
+          baseUrl: cfg.firecrawlBaseUrl || undefined,
+          apiKey: cfg.firecrawlApiKey || null,
+        },
+      });
+    } catch (err) {
+      result = {
+        status: 502,
+        usage: {},
+        error: `web-tool loop crashed: ${(err as Error).message}`,
+      };
+    }
+
+    if (result.error && !res.headersSent) {
+      this.finish502(res, result.error);
+    }
+
+    this.settleUsage(ctx, provider, result.usage);
+    this.recordLog(
+      ctx,
+      provider,
+      upstreamModel,
+      result.error ? result.status : 200,
+      result.usage.input ?? (ctx.inputTokens || null),
+      result.usage.output ?? null,
+      result.usage.cached ?? null,
+      result.error ?? null,
+      startedAt,
+      null,
+    );
   }
 
   // --- request logging ------------------------------------------------------

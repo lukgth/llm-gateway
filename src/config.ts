@@ -43,6 +43,12 @@ export interface ConfigJson {
   upstreamApiKey?: string;
   upstreamTlsVerify?: boolean;
   gatewayApiKeys?: unknown;
+  // Firecrawl-backed web tools (seeds settings.webToolsFirecrawl / *Url / *Key).
+  webTools?: {
+    firecrawl?: boolean;
+    firecrawlBaseUrl?: string;
+    firecrawlApiKey?: string;
+  };
   models?: {
     mappings?: Record<string, unknown>;
     restricted?: string[];

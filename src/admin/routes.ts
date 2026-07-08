@@ -405,6 +405,9 @@ export function adminRouter(
       ssePingInterval: s.ssePingInterval,
       requestLogRetentionDays: s.requestLogRetentionDays,
       debugLogging: s.debugLogging,
+      webToolsFirecrawl: s.webToolsFirecrawl,
+      firecrawlBaseUrl: s.firecrawlBaseUrl,
+      firecrawlApiKey: s.firecrawlApiKey,
     };
   };
 
@@ -431,6 +434,12 @@ export function adminRouter(
       patch.requestLogRetentionDays = body.requestLogRetentionDays;
     if (typeof body.debugLogging === "boolean")
       patch.debugLogging = body.debugLogging;
+    if (typeof body.webToolsFirecrawl === "boolean")
+      patch.webToolsFirecrawl = body.webToolsFirecrawl;
+    if (typeof body.firecrawlBaseUrl === "string")
+      patch.firecrawlBaseUrl = body.firecrawlBaseUrl;
+    if (typeof body.firecrawlApiKey === "string")
+      patch.firecrawlApiKey = body.firecrawlApiKey;
     saveSettings(db, patch);
     pipeline.reload();
     res.json(publicSettings());

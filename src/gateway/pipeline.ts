@@ -288,6 +288,11 @@ export class GatewayPipeline {
         isStream: body.stream === true,
         client: detectClient(req),
         debug: this.registry.getSettings().debugLogging === true,
+        webTools: {
+          enabled: this.registry.getSettings().webToolsFirecrawl === true,
+          firecrawlBaseUrl: this.registry.getSettings().firecrawlBaseUrl || "",
+          firecrawlApiKey: this.registry.getSettings().firecrawlApiKey || "",
+        },
       };
       // Don't let an async rejection escape Express's sync handler.
       this.engine.forward(req, res, ctx).catch((err) => {

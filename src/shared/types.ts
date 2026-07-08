@@ -222,6 +222,13 @@ export interface Settings {
   /** Capture distilled request/response payloads into request logs for
    *  debugging (messages, tools, tool calls, response text). */
   debugLogging: boolean;
+  /** Back Anthropic's hosted web_search / web_fetch tools with Firecrawl so
+   *  they work against any upstream model (the gateway runs the tool loop). */
+  webToolsFirecrawl: boolean;
+  /** Firecrawl base URL (blank = public API). */
+  firecrawlBaseUrl: string;
+  /** Optional Firecrawl API key (blank = keyless). */
+  firecrawlApiKey: string;
   adminPasswordHash: string | null;
   jwtSecret: string;
 }
@@ -235,6 +242,9 @@ export const DEFAULT_SETTINGS: Settings = {
   ssePingInterval: 30000,
   requestLogRetentionDays: 30,
   debugLogging: false,
+  webToolsFirecrawl: false,
+  firecrawlBaseUrl: "",
+  firecrawlApiKey: "",
   adminPasswordHash: null,
   jwtSecret: "",
 };

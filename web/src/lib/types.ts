@@ -221,6 +221,9 @@ export interface Settings {
   ssePingInterval: number;
   requestLogRetentionDays: number;
   debugLogging: boolean;
+  webToolsFirecrawl: boolean;
+  firecrawlBaseUrl: string;
+  firecrawlApiKey: string;
 }
 
 export interface ProviderInput {

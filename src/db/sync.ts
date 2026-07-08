@@ -105,6 +105,7 @@ export function syncFromConfig(db: DB, cfg: ConfigJson): SyncResult {
   const hasSeed =
     !!cfg.upstream ||
     !!cfg.gatewayApiKeys ||
+    !!cfg.webTools ||
     Object.keys(m.mappings ?? {}).length > 0;
   if (!hasSeed) return NO_CHANGE;
 
@@ -115,6 +116,7 @@ export function syncFromConfig(db: DB, cfg: ConfigJson): SyncResult {
     upstreamApiKey: cfg.upstreamApiKey ?? null,
     upstreamTlsVerify: cfg.upstreamTlsVerify ?? null,
     gatewayApiKeys: cfg.gatewayApiKeys ?? null,
+    webTools: cfg.webTools ?? null,
     models: m,
   };
   const hash = sha256(JSON.stringify(seedSlice));
@@ -124,6 +126,7 @@ export function syncFromConfig(db: DB, cfg: ConfigJson): SyncResult {
 
   const tx = db.transaction(() => {
     // --- settings ---
+    const wt = cfg.webTools;
     saveSettings(db, {
       ...(m.prefix !== undefined && { modelPrefix: m.prefix }),
       ...(m.exposePrefix !== undefined && { exposePrefix: m.exposePrefix }),
@@ -131,6 +134,15 @@ export function syncFromConfig(db: DB, cfg: ConfigJson): SyncResult {
       ...(m.allowUnknown !== undefined && { allowUnknown: m.allowUnknown }),
       ...(m.defaultMaxOutputTokens !== undefined && {
         defaultMaxOutputTokens: m.defaultMaxOutputTokens,
+      }),
+      ...(wt?.firecrawl !== undefined && {
+        webToolsFirecrawl: wt.firecrawl,
+      }),
+      ...(wt?.firecrawlBaseUrl !== undefined && {
+        firecrawlBaseUrl: wt.firecrawlBaseUrl,
+      }),
+      ...(wt?.firecrawlApiKey !== undefined && {
+        firecrawlApiKey: wt.firecrawlApiKey,
       }),
     });
 

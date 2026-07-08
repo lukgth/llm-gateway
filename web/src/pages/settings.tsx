@@ -13,6 +13,7 @@ import { cn, fmtNum } from "@/lib/utils";
 const SECTIONS = [
   { id: "models", label: "Models" },
   { id: "limits", label: "Limits" },
+  { id: "webtools", label: "Web Tools" },
   { id: "maintenance", label: "Maintenance" },
   { id: "password", label: "Password" },
 ] as const;
@@ -248,6 +249,57 @@ export default function Settings() {
                   </span>
                 </span>
               </label>
+            </div>
+          </div>
+        )}
+
+        {active === "webtools" && (
+          <div className="rounded-lg border border-border bg-card p-5">
+            <h2 className="font-heading text-lg font-medium text-foreground mb-4">
+              Web Tools (Firecrawl)
+            </h2>
+            <div className="grid gap-4">
+              <label className="flex items-start gap-3">
+                <Switch
+                  checked={s.webToolsFirecrawl}
+                  onCheckedChange={(v) => set("webToolsFirecrawl", v)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="block text-sm text-foreground">
+                    Back web_search / web_fetch with Firecrawl
+                  </span>
+                  <span className="block text-[0.65rem] text-muted-foreground">
+                    When a client requests Anthropic&apos;s hosted{" "}
+                    <code className="text-primary">web_search</code> /{" "}
+                    <code className="text-primary">web_fetch</code> tools, the
+                    gateway runs the tool loop itself against Firecrawl — so
+                    search works against any upstream model, no Anthropic
+                    dependency. Requests that search are answered non-streaming
+                    while tools run, then delivered (streamed if requested).
+                  </span>
+                </span>
+              </label>
+              <Field
+                label="Firecrawl base URL"
+                hint="blank = public API (https://api.firecrawl.dev)"
+              >
+                <Input
+                  value={s.firecrawlBaseUrl}
+                  onChange={(e) => set("firecrawlBaseUrl", e.target.value)}
+                  placeholder="https://api.firecrawl.dev"
+                />
+              </Field>
+              <Field
+                label="Firecrawl API key"
+                hint="blank = keyless (public API needs no key)"
+              >
+                <Input
+                  value={s.firecrawlApiKey}
+                  onChange={(e) => set("firecrawlApiKey", e.target.value)}
+                  placeholder="(optional)"
+                />
+              </Field>
             </div>
           </div>
         )}
