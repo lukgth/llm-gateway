@@ -32,7 +32,13 @@ import {
   type WebToolsPresent,
 } from "./web-tools";
 import { messagesResponseToChat } from "../anthropic-openai-bridge";
-import { emitMessagesSse, emitChatSse } from "./web-tool-sse";
+import {
+  emitMessagesSse,
+  emitChatSse,
+  emitSseError,
+  startSseHeartbeat,
+  type SseHeartbeat,
+} from "./web-tool-sse";
 
 const MAX_ROUNDS = 6; // hard cap on tool round-trips per request
 // Max total web searches/fetches before we strip the tools and force the model
@@ -75,6 +81,14 @@ export async function runWebToolLoop(
   const fmt = clientFmt(ctx.clientPath);
   const wantStream = ctx.isStream;
 
+  // Streaming clients get an SSE keepalive for the whole loop: every upstream
+  // turn + web search runs BUFFERED before we can emit the final message, so
+  // without this the connection sits idle and a proxy drops it at ~90s. The
+  // heartbeat opens the SSE response now and pings until we're ready to emit.
+  const heartbeat: SseHeartbeat | null = wantStream
+    ? startSseHeartbeat(res, engine.pingInterval)
+    : null;
+
   // Short-circuit: Claude Code sends web search as a standalone /v1/messages
   // sub-request with ONLY web tools + a simple prompt, and just wants the
   // web_search_tool_result blocks back to render — it does its own synthesis in
@@ -93,6 +107,7 @@ export async function runWebToolLoop(
         fmt,
         wantStream,
         deps,
+        heartbeat,
       );
       return status;
     }
@@ -111,6 +126,15 @@ export async function runWebToolLoop(
     if (u.input) total.input = (total.input ?? 0) + u.input;
     if (u.output) total.output = (total.output ?? 0) + u.output;
     if (u.cached) total.cached = (total.cached ?? 0) + u.cached;
+  };
+
+  // Route a failure to the client correctly given the stream may already be
+  // open: emit an SSE error event (headers are committed) rather than relying on
+  // the caller's 502 path, which can no longer set a status.
+  const fail = (status: number, error: string) => {
+    heartbeat?.stop();
+    if (wantStream) emitSseError(res, error);
+    return { status, usage: total, error };
   };
 
   let finalMessage: Record<string, unknown> | null = null;
@@ -136,11 +160,10 @@ export async function runWebToolLoop(
       : { ...base, messages };
     const turn = await engine.runMessagesTurn(req, ctx, turnBody);
     if (!turn.ok) {
-      return {
-        status: turn.status,
-        usage: total,
-        error: `web-tool loop upstream failure: ${turn.reason}`,
-      };
+      return fail(
+        turn.status,
+        `web-tool loop upstream failure: ${turn.reason}`,
+      );
     }
     addUsage(turn.usage);
     const msg = turn.body;
@@ -275,11 +298,7 @@ export async function runWebToolLoop(
       };
       logger.warn("web_tool_loop_capped", { rounds: MAX_ROUNDS, searchCount });
     } else {
-      return {
-        status: 200,
-        usage: total,
-        error: `web-tool loop exceeded ${MAX_ROUNDS} rounds`,
-      };
+      return fail(200, `web-tool loop exceeded ${MAX_ROUNDS} rounds`);
     }
   }
 
@@ -305,6 +324,10 @@ export async function runWebToolLoop(
       server_tool_use: { web_search_requests: searchRequests },
     },
   };
+
+  // Stop the keepalive before writing the real events so no `: ping` comment
+  // interleaves the message body.
+  heartbeat?.stop();
 
   // Emit to the client in its wire format.
   try {
@@ -340,6 +363,7 @@ async function runShortCircuitSearch(
   fmt: ClientFmt,
   wantStream: boolean,
   deps: LoopDeps,
+  heartbeat: SseHeartbeat | null,
 ): Promise<{ status: number; usage: Usage; error: string | null }> {
   const { logger, provider } = deps;
   logger.info("web_tool_short_circuit", {
@@ -390,6 +414,10 @@ async function runShortCircuitSearch(
       server_tool_use: { web_search_requests: 1 },
     },
   };
+
+  // Stop the keepalive before writing the real events so no `: ping` comment
+  // interleaves the message body.
+  heartbeat?.stop();
 
   try {
     if (fmt === "chat") {

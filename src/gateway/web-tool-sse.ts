@@ -21,6 +21,58 @@ function openSse(res: Response): void {
     });
 }
 
+// SSE keepalive heartbeat for the web-tool loop.
+//
+// Unlike the normal streaming path (which pipes upstream bytes through
+// SsePingKeepAlive), the web-tool loop runs every upstream turn + web search
+// BUFFERED before it emits anything — so the client's SSE connection would sit
+// idle for the whole loop and time out at the proxy's ~90s ceiling. This opens
+// the SSE response immediately and writes `: ping\n\n` comment lines on an
+// interval, keeping the connection warm until the final message is ready.
+//
+// Clients ignore SSE comment lines (leading `:`), so the pings are invisible to
+// the parsed event stream; only the bytes matter. Call stop() before emitting
+// the real events so no ping interleaves the message body.
+export interface SseHeartbeat {
+  stop(): void;
+}
+
+export function startSseHeartbeat(
+  res: Response,
+  intervalMs: number,
+): SseHeartbeat {
+  // Disabled (interval <= 0) or the response is already committed to a
+  // non-streaming body — nothing to keep alive.
+  if (intervalMs <= 0 || res.headersSent) {
+    return { stop() {} };
+  }
+  openSse(res);
+  // Flush headers so the client sees the 200 + content-type right away, rather
+  // than waiting for the first byte of body — some proxies start their idle
+  // timer only after headers, others only after first data, so we do both.
+  res.write(": ok\n\n");
+
+  let stopped = false;
+  const timer = setInterval(() => {
+    if (stopped || res.writableEnded) return;
+    try {
+      res.write(": ping\n\n");
+    } catch {
+      /* client gone — the loop's own error handling will settle */
+    }
+  }, intervalMs);
+  // Don't let the heartbeat keep the process alive on its own.
+  if (timer && typeof timer === "object" && "unref" in timer) timer.unref();
+
+  return {
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(timer);
+    },
+  };
+}
+
 // Anthropic Messages SSE from a final Messages body:
 //   message_start -> (per block: content_block_start/delta/stop)
 //   -> message_delta(stop_reason, usage) -> message_stop
@@ -147,6 +199,27 @@ export function emitMessagesSse(
   });
   writeEvent(res, "message_stop", { type: "message_stop" });
   res.end();
+}
+
+// Emit an error onto an already-open SSE stream and close it.
+//
+// Once the heartbeat has flushed headers we can no longer answer a mid-loop
+// failure with an HTTP 502 (headers are committed to a 200 stream). Instead we
+// send Anthropic's SSE `error` event so a streaming client sees a clean failure
+// rather than a truncated/hung stream. Safe to call even if the stream is only
+// partially set up.
+export function emitSseError(res: Response, message: string): void {
+  if (res.writableEnded) return;
+  openSse(res);
+  try {
+    writeEvent(res, "error", {
+      type: "error",
+      error: { type: "api_error", message },
+    });
+    res.end();
+  } catch {
+    /* client already gone */
+  }
 }
 
 // OpenAI Chat Completions SSE from a final chat.completion body:

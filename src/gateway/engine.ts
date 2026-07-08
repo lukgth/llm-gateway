@@ -156,6 +156,12 @@ export class ForwardingEngine {
     private readonly ssePingInterval: number,
   ) {}
 
+  // SSE keepalive interval (ms) for callers that emit their own stream (e.g. the
+  // web-tool loop, which writes a synthetic SSE response directly). 0 disables.
+  get pingInterval(): number {
+    return this.ssePingInterval;
+  }
+
   // --- chain + route --------------------------------------------------------
 
   private buildChain(model: Model | null): Array<{
