@@ -233,6 +233,216 @@ test("forward() sends the adapter-built request to the wire (verbatim default)",
   }
 });
 
+test("forward() merges client headers first, then the gateway's own values win on collision", async () => {
+  // The header-merge contract (TransformCtx.headers / engine.ts buildHeaders):
+  // client headers form the base, then the gateway's own values (auth from
+  // the selected key, host) are layered on top and WIN — a client sending its
+  // own bogus `authorization` must never reach the upstream; a harmless
+  // client-only header must still pass through untouched.
+  const captured: { headers?: http.IncomingHttpHeaders } = {};
+  const server = http.createServer((req, res) => {
+    captured.headers = req.headers;
+    req.on("data", () => {});
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "x",
+          usage: { prompt_tokens: 3, completion_tokens: 5 },
+        }),
+      );
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "up",
+      name: "up",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["k-secret"],
+      catalogId: "openai",
+      authScheme: "bearer",
+      retryAttempts: 1,
+    });
+    const m = createModel(db, {
+      alias: "test-model",
+      providers: [{ providerId: "up", upstreamModel: "up-1" }],
+    });
+    const model = getModel(db, m.id)!;
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const { res, state } = mockRes();
+    await engine.forward(
+      {
+        method: "POST",
+        headers: {
+          // A harmless client header — should pass through untouched.
+          "x-client-trace": "abc123",
+          // A client trying to smuggle its OWN auth — the gateway's key must
+          // win instead (buildHeaders drops client authorization entirely).
+          authorization: "Bearer client-supplied-and-must-be-dropped",
+        },
+      } as never,
+      res as never,
+      ctxFor(model, {
+        model: "test-model",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+    assert.equal(state.statusCode || 200, 200);
+    assert.equal(captured.headers?.["x-client-trace"], "abc123");
+    assert.equal(captured.headers?.["authorization"], "Bearer k-secret");
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("forward() with authScheme 'passthrough' forwards the client's own auth header upstream", async () => {
+  // Passthrough means "the gateway holds no auth of its own for this
+  // provider — send the client's own credentials through untouched." Before
+  // this fix, buildHeaders unconditionally stripped authorization/x-api-key
+  // from the client-passthrough loop, and applyAuthHeaders is correctly a
+  // no-op for "passthrough" — so the client's auth was silently dropped and
+  // the upstream got NO auth header at all.
+  const captured: { headers?: http.IncomingHttpHeaders } = {};
+  const server = http.createServer((req, res) => {
+    captured.headers = req.headers;
+    req.on("data", () => {});
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "x",
+          usage: { prompt_tokens: 3, completion_tokens: 5 },
+        }),
+      );
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "up",
+      name: "up",
+      baseUrl: `http://127.0.0.1:${port}`,
+      // A configured key exists, but authScheme "passthrough" means it's
+      // never applied — client auth must be forwarded instead.
+      apiKeys: ["k-unused-in-passthrough"],
+      catalogId: "openai",
+      authScheme: "passthrough",
+      retryAttempts: 1,
+    });
+    const m = createModel(db, {
+      alias: "test-model",
+      providers: [{ providerId: "up", upstreamModel: "up-1" }],
+    });
+    const model = getModel(db, m.id)!;
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const { res, state } = mockRes();
+    await engine.forward(
+      {
+        method: "POST",
+        headers: { authorization: "Bearer client-own-token" },
+      } as never,
+      res as never,
+      ctxFor(model, {
+        model: "test-model",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+    assert.equal(state.statusCode || 200, 200);
+    assert.equal(
+      captured.headers?.["authorization"],
+      "Bearer client-own-token",
+    );
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("forward() with no provider key configured forwards the client's own auth header upstream", async () => {
+  // A keyless provider (e.g. a local server) still routes (key-health.ts:
+  // "a keyless provider still routes — the engine sends no auth" is about
+  // the GATEWAY's own auth; the client's own credentials, if any, are the
+  // only auth available and must reach the upstream, not be dropped.
+  const captured: { headers?: http.IncomingHttpHeaders } = {};
+  const server = http.createServer((req, res) => {
+    captured.headers = req.headers;
+    req.on("data", () => {});
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "x",
+          usage: { prompt_tokens: 3, completion_tokens: 5 },
+        }),
+      );
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "up",
+      name: "up",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: [], // no key at all
+      catalogId: "openai",
+      authScheme: "bearer",
+      retryAttempts: 1,
+    });
+    const m = createModel(db, {
+      alias: "test-model",
+      providers: [{ providerId: "up", upstreamModel: "up-1" }],
+    });
+    const model = getModel(db, m.id)!;
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const { res, state } = mockRes();
+    await engine.forward(
+      {
+        method: "POST",
+        headers: { authorization: "Bearer client-own-token" },
+      } as never,
+      res as never,
+      ctxFor(model, {
+        model: "test-model",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+    assert.equal(state.statusCode || 200, 200);
+    assert.equal(
+      captured.headers?.["authorization"],
+      "Bearer client-own-token",
+    );
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
 test("forward() resolves with 502 when the model has no usable provider chain", async () => {
   const db = openDatabase(":memory:");
   try {

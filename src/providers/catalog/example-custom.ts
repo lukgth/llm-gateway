@@ -48,10 +48,6 @@ import {
 } from "../base";
 import { WireKind, type Provider, type ModelCapabilities } from "../../types";
 import type { UpstreamModel } from "../../formats/wire/models";
-import type {
-  ChatCompletionRequest,
-  ChatCompletionResponse,
-} from "../../formats/wire";
 import {
   onRequest,
   onResponse,
@@ -341,7 +337,7 @@ class ExampleCustomAdapter extends OpenAICompatibleAdapter {
   //      responseTransforms() (the "example:stamp" stage above), then
   //      `summarize` distills it down to just the reply text — on failure the
   //      upstream's own error body is returned untouched.
-  async testModel(ctx: TestModelCtx): Promise<TestModelResult> {
+  async testModel(_ctx: TestModelCtx): Promise<TestModelResult> {
     /*
     const body: ChatCompletionRequest = {
       model: ctx.model,
@@ -359,7 +355,12 @@ class ExampleCustomAdapter extends OpenAICompatibleAdapter {
     });
     */
 
-    return { ok: true, status: 200, data: { reply: "pong" }, ms: 1 } as TestModelResult;
+    return {
+      ok: true,
+      status: 200,
+      data: { reply: "pong" },
+      ms: 1,
+    } as TestModelResult;
   }
 
   // A provider whose test probe needs something probeEndpoint() can't express

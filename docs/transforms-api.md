@@ -9,9 +9,12 @@ prompt caching, and how to inspect exactly what a provider does via
 `GET /providers/:id/transforms/resolved`), and the user-configurable
 transform library. See [`docs/provider-adapters.md`](./provider-adapters.md)
 for how a provider adapter contributes its own transforms (and its
-`testProvider()` connectivity-check seam), and
+`testProvider()` connectivity-check seam),
 [`docs/format-conversion.md`](./format-conversion.md) for the wire-format
-conversion rules these transforms run alongside.
+conversion rules these transforms run alongside, and
+[`docs/wire-types.md`](./wire-types.md) for the full field-by-field reference
+of the typed body/event a transform handler actually receives
+(`ChatCompletionRequest`, `AnthropicMessagesResponse`, etc.).
 
 **Quick links:** [the four transform layers](#the-four-transform-layers) ·
 [the default provider transform stack](#the-default-provider-transform-stack) ·
@@ -173,12 +176,45 @@ overrides in `mergeTransforms`.
 | `alias` | The exposed model alias this request resolved to |
 | `upstreamModel` | The chain hop's upstream model id |
 | `maxOutputTokens` | Effective per-hop output ceiling (link ?? imported ?? model) |
-| `headerOverrides` | A **request** transform may set this (string = set/replace, `null` = delete) to rewrite outbound headers — read back by the engine after request stages run, merged into the default header set *before* the adapter's build phase |
-| `urlOverride` | A **request** transform may set this to replace the composed upstream URL — same timing as `headerOverrides` |
+| `apiKey` | The **raw upstream key** selected for this attempt (`null` if the provider has none) — see below |
+| `headers` | The **full mutable outbound header table** for this attempt — see below |
+| `urlOverride` | A **request** transform may set this to replace the composed upstream URL |
 
-Both side-channel fields are reset fresh per attempt, so a rewrite can't leak
-across retries or hops. A build method still runs **after** — and wins over
-— anything a request transform set here (see
+`ctx.headers` arrives **already merged**, built by the engine BEFORE any
+request stage runs: client headers first (the base — everything the inbound
+request sent, minus hop-by-hop headers and `host`/`content-length`, which the
+gateway always owns), then the gateway's own values layered on top and
+**winning on collision** — `host`, auth (from the selected key, per
+`provider.authScheme`), `provider.extraHeaders`, then `content-type`/`accept`
+defaults if the client didn't set one.
+
+`authorization`/`x-api-key` are handled specially: they're dropped from the
+client-passthrough layer **unless there's no gateway-held key to apply
+instead** (`provider.authScheme === "passthrough"`, or the provider simply
+has no key configured) — in that case the client's own credentials ARE the
+auth for this request, so they survive untouched instead of leaving the
+upstream call with no auth header at all. Whenever the gateway DOES hold a
+real key for this attempt, a client's own `authorization`/`x-api-key` can
+never reach the upstream — the gateway's value always wins. Every other
+client-sent header survives regardless, unless a transform or the adapter's
+build method removes it.
+
+`ctx.apiKey` is the exact same key `ctx.headers`'s auth header (when one was
+applied) was derived from, and the exact same value the adapter's build phase
+separately receives as `BuildCtx.apiKey` — full parity, so a transform never
+has to parse a header back out to recover the raw key (e.g. to compute a
+signature). **Never log or echo `ctx.apiKey`.**
+
+A request transform edits `ctx.headers` exactly like it edits the body —
+`ctx.headers["x-foo"] = "bar"` to set, `delete ctx.headers["x-foo"]` to
+remove — no override/diff object, no null-means-delete convention. This is
+**full upstream header control**: a transform can add, remove, or replace
+ANY header, including `authorization`/`x-api-key` themselves (e.g. to swap in
+a signed/derived scheme the standard `authScheme` options don't cover).
+`ctx.headers` and `ctx.urlOverride` are rebuilt/reset fresh per attempt, so an
+edit can't leak across retries or hops. A build method still runs **after** —
+and may itself still rewrite/override anything a request transform edited
+here (see
 [provider-adapters.md](./provider-adapters.md#where-the-adapter-meets-the-engine)).
 
 ### Optional display metadata: `label` / `blurb` / `group`

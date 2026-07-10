@@ -5,10 +5,13 @@ provider and every custom provider is built from. It covers the two-phase
 route/build model, the five context shapes (`BuildCtx`/`UsageCtx`/
 `TestModelCtx`/`TestProviderCtx`/`ModelsCtx`), the transform hooks, and how
 to add a new provider. See [`docs/format-conversion.md`](./format-conversion.md)
-for the wire-format conversion rules that run *around* an adapter, and
+for the wire-format conversion rules that run *around* an adapter,
 [`docs/transforms-api.md`](./transforms-api.md) for how to author a transform
 stage and how a provider family's `quirks.defaultTransforms` composes into
-the default provider transform stack.
+the default provider transform stack, and
+[`docs/wire-types.md`](./wire-types.md) for the field-by-field reference of
+`ctx.body`'s shape once you narrow it inside a build method (and of every
+type a transform hook sees).
 
 ---
 
@@ -137,7 +140,7 @@ A build method receives everything it needs on `ctx` — **never** call
 | `ctx.endpointKind` / `ctx.providerFmt` / `ctx.clientFmt` | The wire kinds in play for this hop |
 | `ctx.resolve()` | Compose a URL: `resolve()` = this hop, `resolve("responses")` = a specific kind's path, `resolve("/x")` = a literal path — all origin+basePath aware |
 | `ctx.url` | The default composed URL (`= resolve()`) — a verbatim provider just returns this |
-| `ctx.headers` | Default headers: client passthrough + auth (from `apiKey` + `authScheme`) + `extraHeaders` |
+| `ctx.headers` | Default headers: client passthrough + auth (from `apiKey` + `authScheme`) + `extraHeaders`, plus anything a request transform already edited via `TransformCtx.headers` (see [transforms-api.md](./transforms-api.md#authoring-a-transform-onrequest--onresponse--onstreamevent)) — this IS that same table, handed to the build phase last |
 
 Return `{ url, headers, body }` — any subset may be rewritten. Common
 overrides:
@@ -290,6 +293,14 @@ async testModel(ctx: TestModelCtx) {
    and no adapter override (most of the OpenAI-family catalog: deepseek,
    gemini, glm, openrouter, the generic `openai-compatible` entry, …) still
    gets the builtin layer, so its probe isn't silently empty.
+   The request transform stage also gets the same header/key control a live
+   request gets: `xctx.headers` is seeded from a **fresh copy** of
+   `ctx.headers` (already carrying this probe's auth header, applied by the
+   route from the same `ctx.apiKey` — see `TransformCtx.apiKey`/`.headers`'s
+   doc comments in `formats/pipeline.ts`) and `xctx.apiKey = ctx.apiKey`, so a
+   request transform can edit/replace any header exactly like it would for
+   live traffic — and it's the EDITED table, not the original `ctx.headers`,
+   that reaches the build phase next.
 2. Hands the transformed body to **this adapter's own** build method for
    `kind` (`chatCompletions`/`messages`/`responses`) — bespoke auth,
    envelopes, and signed URLs run exactly as they would for a real request.
@@ -505,11 +516,22 @@ plan:
 3. Hands everything to `buildTransformPlan` (`formats/pipeline.ts`), which
    places each stage relative to the client↔provider format conversion.
 
-Then, per attempt (`attemptOnce`): run the request through `route.request`
-(`applyBodyTransforms`), stamp the upstream model, compose the default
-URL/headers, and call `route.adapter.buildFor(route.providerFmt, ctx)` — the
-adapter's build method runs **last**, so it wins over anything a request
-transform rewrote via `ctx.headerOverrides`/`ctx.urlOverride`.
+Then, per attempt (`attemptOnce`): compose the FULL merged header table
+(client headers first, the gateway's own values — host, auth from the
+selected key, `extraHeaders` — layered on top and winning; a client's own
+`authorization`/`x-api-key` only survives when there's no gateway-held key to
+apply instead — `authScheme: "passthrough"`, or no key configured — see
+[transforms-api.md](./transforms-api.md#authoring-a-transform-onrequest--onresponse--onstreamevent))
+as `TransformCtx.headers`, and stamp that same key onto `TransformCtx.apiKey`
+— both BEFORE running anything, so a request transform sees the exact auth
+header/key a live request would use. Then run the request through
+`route.request` (`applyBodyTransforms`) — a request transform has **full
+control**: it may edit any header in `ctx.headers` (including replacing
+`authorization`/`x-api-key` with a custom scheme, reading the raw key from
+`ctx.apiKey`) and/or set `ctx.urlOverride` — stamp the upstream model, and
+call `route.adapter.buildFor(route.providerFmt, ctx)` with the (possibly
+transform-edited) URL/headers as defaults — the adapter's build method runs
+**last**, so it wins over anything a request transform edited.
 
 This two-phase split — transforms edit the body as a declared pipeline stage,
 the build method assembles the final request afterward — is what lets a

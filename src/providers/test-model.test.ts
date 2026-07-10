@@ -169,6 +169,60 @@ test("probeEndpoint: the adapter's OWN build method shapes the request (not a ve
   assert.equal(sentHeaders["x-built-by"], "chatCompletions");
 });
 
+// A second adapter whose request transform edits ctx.headers directly (full
+// upstream header control on the probe path, same as a live request) instead
+// of the body — proves probeEndpoint() seeds xctx.headers from ctx.headers
+// (so the transform sees the SAME auth header ctx.apiKey was applied from)
+// and that the EDITED table — not the original ctx.headers — reaches both
+// the build phase and the actual outbound request.
+class HeaderEditingAdapter extends OpenAICompatibleAdapter {
+  requestTransforms(): AnyRequestTransform[] {
+    return [
+      onRequest("chat", "rewrite-auth", (body, ctx) => {
+        // The auth header the route built is already visible here, derived
+        // from the SAME key as ctx.apiKey — the parity contract.
+        if (ctx.headers!["authorization"] !== `Bearer ${ctx.apiKey}`) {
+          throw new Error("ctx.headers auth header doesn't match ctx.apiKey");
+        }
+        // Full control: replace it with a custom scheme.
+        delete ctx.headers!["authorization"];
+        ctx.headers!["x-custom-auth"] = `signed:${ctx.apiKey}`;
+        return body;
+      }),
+    ];
+  }
+
+  async testModel(ctx: TestModelCtx): Promise<TestModelResult> {
+    const body: ChatCompletionRequest = minimalProbeBody(
+      WireKind.Chat,
+      ctx.model,
+    );
+    return this.probeEndpoint(ctx, WireKind.Chat, { body });
+  }
+}
+
+test("probeEndpoint: a request transform has full control over ctx.headers, seeded from ctx.headers/ctx.apiKey", async () => {
+  const headerAdapter = new HeaderEditingAdapter({
+    id: "header-editing",
+    label: "Header editing",
+    blurb: "test",
+    brand: "openai",
+    defaults: { format: "openai", endpoints: ["chat"] },
+    fields: [],
+  });
+  const { ctx, calls } = fakeCtx({}, { json: () => ({ ok: true }) });
+  await headerAdapter.testModel(ctx);
+  const sentHeaders = (calls[0].init as { headers: Record<string, string> })
+    .headers;
+  // The transform's edit reached the actual outbound request...
+  assert.equal(sentHeaders["authorization"], undefined);
+  assert.equal(sentHeaders["x-custom-auth"], "signed:sk-test");
+  // ...and the CALLER's original ctx.headers object was never mutated (the
+  // probe path copies it into xctx.headers before running transforms).
+  assert.equal(ctx.headers!["authorization"], "Bearer sk-test");
+  assert.equal(ctx.headers!["x-custom-auth"], undefined);
+});
+
 test("probeEndpoint: response transforms run on a successful reply", async () => {
   const { ctx } = fakeCtx(
     {},
@@ -317,13 +371,19 @@ test("probeEndpoint: ctx.ownTransforms (the imported model's own config) is laye
     fields: [],
   });
   const { ctx } = fakeCtx(
-    { ownTransforms: [{ id: "system-prepend", phase: "request", params: { text: "hi" } }] },
+    {
+      ownTransforms: [
+        { id: "system-prepend", phase: "request", params: { text: "hi" } },
+      ],
+    },
     { json: () => ({ choices: [{ message: { content: "hi" } }] }) },
   );
   const events: Array<{ dir: string; name: string }> = [];
   ctx.logStage = (dir, name) => events.push({ dir, name });
   await bare.testModel(ctx);
-  assert.ok(events.some((e) => e.dir === "req" && e.name === "model:system-prepend"));
+  assert.ok(
+    events.some((e) => e.dir === "req" && e.name === "model:system-prepend"),
+  );
 });
 
 test("minimalProbeBody returns a schema-typed, minimal one-token request per kind", () => {

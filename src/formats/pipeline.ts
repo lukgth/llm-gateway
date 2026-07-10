@@ -60,17 +60,37 @@ export interface TransformCtx {
   /** Effective per-hop output-token ceiling (link ?? imported ?? model), for
    *  transforms that clamp max_tokens (e.g. the Anthropic max-tokens hook). */
   maxOutputTokens?: number | null;
+  /** The RAW upstream key selected for this attempt (null when the provider
+   *  has none configured) — the exact same key `ctx.headers`'s auth header
+   *  (if any) was derived from via `applyAuthHeaders`, and the exact same
+   *  value the adapter's build phase receives as `BuildCtx.apiKey`. A
+   *  transform that needs the key itself (e.g. to compute a signature,
+   *  mirroring what a bespoke build method does with `ctx.apiKey` — see
+   *  provider-adapters.md) reads it here instead of parsing it back out of a
+   *  header. Never log or echo this value. */
+  apiKey?: string | null;
 
   // --- request-side rewrite side-channel ------------------------------------
   // A REQUEST transform may rewrite the outbound URL + headers (not just the
-  // body) by mutating these. The engine reads them back AFTER running the
-  // request stages for an attempt: `headerOverrides` are merged into the default
-  // header set (a null value deletes a header) and `urlOverride` replaces the
-  // composed upstream URL, both BEFORE the adapter's build phase — so they form
-  // the defaults the builder sees and may itself override. Freshly reset per
-  // attempt so a rewrite can't leak across retries/hops.
-  /** Header overrides a request hook wants applied (string sets, null deletes). */
-  headerOverrides?: Record<string, string | null>;
+  // body) by editing these directly.
+  //
+  // `headers` is the FULL mutable header table for this attempt — the engine
+  // builds it BEFORE running the request stages (client headers first, so
+  // they form the base; then the gateway's own values — host, auth from the
+  // selected key, provider.extraHeaders, content-type/accept defaults — are
+  // layered on top and WIN on collision, since a client can't be trusted to
+  // set its own auth). A request transform edits this table the same way it
+  // edits the body: `ctx.headers["x-foo"] = "bar"` to set, `delete
+  // ctx.headers["x-foo"]` to remove. The engine reads the table back after
+  // the request stages run and hands it to the adapter's build phase as the
+  // default header set — the builder may itself still rewrite/override it.
+  // Freshly rebuilt per attempt (never carried over a retry/hop), so a
+  // rewrite can't leak across attempts. Optional only because a handful of
+  // TransformCtx call sites (unit tests, the SSE-only stream path) have no
+  // header table to hand a transform — always present on the real
+  // request/response path.
+  /** Full mutable outbound header table for this attempt (see above). */
+  headers?: Record<string, string>;
   /** Full upstream URL a request hook wants used instead of the composed one. */
   urlOverride?: string;
 }

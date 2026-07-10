@@ -456,7 +456,7 @@ export default function ModelEditor() {
             </div>
           ) : (
             <div className="no-scrollbar overflow-x-auto rounded-lg border border-border">
-              <div className="grid min-w-[55rem] grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_10rem_3rem_3.5rem_3.5rem_3.25rem] items-center gap-3 border-b border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
+              <div className="grid min-w-220 grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_10rem_3rem_3.5rem_3.5rem_3.25rem] items-center gap-3 border-b border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
                 <span>Hop</span>
                 <span>Provider</span>
                 <span>Upstream model</span>
@@ -487,7 +487,7 @@ export default function ModelEditor() {
                       ref={registerRow(i)}
                       style={rowStyle(i)}
                       className={cn(
-                        "relative grid min-w-[55rem] grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_10rem_3rem_3.5rem_3.5rem_3.25rem] items-center gap-3 bg-card px-3 py-2.5 text-sm",
+                        "relative grid min-w-220 grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_10rem_3rem_3.5rem_3.5rem_3.25rem] items-center gap-3 bg-card px-3 py-2.5 text-sm",
                         dragging
                           ? // Floats above the list, locked to vertical motion
                             // only (rowStyle only ever sets translateY) —

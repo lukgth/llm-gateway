@@ -387,11 +387,21 @@ export abstract class ProviderAdapter {
         ? (dir, name) => ctx.logStage!(dir as "req" | "resp" | "stream", name)
         : undefined,
     );
+    // `headers` is a FRESH copy of ctx.headers (already carrying this
+    // probe's auth header, applied by the route from the same ctx.apiKey —
+    // see provider-probe.ts's makeTestModelCtx/modelsRequestHeaders) so a
+    // request transform gets the exact same full-header-table control here
+    // as it does on a live request (see TransformCtx.headers's doc comment):
+    // it edits xctx.headers in place, and that — not the original ctx.headers
+    // — is what reaches the build phase below. `apiKey` gives a transform the
+    // raw key itself, matching what the build phase separately receives.
     const xctx: TransformCtx = {
       provider: ctx.provider,
       clientFmt: kind,
       providerFmt: kind,
       upstreamModel: ctx.model,
+      apiKey: ctx.apiKey,
+      headers: { ...ctx.headers },
     };
     const transformed = applyBodyTransforms(
       plan.request,
@@ -403,7 +413,8 @@ export abstract class ProviderAdapter {
     );
 
     // Step 2: this adapter's own build method for `kind` — never sends
-    // anything itself, only shapes { url, headers, body }.
+    // anything itself, only shapes { url, headers, body }. Headers are
+    // whatever the request transforms left in xctx.headers (edits included).
     const built = this.buildFor(kind, {
       provider: ctx.provider,
       model: ctx.model,
@@ -417,7 +428,7 @@ export abstract class ProviderAdapter {
       basePath: ctx.basePath,
       resolve: ctx.resolve,
       url: ctx.resolve(kind),
-      headers: ctx.headers,
+      headers: xctx.headers!,
     });
 
     // Step 3: the one actual network call.

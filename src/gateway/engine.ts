@@ -560,17 +560,28 @@ export class ForwardingEngine {
 
     // Fresh per-attempt ctx so a request hook's URL/header rewrites can't leak
     // across retries/hops (route.xctx is shared for the whole request).
+    // `headers` is the FULL mutable table a request transform edits directly —
+    // built HERE, before any transform runs, so the table a transform sees is
+    // the same one that reaches the adapter's build phase: client headers
+    // first (the base), then the gateway's own values (host, auth for the
+    // selected key, provider.extraHeaders, content-type/accept defaults)
+    // layered on top and winning on collision — a client can't set its own
+    // auth. `apiKey` is the SAME key buildHeaders just derived the auth
+    // header from and the build phase will separately receive as
+    // BuildCtx.apiKey — see TransformCtx.headers's/apiKey's doc comments.
+    const key = pick?.key ?? null;
     const attemptCtx: TransformCtx = {
       ...route.xctx,
-      headerOverrides: undefined,
+      apiKey: key,
+      headers: this.buildHeaders(req, provider, key),
       urlOverride: undefined,
     };
 
     // Phase 1 — run the request through its ordered transform stages (format
-    // conversion then any adapter-custom stages) and stamp the upstream model id.
-    // A request hook may also set attemptCtx.headerOverrides / .urlOverride to
-    // rewrite the outbound request; those are the defaults handed to the builder.
-    const key = pick?.key ?? null;
+    // conversion then any adapter-custom stages) and stamp the upstream model
+    // id. A request hook may edit attemptCtx.headers in place and/or set
+    // attemptCtx.urlOverride to rewrite the outbound request; both are read
+    // back below as the defaults handed to the builder.
     let serialized: Buffer;
     let upstreamUrl: URL;
     let headers: Record<string, string>;
@@ -590,20 +601,15 @@ export class ForwardingEngine {
       const defaultUrl =
         attemptCtx.urlOverride ??
         buildUpstreamUrl(provider, route.forwardPath).toString();
-      // Default header set (client passthrough + auth + extraHeaders), with the
-      // request hook's per-attempt overrides merged (string sets, null deletes).
-      const defaultHeaders = this.buildHeaders(
-        req,
-        provider,
-        key,
-        attemptCtx.headerOverrides,
-      );
+      // The header table as the request stages left it (possibly edited by a
+      // transform) — the default set handed to the adapter's build phase.
+      const defaultHeaders = attemptCtx.headers!;
 
       // Phase 2 — the adapter builds the final outbound request from the
       // converted body, the selected key, and the composed URL + headers. The
       // default builder forwards them verbatim; a bespoke provider may rewrite
       // url/headers/body via the URL parts + resolve() (no `new URL()` needed).
-      // Runs LAST, so it wins over the request-hook overrides.
+      // Runs LAST, so it wins over anything a request transform edited.
       const resolve = makeResolve(provider, route.forwardPath);
       const built = route.adapter.buildFor(route.providerFmt, {
         provider,
@@ -1380,9 +1386,13 @@ export class ForwardingEngine {
     // Convert Messages -> provider format (via the ordered request stages), force
     // non-streaming, stamp model, then let the adapter build the final request.
     // Fresh per-attempt ctx so a request hook's URL/header rewrites don't leak.
+    // `headers` built BEFORE the request stages run (client headers first, the
+    // gateway's own values layered on top and winning) — see attemptOnce's
+    // matching comment / TransformCtx.headers's/apiKey's doc comments.
     const attemptCtx: TransformCtx = {
       ...route.xctx,
-      headerOverrides: undefined,
+      apiKey: key,
+      headers: this.buildHeaders(req, provider, key),
       urlOverride: undefined,
     };
     let serialized: string;
@@ -1401,12 +1411,7 @@ export class ForwardingEngine {
       const defaultUrl =
         attemptCtx.urlOverride ??
         buildUpstreamUrl(provider, route.forwardPath).toString();
-      const defaultHeaders = this.buildHeaders(
-        req,
-        provider,
-        key,
-        attemptCtx.headerOverrides,
-      );
+      const defaultHeaders = attemptCtx.headers!;
       const built = route.adapter.buildFor(route.providerFmt, {
         provider,
         model: upstreamModel,
@@ -1658,28 +1663,44 @@ export class ForwardingEngine {
   // --- headers --------------------------------------------------------------
   // Key selection + round-robin rotation now live in KeyHealthStore (this.keyHealth).
 
-  // Compose the DEFAULT header set handed to the adapter's build phase: client
-  // header passthrough + host + auth (from the selected key) + extraHeaders. The
-  // body isn't final until the builder runs, so content-length is set by the
-  // caller after serialization, not here. `overrides` are the request hook's
-  // per-attempt header edits (string sets/replaces, null deletes).
+  // Compose the FULL outbound header table for one attempt — the base a
+  // request transform edits via ctx.headers (see TransformCtx.headers's doc
+  // comment) and, after those edits, the default set handed to the adapter's
+  // build phase. Two layers, in order:
+  //   1. client passthrough — every inbound header except hop-by-hop ones
+  //      (Connection, Keep-Alive, …) and host/content-length (the gateway
+  //      always owns those). `authorization`/`x-api-key` are ALSO dropped
+  //      here UNLESS the provider has no gateway-held auth to apply instead
+  //      (authScheme "passthrough", or no key configured at all) — see
+  //      `forwardClientAuth` below. A client can never smuggle its own auth
+  //      past a REAL gateway-held key, but when there is no gateway key the
+  //      client's own credentials are the only auth this request has, so
+  //      dropping them would send an unauthenticated request instead of
+  //      forwarding what the client already provided.
+  //   2. the gateway's own values, layered on top and WINNING on collision:
+  //      host, auth (from the selected key, per provider.authScheme — a
+  //      no-op for "passthrough" or a null key, by design, see
+  //      `applyAuthHeaders`), provider.extraHeaders, then content-type/accept
+  //      defaults (only if the client didn't already set one).
+  // The body isn't final until the builder runs, so content-length is set by
+  // the caller after serialization, not here.
   private buildHeaders(
     req: Request,
     provider: Provider,
     key: string | null,
-    overrides?: Record<string, string | null>,
   ): Record<string, string> {
     const out: Record<string, string> = {};
     const clientHeaders = (req.headers || {}) as Record<string, unknown>;
+    // No gateway-held key will be applied for this attempt (passthrough
+    // scheme, or the provider simply has no key configured) — the client's
+    // own authorization/x-api-key IS the auth for this request, so it must
+    // survive the passthrough loop instead of being silently dropped.
+    const forwardClientAuth = provider.authScheme === "passthrough" || !key;
     for (const [k, v] of Object.entries(clientHeaders)) {
       const lk = k.toLowerCase();
       if (HOP_BY_HOP.has(lk)) continue;
-      if (
-        lk === "host" ||
-        lk === "content-length" ||
-        lk === "authorization" ||
-        lk === "x-api-key"
-      )
+      if (lk === "host" || lk === "content-length") continue;
+      if ((lk === "authorization" || lk === "x-api-key") && !forwardClientAuth)
         continue;
       if (v === undefined) continue;
       out[k] = Array.isArray(v) ? (v[0] as string) : (v as string);
@@ -1690,13 +1711,6 @@ export class ForwardingEngine {
       out[k] = v;
     if (!out["content-type"]) out["content-type"] = "application/json";
     if (!out["accept"]) out["accept"] = "application/json";
-    // Request-hook per-attempt overrides last: a string sets/replaces, null deletes.
-    if (overrides) {
-      for (const [k, v] of Object.entries(overrides)) {
-        if (v === null) delete out[k];
-        else out[k] = v;
-      }
-    }
     return out;
   }
 }

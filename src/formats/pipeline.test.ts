@@ -268,21 +268,57 @@ test("same-format hop: pre and post buckets coincide (no conversion stage)", () 
   );
 });
 
-test("a request transform can rewrite URL + headers via the ctx side-channel", () => {
+test("a request transform can rewrite the URL, and edit ctx.headers directly, via the ctx side-channel", () => {
   // This is the contract the engine relies on: a request hook mutates ctx to
-  // ask for URL/header rewrites, and those survive on the SAME ctx object the
-  // engine passed in (the engine reads them back after applyBodyTransforms).
+  // ask for a URL rewrite and/or edits the full mutable header table in
+  // place, and both survive on the SAME ctx object the engine passed in (the
+  // engine reads them back after applyBodyTransforms). ctx.headers arrives
+  // already merged (client headers first, gateway values layered on top and
+  // winning) — a transform edits that same table, exactly like it edits body.
   const rewrite = {
     name: "custom:rewrite",
     apply: (b: Json, c: TransformCtx) => {
       c.urlOverride = "https://edge.example.com/v1/chat/completions";
-      c.headerOverrides = { "x-edge": "1", authorization: null };
+      c.headers!["x-edge"] = "1";
+      delete c.headers!["authorization"];
       return b;
     },
   };
   const c = ctx("chat", "chat");
+  c.headers = { authorization: "Bearer client-sent-this", "x-client": "1" };
   const out = applyBodyTransforms([rewrite], { m: 1 }, c);
   assert.deepEqual(out, { m: 1 }); // body untouched
   assert.equal(c.urlOverride, "https://edge.example.com/v1/chat/completions");
-  assert.deepEqual(c.headerOverrides, { "x-edge": "1", authorization: null });
+  // The transform's edit landed on the SAME table — client's own header
+  // untouched, the new one added, authorization removed.
+  assert.deepEqual(c.headers, { "x-client": "1", "x-edge": "1" });
+});
+
+test("ctx.apiKey and ctx.headers's auth header are the SAME key — a transform can use either", () => {
+  // The parity contract: whatever key the engine resolved for this attempt
+  // is both directly readable as ctx.apiKey AND already applied to
+  // ctx.headers's auth header (by buildHeaders, before any transform runs) —
+  // a transform never has to parse a header to recover the raw key, and a
+  // transform that wants to REPLACE the auth header (e.g. a signed/derived
+  // scheme) reads the same ctx.apiKey a bespoke build method would.
+  const signRequest = {
+    name: "custom:sign",
+    apply: (b: Json, c: TransformCtx) => {
+      // Prove the header the engine built already carries this exact key.
+      assert.equal(c.headers!["authorization"], `Bearer ${c.apiKey}`);
+      // A transform can still fully replace it — full upstream header
+      // control, same as editing any other header.
+      delete c.headers!["authorization"];
+      c.headers!["x-signed-key"] = `sig(${c.apiKey})`;
+      return b;
+    },
+  };
+  const c = ctx("chat", "chat");
+  c.apiKey = "sk-live-123";
+  c.headers = { authorization: "Bearer sk-live-123", host: "api.example.com" };
+  applyBodyTransforms([signRequest], { m: 1 }, c);
+  assert.deepEqual(c.headers, {
+    host: "api.example.com",
+    "x-signed-key": "sig(sk-live-123)",
+  });
 });

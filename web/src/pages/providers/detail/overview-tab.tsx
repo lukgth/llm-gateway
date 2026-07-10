@@ -265,7 +265,7 @@ function ErrorLogRow({ log: l }: { log: RequestLog }) {
             {fmtTime(l.ts)}
           </span>
         </TableCell>
-        <TableCell className="max-w-[14rem] truncate font-mono text-primary">
+        <TableCell className="max-w-56 truncate font-mono text-primary">
           {l.model ?? "—"}
         </TableCell>
         <TableCell className="text-right">

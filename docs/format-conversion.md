@@ -6,11 +6,15 @@ This document is the reference for how the gateway converts between the
 `messages`). It records the non-obvious *quirks* — the small correctness rules
 that a naive field-mapping misses and that cause upstream 400s or lost content
 if omitted. See [`docs/provider-adapters.md`](./provider-adapters.md) for how
-a provider adapter routes/builds requests around this conversion, and
+a provider adapter routes/builds requests around this conversion,
 [`docs/transforms-api.md`](./transforms-api.md) for how the tagged transform
 stages referenced throughout this file (the Anthropic request hooks, thinking
 extraction, the default provider transform stack, the opt-in library) are
-authored and placed in the pipeline.
+authored and placed in the pipeline, and
+[`docs/wire-types.md`](./wire-types.md) for the field-by-field type reference
+of the request/response shapes these quirks operate on (`ChatMessage`,
+`AnthropicBlock`, etc.) — this file covers the *behavior*, wire-types.md
+covers *what fields exist*.
 
 The converters live in
 [`src/formats/converters/chat-messages/`](../src/formats/converters/chat-messages)
