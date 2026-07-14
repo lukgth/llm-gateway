@@ -79,6 +79,41 @@ function fmtMeta(meta?: Meta): string {
   return " " + parts.join(" ");
 }
 
+function methodColor(m: string): string {
+  switch (m) {
+    case "GET":
+      return c("green", pad(m, 7));
+    case "POST":
+      return c("cyan", pad(m, 7));
+    case "PUT":
+      return c("yellow", pad(m, 7));
+    case "PATCH":
+      return c("yellow", pad(m, 7));
+    case "DELETE":
+      return c("red", pad(m, 7));
+    case "OPTIONS":
+      return c("gray", pad(m, 7));
+    case "HEAD":
+      return c("gray", pad(m, 7));
+    default:
+      return c("magenta", pad(m, 7));
+  }
+}
+
+function sizeStr(bytes: number | undefined): string {
+  if (bytes === undefined || bytes === 0) return c("gray", padL("-", 8));
+  if (bytes < 1024) return c("dim", padL(`${bytes}B`, 8));
+  if (bytes < 1024 * 1024) return c("dim", padL(`${(bytes / 1024).toFixed(1)}kB`, 8));
+  return c("dim", padL(`${(bytes / (1024 * 1024)).toFixed(1)}MB`, 8));
+}
+
+function routeTag(url: string): string {
+  if (url.startsWith("/v1")) return c("magenta", pad("gw", 4));
+  if (url.startsWith("/api")) return c("blue", pad("api", 4));
+  if (url === "/health") return c("green", pad("sys", 4));
+  return c("gray", pad("web", 4));
+}
+
 export class Logger {
   info(message: string, meta?: Meta): void {
     this.write("INFO", message, meta);
@@ -125,6 +160,49 @@ export class Logger {
     process.stdout.write(
       `${ts()} ${method} ${url} ${modelField} ${status} ${rt}${noteStr}\n`,
     );
+  }
+
+  httpLog(
+    method: string,
+    url: string,
+    status: number,
+    rtMs: number,
+    resBytes: number | undefined,
+  ): void {
+    const m = methodColor(method);
+    const tag = routeTag(url);
+    const u = c("bold", pad(url.length > 50 ? url.slice(0, 47) + "..." : url, 50));
+    const st = statusColor(status);
+    const rt = c("gray", padL(fmtMs(rtMs), 8));
+    const sz = sizeStr(resBytes);
+    process.stdout.write(
+      `${ts()} ${c("dim", "│")} ${m} ${tag} ${u} ${st} ${rt} ${sz}\n`,
+    );
+  }
+
+  httpMiddleware(): (req: Request, res: Response, next: () => void) => void {
+    return (req, res, next) => {
+      const start = process.hrtime.bigint();
+      const origWrite = res.write;
+      const origEnd = res.end;
+      let bytes = 0;
+
+      res.write = function (chunk: unknown, ...args: unknown[]) {
+        if (chunk) bytes += Buffer.byteLength(chunk as Buffer | string);
+        return (origWrite as Function).apply(res, [chunk, ...args]);
+      } as typeof res.write;
+
+      res.end = function (chunk: unknown, ...args: unknown[]) {
+        if (chunk) bytes += Buffer.byteLength(chunk as Buffer | string);
+        return (origEnd as Function).apply(res, [chunk, ...args]);
+      } as typeof res.end;
+
+      res.on("finish", () => {
+        const ms = Number(process.hrtime.bigint() - start) / 1e6;
+        this.httpLog(req.method, req.originalUrl || req.url, res.statusCode, ms, bytes || undefined);
+      });
+      next();
+    };
   }
 
   private write(level: string, message: string, meta?: Meta): void {

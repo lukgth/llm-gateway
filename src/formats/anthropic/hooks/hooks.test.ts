@@ -111,13 +111,14 @@ test("max-tokens: shrinks budget when clamp would breach budget < max invariant"
 
 // --- composed stack --------------------------------------------------------
 
-test("stack: order is thinking-signature, max-tokens, prefill, sanitize-request, thinking-config", () => {
+test("stack: order is thinking-signature, max-tokens, prefill, sanitize-request, thinking-mode, thinking-config", () => {
   const names = defaultAnthropicRequestHooks().map((h) => h.name);
   assert.deepEqual(names, [
     "anthropic:thinking-signature",
     "anthropic:max-tokens",
     "anthropic:prefill",
     "anthropic:sanitize-request",
+    "anthropic:thinking-mode",
     "anthropic:thinking-config",
   ]);
 });
@@ -149,14 +150,36 @@ test("stack: max-tokens hook clamps via ctx.maxOutputTokens", () => {
 
 // --- fires on the CONVERTED (chat->messages) body --------------------------
 
-test("hooks run on a chat->messages converted body (thinking reconcile)", () => {
+test("hooks run on a chat->messages converted body (thinking reconcile, Opus 4.6)", () => {
   // Simulate the engine: convert chat -> messages, THEN run the adapter hooks.
+  // Opus 4.6 still accepts enabled+budget_tokens, so budget reconciliation fires.
   const converted = chatRequestToMessages({
     model: "gpt-ish",
     max_tokens: 4000,
     messages: [{ role: "user", content: "hi" }],
-    // a client that sent an Anthropic-style thinking hint through chat
-    // (carried opaquely); simulate by attaching after conversion:
+  });
+  (converted as Record<string, unknown>).thinking = {
+    type: "enabled",
+    budget_tokens: 8000,
+  };
+  let body: Record<string, unknown> = converted;
+  for (const h of defaultAnthropicRequestHooks())
+    body = h.apply(
+      body,
+      ctx({ upstreamModel: "claude-opus-4-6-20250715", maxOutputTokens: 128000 }),
+    );
+  // max_tokens raised above budget so Anthropic won't 400.
+  assert.ok(
+    (body.max_tokens as number) > 8000,
+    `expected max_tokens > 8000, got ${body.max_tokens}`,
+  );
+});
+
+test("hooks convert enabled to adaptive on Opus 4.8", () => {
+  const converted = chatRequestToMessages({
+    model: "gpt-ish",
+    max_tokens: 4000,
+    messages: [{ role: "user", content: "hi" }],
   });
   (converted as Record<string, unknown>).thinking = {
     type: "enabled",
@@ -168,11 +191,62 @@ test("hooks run on a chat->messages converted body (thinking reconcile)", () => 
       body,
       ctx({ upstreamModel: "claude-opus-4-8", maxOutputTokens: 128000 }),
     );
-  // max_tokens raised above budget so Anthropic won't 400.
-  assert.ok(
-    (body.max_tokens as number) > 8000,
-    `expected max_tokens > 8000, got ${body.max_tokens}`,
-  );
+  const thinking = body.thinking as { type?: string; budget_tokens?: number };
+  assert.equal(thinking.type, "adaptive");
+  assert.equal(thinking.budget_tokens, undefined);
+});
+
+// --- thinking display -------------------------------------------------------
+
+test("thinking-mode injects display:summarized on models that default to omitted", () => {
+  const models = [
+    "claude-opus-4-8",
+    "claude-opus-4-7-20250715",
+    "claude-sonnet-5-20250715",
+    "claude-fable-5-20250715",
+    "claude-mythos-5-20250715",
+    "claude-mythos-preview-20250715",
+  ];
+  for (const m of models) {
+    let body: Record<string, unknown> = {
+      model: m,
+      max_tokens: 4000,
+      messages: [{ role: "user", content: "hi" }],
+      thinking: { type: "adaptive" },
+    };
+    for (const h of defaultAnthropicRequestHooks())
+      body = h.apply(body, ctx({ upstreamModel: m }));
+    const thinking = body.thinking as { display?: string };
+    assert.equal(thinking.display, "summarized", `expected display:summarized on ${m}`);
+  }
+});
+
+test("thinking-mode does NOT inject display on Opus 4.6 / Sonnet 4.6", () => {
+  for (const m of ["claude-opus-4-6-20250715", "claude-sonnet-4-6-20250715"]) {
+    let body: Record<string, unknown> = {
+      model: m,
+      max_tokens: 4000,
+      messages: [{ role: "user", content: "hi" }],
+      thinking: { type: "adaptive" },
+    };
+    for (const h of defaultAnthropicRequestHooks())
+      body = h.apply(body, ctx({ upstreamModel: m }));
+    const thinking = body.thinking as { display?: string };
+    assert.equal(thinking.display, undefined, `expected no display on ${m}`);
+  }
+});
+
+test("thinking-mode preserves explicit display:omitted from client", () => {
+  let body: Record<string, unknown> = {
+    model: "claude-opus-4-8",
+    max_tokens: 4000,
+    messages: [{ role: "user", content: "hi" }],
+    thinking: { type: "adaptive", display: "omitted" },
+  };
+  for (const h of defaultAnthropicRequestHooks())
+    body = h.apply(body, ctx({ upstreamModel: "claude-opus-4-8" }));
+  const thinking = body.thinking as { display?: string };
+  assert.equal(thinking.display, "omitted");
 });
 
 // --- hosted tools pass through untouched -----------------------------------

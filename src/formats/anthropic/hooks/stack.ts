@@ -17,7 +17,9 @@
 //   4. sanitize-request — rescue effort from non-standard fields into
 //                          output_config.effort, then strip every top-level
 //                          field not in the Anthropic allowlist
-//   5. thinking-config  — normalize thinking + hoist system; may raise
+//   5. thinking-mode    — per-model thinking type normalization (adaptive ↔
+//                          enabled, forced adaptive for Fable/Mythos, etc.)
+//   6. thinking-config  — normalize thinking + hoist system; may raise
 //                          max_tokens (gets the final say on the ceiling);
 //                          strips output_config.effort on Haiku
 //
@@ -38,6 +40,7 @@ import { clampMaxTokens } from "./max-tokens";
 import { applyPrefillFix } from "../prefill";
 import { sanitizeAnthropicRequest } from "./sanitize-request";
 import { sanitizeAnthropicResponse } from "./sanitize-response";
+import { normalizeThinkingMode } from "./thinking-mode";
 
 // Resolve the upstream model id a hook should key on. Prefer the chain-hop's
 // upstream model; fall back to whatever is on the body.
@@ -64,7 +67,8 @@ function modelOf(body: { model?: unknown }, ctx: TransformCtx): string {
 //   2. max-tokens       — clamp to the hop ceiling, re-reconcile budget
 //   3. prefill          — append a trailing user turn if the convo ends assistant
 //   4. sanitize-request — rescue effort, strip non-Anthropic fields
-//   5. thinking-config  — normalize thinking + hoist system, may raise max_tokens
+//   5. thinking-mode    — per-model thinking type normalization
+//   6. thinking-config  — normalize thinking + hoist system, may raise max_tokens
 function messagesOnly(ctx: TransformCtx): boolean {
   return ctx.providerFmt === "messages";
 }
@@ -144,7 +148,26 @@ export function defaultAnthropicRequestHooks(): TaggedRequestTransform[] {
         group: GROUP,
       },
     ),
-    // 5. Runs LAST: normalize thinking config (adaptive→enabled on Haiku,
+    // 5. Per-model thinking type normalization — converts the thinking
+    // config into a shape the target model accepts (e.g. enabled→adaptive
+    // for Opus 4.7+/Sonnet 5+, adaptive→enabled for ≤4.5/Haiku, forced
+    // adaptive for Fable/Mythos). Runs before thinking-config so budget
+    // reconciliation sees the final thinking type.
+    onRequest(
+      "messages",
+      "anthropic:thinking-mode",
+      (body, ctx) =>
+        messagesOnly(ctx)
+          ? normalizeThinkingMode(body, modelOf(body, ctx))
+          : body,
+      {
+        label: "Thinking-mode normalization",
+        blurb:
+          "Transforms the thinking config into the shape the target model supports — e.g. enabled→adaptive for Opus 4.7+, adaptive→enabled for older models.",
+        group: GROUP,
+      },
+    ),
+    // 6. Runs LAST: normalize thinking config (adaptive→enabled on Haiku,
     // budget_tokens floor), hoist system turns, and reconcile budget vs
     // max_tokens. Gets the final say on max_tokens — may raise it above
     // the ceiling max-tokens imposed if budget demands it. Also strips

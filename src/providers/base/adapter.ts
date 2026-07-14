@@ -33,6 +33,7 @@ import { ThinkingConverter } from "../../formats/thinking";
 import type { UpstreamModel } from "../../formats/wire/models";
 import type {
   AnthropicMessagesRequest,
+  AnthropicMessagesResponse,
   ChatCompletionRequest,
   ChatCompletionResponse,
   WireRequest,
@@ -647,5 +648,15 @@ export class AnthropicCompatibleAdapter extends ProviderAdapter {
       headers: ctx.headers,
       body: orderAnthropicKeys(ctx.body as AnthropicMessagesRequest),
     };
+  }
+
+  async testModel(ctx: TestModelCtx): Promise<TestModelResult> {
+    return this.probeEndpoint(ctx, WireKind.Messages, {
+      summarize: (json) => {
+        const r = json as AnthropicMessagesResponse;
+        const text = r.content?.find((b) => b.type === "text");
+        return { reply: (text as { text?: string })?.text ?? null };
+      },
+    });
   }
 }

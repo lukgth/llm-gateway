@@ -238,6 +238,8 @@ export const subscriptionStreamStack: StreamTransform[] = [
     "messages",
     "claude-code:stream-tool-unrename",
     (event, ctx) => {
+      console.log(event);
+      
       if (!subscriptionActive(ctx)) return event;
       if (event.type !== "content_block_start") return event;
 
@@ -249,6 +251,7 @@ export const subscriptionStreamStack: StreamTransform[] = [
         const original = renameMap.get(block.name);
         if (original) block.name = original;
       }
+
       return event;
     },
     {

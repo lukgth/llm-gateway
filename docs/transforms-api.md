@@ -96,7 +96,8 @@ src/formats/
   anthropic/hooks/
     stack.ts                — defaultAnthropicRequestHooks() — the messages-tagged stack
     thinking-signature.ts    — thinkingBlocksToText / stripThinkingBlocks
-    thinking-config.ts       — adaptive→enabled, budget_tokens floor/ceiling, system hoist
+    thinking-mode.ts         — per-model thinking type normalization + display injection
+    thinking-config.ts       — budget_tokens floor/ceiling, system hoist
     max-tokens.ts             — clamp to the hop ceiling
   anthropic/prefill.ts      — trailing-user-turn fix
   thinking/transforms.ts    — defaultThinkingResponse / defaultThinkingStream
@@ -240,7 +241,7 @@ onRequest(
 |---|---|
 | `label` | Short human name shown instead of the raw stage `name` (e.g. `"anthropic:thinking-signature"` → `"Thinking-signature normalization"`). Omit it and the UI humanizes the `name` suffix after the last `:` instead — never a requirement to set. |
 | `blurb` | One-line description shown under the label. |
-| `group` | Clusters this stage with every SIBLING (same phase, same source) that sets the identical `group` string under one collapsible row in the UI, instead of one row each — see the five Anthropic request hooks in `anthropic/hooks/stack.ts` (all `group: "anthropic-hooks"`) for the pattern. |
+| `group` | Clusters this stage with every SIBLING (same phase, same source) that sets the identical `group` string under one collapsible row in the UI, instead of one row each — see the six Anthropic request hooks in `anthropic/hooks/stack.ts` (all `group: "anthropic-hooks"`) for the pattern. |
 
 None of these three fields are read by the engine or the pipeline itself —
 `buildTransformPlan`/`applyBodyTransforms` never look at them. They exist
@@ -413,7 +414,7 @@ over an already-converted body.
 
 ### The Anthropic request-hook stack (`anthropic/hooks/stack.ts`)
 
-`defaultAnthropicRequestHooks()` returns four ordered, `"messages"`-tagged
+`defaultAnthropicRequestHooks()` returns six ordered, `"messages"`-tagged
 `onRequest` stages, each additionally gated on `ctx.providerFmt === "messages"`
 (so the pre-conversion slot — a client sending Messages to a *non*-Messages
 provider — stays a no-op, reproducing the historical "fires only when the
@@ -440,22 +441,34 @@ provider emits Messages" behavior exactly):
    conversation ends on `assistant` — a Claude 4.6+ prefill requirement.
 4. **`anthropic:sanitize-request`** — rescues effort hints from
    non-standard fields (`reasoning.effort`, `reasoning_effort`) into the
-   canonical `output_config.effort`, then strips every top-level field the
-   Anthropic Messages API does not accept. An allowlist of the 18 supported
-   fields (`model`, `messages`, `max_tokens`, `system`, `metadata`,
+   canonical `output_config.effort`, casts the value to Anthropic's valid
+   effort levels (`low` | `medium` | `high` | `xhigh` | `max`) via
+   `toAnthropicEffort()`, then strips every top-level field the Anthropic
+   Messages API does not accept. An allowlist of the 18 supported fields
+   (`model`, `messages`, `max_tokens`, `system`, `metadata`,
    `stop_sequences`, `stream`, `temperature`, `top_k`, `top_p`, `thinking`,
    `tool_choice`, `tools`, `output_config`, `cache_control`, `container`,
    `inference_geo`, `service_tier`) is the gate. Catches Chat-only fields
    (`presence_penalty`, `frequency_penalty`, `logprobs`, `seed`, …), the
    gateway's own intermediate fields, and anything a native `/v1/messages`
    client sends that isn't in the spec.
-5. **`anthropic:thinking-config`** — `adaptive` → `{type:"enabled",
-   budget_tokens:10000}` on Haiku; floors `budget_tokens` to 1024 and keeps
-   it `< max_tokens`; hoists mid-conversation `role:"system"` turns into the
-   top-level `system` field; strips `output_config.effort` on Haiku. Runs
-   **last** so it gets the final say on `max_tokens` — it may raise
-   `max_tokens` above the ceiling `max-tokens` imposed if `budget_tokens`
-   demands it.
+5. **`anthropic:thinking-mode`** — per-model thinking type normalization.
+   Transforms the `thinking` config into the shape the target model
+   supports: `enabled` → `adaptive` for Opus 4.7+/Sonnet 5+ (which reject
+   `enabled`), `adaptive` → `enabled` with a 10k budget for Haiku/≤4.5
+   (which don't support adaptive), forced `adaptive` for Fable/Mythos (where
+   thinking is always on). Also injects `display: "summarized"` on models
+   whose API defaults to `display: "omitted"` (Fable 5, Mythos 5, Sonnet 5,
+   Opus 4.7/4.8, Mythos Preview) — unless the client explicitly set
+   `display` already — so thinking content is always returned. Opus 4.6 and
+   Sonnet 4.6 (which default to `"summarized"`) and older models are left
+   untouched.
+6. **`anthropic:thinking-config`** — floors `budget_tokens` to 1024 and
+   keeps it `< max_tokens`; hoists mid-conversation `role:"system"` turns
+   into the top-level `system` field; strips `output_config.effort` on
+   Haiku. Runs **last** so it gets the final say on `max_tokens` — it may
+   raise `max_tokens` above the ceiling `max-tokens` imposed if
+   `budget_tokens` demands it.
 
 Each hook is individually guarded by `applyBodyTransforms` (a throw is
 caught, body passes through) and is a no-op when its trigger condition is
@@ -674,7 +687,7 @@ renders this exact response as a collapsible card (same idiom as
 thing open/closed, closed by default so it doesn't dominate the page):
 grouped by phase (Request/Response/Stream), and within each phase,
 consecutive stages sharing a `group` collapse into ONE nested-collapsible row
-(e.g. the five Anthropic request hooks read as "Anthropic Hooks · 5 stages"
+(e.g. the six Anthropic request hooks read as "Anthropic Hooks · 5 stages"
 until expanded) instead of one row per stage. Every stage is shown
 **non-editable** and visually separate from `<TransformEditor>` (which edits
 ONLY the model's own, layer-4 config) — so "what always happens" and "what
@@ -768,7 +781,7 @@ matching provider, unconditionally, no library entry)
    metadata](#optional-display-metadata-label--blurb--group) above) so the
    stage shows a friendly name in the UI instead of the raw `name`; set
    `group` to the SAME string as its siblings if the new stage always runs
-   alongside them as one conceptual unit (e.g. adding a 5th Anthropic hook
+   alongside them as one conceptual unit (e.g. adding a 7th Anthropic hook
    should reuse stack.ts's existing `GROUP` constant).
 3. Update `docs/transforms-api.md`'s **"The Anthropic request-hook
    stack"** table (or **"The all-provider defaults registry"** table for a

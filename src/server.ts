@@ -27,6 +27,9 @@ export function createServerApp(
 ): Express {
   const app = express();
 
+  // Global request logger — Morgan-style colorized line for every request.
+  app.use(logger.httpMiddleware());
+
   // JSON body parsing for the admin API and gateway /v1 surface. (The gateway
   // router re-applies its own /v1 body parser with a large limit; keep this
   // one modest for /api.)

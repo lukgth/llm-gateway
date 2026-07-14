@@ -117,8 +117,9 @@ export type AnthropicToolChoice =
   | ({ type: string } & Record<string, unknown>);
 
 export interface AnthropicThinkingConfig {
-  type?: "enabled" | "adaptive" | string;
+  type?: "enabled" | "adaptive" | "disabled" | string;
   budget_tokens?: number;
+  display?: "summarized" | "omitted" | string;
   [k: string]: unknown;
 }
 

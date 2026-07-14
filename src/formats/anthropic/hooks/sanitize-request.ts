@@ -13,7 +13,6 @@
 // (19 accepted top-level body fields as of 2026-07-13).
 
 import type { AnthropicMessagesRequest, Json } from "../../pipeline";
-import { isModelPost45 } from "../model-version";
 
 // Canonical key order for the outbound JSON body. JSON.stringify serializes
 // in insertion order, so rebuilding the object in this sequence produces a
@@ -47,7 +46,7 @@ const SAMPLING_KEYS = new Set(["temperature", "top_p", "top_k"]);
 
 export function sanitizeAnthropicRequest(
   body: AnthropicMessagesRequest,
-  model: string,
+  _model: string,
 ): AnthropicMessagesRequest {
   if (!body || typeof body !== "object") return body;
 
@@ -56,27 +55,44 @@ export function sanitizeAnthropicRequest(
   if (typeof body.system === "string")
     body.system = [{ type: "text", text: body.system }];
 
-  const stripSampling = isModelPost45(model);
-
   // Rebuild in canonical key order (strip disallowed keys in the process).
   const ordered: Json = {};
   for (const key of ORDERED_KEYS) {
-    if (stripSampling && SAMPLING_KEYS.has(key)) continue;
+    if (SAMPLING_KEYS.has(key)) continue;
     if (key in body) ordered[key] = body[key];
   }
 
   for (const key of Object.keys(body)) {
     if (!ALLOWED.has(key)) continue;
-    if (stripSampling && SAMPLING_KEYS.has(key)) continue;
+    if (SAMPLING_KEYS.has(key)) continue;
     if (!(key in ordered)) ordered[key] = body[key];
   }
 
   return ordered as AnthropicMessagesRequest;
 }
 
+const ANTHROPIC_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+type AnthropicEffort = (typeof ANTHROPIC_EFFORTS)[number];
+
+export function toAnthropicEffort(value: unknown): AnthropicEffort | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.toLowerCase();
+  if (ANTHROPIC_EFFORTS.includes(v as AnthropicEffort))
+    return v as AnthropicEffort;
+  if (v === "x-high" || v === "extra-high" || v === "extra_high")
+    return "xhigh";
+  if (v === "maximum" || v === "highest") return "max";
+  if (v === "lowest" || v === "minimal" || v === "min") return "low";
+  return undefined;
+}
+
 function rescueEffort(body: AnthropicMessagesRequest): void {
   const oc = body.output_config;
-  if (oc && typeof oc === "object" && oc.effort !== undefined) return;
+  if (oc && typeof oc === "object" && oc.effort !== undefined) {
+    const casted = toAnthropicEffort(oc.effort);
+    if (casted) oc.effort = casted;
+    return;
+  }
 
   const reasoning = body.reasoning as { effort?: unknown } | undefined;
   const effort =
@@ -86,9 +102,11 @@ function rescueEffort(body: AnthropicMessagesRequest): void {
 
   if (effort === undefined) return;
 
+  const casted = toAnthropicEffort(effort) ?? effort;
+
   if (oc && typeof oc === "object") {
-    oc.effort = effort;
+    oc.effort = casted;
   } else {
-    body.output_config = { effort };
+    body.output_config = { effort: casted };
   }
 }

@@ -481,7 +481,7 @@ for the full reasoning.
 | `AnthropicMessage` | `role: "user" \| "assistant" \| string`, `content: string \| AnthropicBlock[]` | Unlike Chat, there is no separate system-role message — see `system` below |
 | `AnthropicTool` | `name: string`, `description?: string`, `input_schema?: unknown`, `type?: string` | |
 | `AnthropicToolChoice` | `{ type: "auto" \| "any" \| "none" } \| { type: "tool"; name: string } \| ({ type: string } & Record<string, unknown>)` | |
-| `AnthropicThinkingConfig` | `type?: "enabled" \| "adaptive" \| string`, `budget_tokens?: number` | `AnthropicMessagesRequest.thinking` — see the `anthropic:thinking-config` hook in transforms-api.md for the adaptive→enabled normalization on Haiku and the `budget_tokens` floor/ceiling |
+| `AnthropicThinkingConfig` | `type?: "enabled" \| "adaptive" \| "disabled" \| string`, `budget_tokens?: number`, `display?: "summarized" \| "omitted" \| string` | `AnthropicMessagesRequest.thinking` — `display` controls whether thinking content is returned as summarized text or omitted (signature only). See the `anthropic:thinking-mode` hook in transforms-api.md for per-model type normalization and display injection, and `anthropic:thinking-config` for the `budget_tokens` floor/ceiling |
 
 ### Usage
 

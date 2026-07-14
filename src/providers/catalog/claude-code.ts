@@ -7,13 +7,7 @@
 // (cch header computation). Response and stream transforms reverse tool
 // renames so the client sees its original tool names.
 
-import {
-  AnthropicCompatibleAdapter,
-  BuildCtx,
-  BuiltRequest,
-  TestModelCtx,
-  TestModelResult,
-} from "../base";
+import { AnthropicCompatibleAdapter, BuildCtx, BuiltRequest } from "../base";
 import type {
   RequestTransform,
   ResponseTransform,
@@ -29,10 +23,6 @@ import { ANTHROPIC_DEFAULT_TRANSFORMS } from "./anthropic-compatible";
 import { withBetaQuery } from "../../formats/anthropic/subscription/billing";
 
 class ClaudeCodeAdapter extends AnthropicCompatibleAdapter {
-  // Provider-scoped subscription no-op stack. The format-driven Anthropic hooks
-  // (thinking-config, max_tokens, prefill) are injected by the engine ahead of
-  // these whenever the hop emits the Messages format — so this only needs to add
-  // the subscription stages (concatenated after any base adapter transforms).
   requestTransforms(p: Provider): RequestTransform[] {
     return [...super.requestTransforms(p), ...subscriptionRequestStack];
   }
@@ -48,12 +38,8 @@ class ClaudeCodeAdapter extends AnthropicCompatibleAdapter {
   messages(ctx: BuildCtx): BuiltRequest {
     const built = super.messages(ctx);
     built.url = withBetaQuery(built.url);
-    console.log(JSON.stringify(built.body, null, 2));
+    // console.log(JSON.stringify(ctx, null, 2), JSON.stringify(built, null, 2));
     return built;
-  }
-
-  async testModel(_ctx: TestModelCtx): Promise<TestModelResult> {
-    return { ok: true, status: 200, data: { reply: "pong" }, ms: 1 };
   }
 }
 
