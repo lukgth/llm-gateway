@@ -48,7 +48,7 @@ export class SseUsageObserver extends Transform {
   private tools = new Map<number, { name?: unknown; arguments: string }>();
 
   constructor(opts?: { capture?: boolean }) {
-    super();
+    super({ highWaterMark: 0 });
     this.capture = opts?.capture ?? false;
   }
 

@@ -38,7 +38,12 @@
 // validation (a text block has no signature requirement) but still present
 // for the model to read.
 
-import type { Json } from "../../pipeline";
+import type {
+  AnthropicMessagesRequest,
+  AnthropicBlock,
+  AnthropicMessage,
+  AnthropicThinkingBlock,
+} from "../../pipeline";
 
 /**
  * Drop every `thinking`/`redacted_thinking` block outright — the lossy
@@ -47,8 +52,8 @@ import type { Json } from "../../pipeline";
  * (see thinkingBlocksToText).
  */
 export function stripThinkingBlocks(
-  requestBody: Readonly<Record<string, unknown>>,
-): Record<string, unknown> {
+  requestBody: Readonly<AnthropicMessagesRequest>,
+): AnthropicMessagesRequest {
   return mapThinkingBlocks(requestBody, () => undefined);
 }
 
@@ -62,13 +67,15 @@ export function stripThinkingBlocks(
  * `redacted_thinking` blocks are always dropped (encrypted, no readable text).
  */
 export function thinkingBlocksToText(
-  requestBody: Readonly<Record<string, unknown>>,
-): Record<string, unknown> {
+  requestBody: Readonly<AnthropicMessagesRequest>,
+): AnthropicMessagesRequest {
   return mapThinkingBlocks(requestBody, (block) => {
-    const raw = block["thinking"];
-    const text = typeof raw === "string" ? raw : "";
-    if (text.trim() === "") return undefined; // empty → drop, not an empty text block
-    return { type: "text", text };
+    const text =
+      typeof (block as AnthropicThinkingBlock).thinking === "string"
+        ? (block as AnthropicThinkingBlock).thinking!
+        : "";
+    if (text.trim() === "") return undefined;
+    return { type: "text" as const, text };
   });
 }
 
@@ -79,50 +86,48 @@ export function thinkingBlocksToText(
  * a shallow copy; only messages whose content actually changed are rebuilt.
  */
 function mapThinkingBlocks(
-  requestBody: Readonly<Record<string, unknown>>,
-  transform: (block: Record<string, unknown>) => unknown,
-): Record<string, unknown> {
-  const messages = requestBody["messages"];
+  requestBody: Readonly<AnthropicMessagesRequest>,
+  transform: (block: AnthropicBlock) => AnthropicBlock | undefined,
+): AnthropicMessagesRequest {
+  const messages = requestBody.messages;
   if (!Array.isArray(messages)) return { ...requestBody };
 
   let changed = false;
-  const newMessages = messages.map((m) => {
-    if (!m || typeof m !== "object" || Array.isArray(m)) return m;
-    const msg = m as Record<string, unknown>;
-    const content = msg["content"];
-    if (!Array.isArray(content)) return msg;
+  const newMessages = messages.map((m: AnthropicMessage) => {
+    if (!m || typeof m !== "object") return m;
+    const content = m.content;
+    if (!Array.isArray(content)) return m;
 
     let blockChanged = false;
-    const newContent: unknown[] = [];
+    const newContent: AnthropicBlock[] = [];
     for (const block of content) {
       if (block && typeof block === "object" && !Array.isArray(block)) {
-        const b = block as Record<string, unknown>;
-        const type = b["type"];
+        const type = (block as AnthropicBlock).type;
         if (type === "thinking") {
-          const replacement = transform(b);
+          const replacement = transform(block as AnthropicBlock);
           if (replacement !== undefined) newContent.push(replacement);
           blockChanged = true;
           continue;
         }
         if (type === "redacted_thinking") {
-          blockChanged = true; // encrypted; nothing to preserve
+          blockChanged = true;
           continue;
         }
       }
-      newContent.push(block);
+      newContent.push(block as AnthropicBlock);
     }
 
-    if (!blockChanged) return msg;
+    if (!blockChanged) return m;
     changed = true;
-    return { ...msg, content: newContent };
+    return { ...m, content: newContent };
   });
 
   if (!changed) return { ...requestBody };
   return { ...requestBody, messages: newMessages };
 }
 
-// Re-typed entry point for the request-hook stack (Json in/out, matching
-// normalizeThinkingConfig/clampMaxTokens's own signatures).
-export function normalizeThinkingSignatures(body: Json): Json {
-  return thinkingBlocksToText(body) as Json;
+export function normalizeThinkingSignatures(
+  body: AnthropicMessagesRequest,
+): AnthropicMessagesRequest {
+  return thinkingBlocksToText(body);
 }

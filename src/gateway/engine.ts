@@ -83,6 +83,8 @@ import {
   isEventStream,
   isJson,
   filteredHeaders,
+  readErrorBody,
+  decompressStream,
   sleep,
 } from "./engine-support/utils";
 
@@ -218,6 +220,7 @@ export class ForwardingEngine {
       alias,
       upstreamModel: entry.upstreamModel,
       maxOutputTokens: entry.maxOutputTokens,
+      state: {},
     };
 
     // reqId is supplied only when debug logging is on, so its presence gates the
@@ -241,9 +244,9 @@ export class ForwardingEngine {
     //      (e.g. anthropic-cache), minus anything the model overrides — runs
     //      BEFORE the adapter's own stack so e.g. prompt-caching breakpoints
     //      are in place before an adapter-specific stage (like the
-    //      anthropic-subscription hooks) inspects/rewrites the body.
+    //      claude-code hooks) inspects/rewrites the body.
     //   3. adapter transforms: the provider adapter's own tagged/untagged
-    //      stages (e.g. anthropic-subscription's no-op framework).
+    //      stages (e.g. claude-code's no-op framework).
     //   4. model transforms: the model's own overrides/additions — last, so an
     //      operator's explicit per-model customization always has the final
     //      say over both the family default and the adapter's stack.
@@ -586,13 +589,13 @@ export class ForwardingEngine {
     let upstreamUrl: URL;
     let headers: Record<string, string>;
     try {
+      const reqBody = { ...ctx.requestBody, model: upstreamModel };
       const converted = applyBodyTransforms(
         route.request,
-        { ...ctx.requestBody },
+        reqBody,
         attemptCtx,
         this.stageApplyLogger(ctx, "req"),
       );
-      converted.model = upstreamModel;
 
       // Default composed URL: a request hook's urlOverride wins, else the
       // origin+basePath+forwardPath composition (string concat, not
@@ -757,32 +760,38 @@ export class ForwardingEngine {
     const headers = upRes.headers || {};
 
     if (RETRY_STATUS.has(status)) {
-      upRes.resume();
-      // Parse the cooldown so forward() can rate-limit this key for the right
-      // duration before failing over.
+      const errBody = await readErrorBody(upRes);
+      this.logger.warn("upstream_retryable", {
+        status,
+        provider: provider.id,
+        upstreamModel,
+        path: ctx.clientPath,
+        body: errBody,
+      });
       const rateLimitMs = status === 429 ? parseRateLimit(headers) : undefined;
       return {
         committed: false,
         status,
-        reason: `status ${status}`,
+        reason: `status ${status}: ${errBody.slice(0, 200)}`,
         rateLimitMs,
       };
     }
 
     if (status < 200 || status >= 300) {
-      const chunks: Buffer[] = [];
-      for await (const c of upRes) chunks.push(c as Buffer);
-      const errBody = Buffer.concat(chunks);
+      const errText = await readErrorBody(upRes);
       this.logger.warn("upstream_non_2xx", {
         status,
         provider: provider.id,
         upstreamModel,
         path: ctx.clientPath,
-        body: errBody.toString("utf8").slice(0, 2000),
+        body: errText.slice(0, 2000),
       });
       if (!res.headersSent) {
-        res.writeHead(status, filteredHeaders(headers));
-        res.end(errBody);
+        const out = filteredHeaders(headers, { stripEncoding: true });
+        const buf = Buffer.from(errText, "utf8");
+        out["content-length"] = String(buf.length);
+        res.writeHead(status, out);
+        res.end(buf);
       }
       return { committed: true, status, error: `upstream ${status}` };
     }
@@ -854,10 +863,12 @@ export class ForwardingEngine {
     headers: IncomingMessage["headers"],
     startedAt: number,
   ): void {
-    const out = filteredHeaders(headers);
+    const out = filteredHeaders(headers, { stripEncoding: true });
     delete out["content-length"];
     delete out["Content-Length"];
     if (route.convert) out["content-type"] = "text/event-stream";
+    out["cache-control"] = "no-cache, no-transform";
+    out["x-accel-buffering"] = "no";
 
     // Materialize the ordered SSE stages from the plan: thinking (a pre-bridge,
     // provider-format-tagged default), the format bridge, then any adapter-custom
@@ -1021,9 +1032,14 @@ export class ForwardingEngine {
     };
     res.on("close", onClientClose);
 
-    const stages = [headTap, usageObserver, ...streamStages, ping].filter(
-      Boolean,
-    ) as NodeJS.ReadWriteStream[];
+    const decompress = decompressStream(headers);
+    const stages = [
+      decompress,
+      headTap,
+      usageObserver,
+      ...streamStages,
+      ping,
+    ].filter(Boolean) as NodeJS.ReadWriteStream[];
     streamPipeline([upRes, ...stages, clientSink], (err) => {
       res.off("close", onClientClose);
       if (!err) {
@@ -1090,29 +1106,20 @@ export class ForwardingEngine {
     cached?: number;
     debugResponse?: string | null;
   }> {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    for await (const c of upRes) {
-      const chunk = c as Buffer;
-      size += chunk.length;
-      if (size > MAX_BUFFER_BYTES) {
-        if (!res.headersSent)
-          res.status(502).json({
-            error: {
-              type: "upstream_error",
-              message: "Upstream response too large to convert",
-              source: "gateway",
-            },
-          });
-        return {};
-      }
-      chunks.push(chunk);
+    const text = await readErrorBody(upRes, MAX_BUFFER_BYTES);
+    if (Buffer.byteLength(text) >= MAX_BUFFER_BYTES) {
+      if (!res.headersSent)
+        res.status(502).json({
+          error: {
+            type: "upstream_error",
+            message: "Upstream response too large to convert",
+            source: "gateway",
+          },
+        });
+      return {};
     }
 
-    const stripped = Buffer.from(
-      stripInvisible(Buffer.concat(chunks).toString("utf8")),
-      "utf8",
-    );
+    const stripped = Buffer.from(stripInvisible(text), "utf8");
 
     let parsed: Record<string, unknown>;
     try {
@@ -1151,7 +1158,7 @@ export class ForwardingEngine {
     }
 
     const out = Buffer.from(JSON.stringify(outBody), "utf8");
-    const outHeaders = filteredHeaders(headers);
+    const outHeaders = filteredHeaders(headers, { stripEncoding: true });
     outHeaders["content-length"] = String(out.length);
     if (route.convert) outHeaders["content-type"] = "application/json";
     if (!res.headersSent) res.writeHead(status, outHeaders);
@@ -1399,13 +1406,13 @@ export class ForwardingEngine {
     let upstreamUrl: URL;
     let headers: Record<string, string>;
     try {
+      const reqBody = { ...messagesBody, model: upstreamModel };
       const converted = applyBodyTransforms(
         route.request,
-        { ...messagesBody },
+        reqBody,
         attemptCtx,
         this.stageApplyLogger(ctx, "req"),
       );
-      converted.model = upstreamModel;
       delete converted.stream;
 
       const defaultUrl =
@@ -1463,12 +1470,19 @@ export class ForwardingEngine {
     }
 
     if (RETRY_STATUS.has(res.status)) {
+      const errBody = res.text.slice(0, 2000);
+      this.logger.warn("upstream_retryable", {
+        status: res.status,
+        provider: provider.id,
+        upstreamModel,
+        body: errBody,
+      });
       if (pick && res.status === 429)
         this.keyHealth.markRateLimited(provider.id, pick.keyHash, 60_000);
       return {
         ok: false,
         status: res.status,
-        reason: `status ${res.status}`,
+        reason: `status ${res.status}: ${errBody.slice(0, 200)}`,
         retryable: true,
       };
     }

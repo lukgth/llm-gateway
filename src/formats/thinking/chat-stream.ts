@@ -37,8 +37,7 @@ export class SseThinkingTransform extends Transform {
   private readonly parser = new StreamingThinkingParser();
 
   constructor() {
-    // We push strings; default encoding handles UTF-8 on the way out.
-    super();
+    super({ highWaterMark: 0 });
   }
 
   _transform(

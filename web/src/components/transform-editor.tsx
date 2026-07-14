@@ -95,6 +95,7 @@ export function TransformEditor({
                   disabled={i === 0}
                   title="Move up"
                   aria-label="Move transform up"
+                  className="text-muted-foreground hover:text-foreground"
                 >
                   <ArrowUp className="h-3 w-3" />
                 </Button>
@@ -105,6 +106,7 @@ export function TransformEditor({
                   disabled={i === value.length - 1}
                   title="Move down"
                   aria-label="Move transform down"
+                  className="text-muted-foreground hover:text-foreground"
                 >
                   <ArrowDown className="h-3 w-3" />
                 </Button>
@@ -114,8 +116,9 @@ export function TransformEditor({
                   onClick={() => onChange(value.filter((_, j) => j !== i))}
                   title="Remove transform"
                   aria-label="Remove transform"
+                  className="text-muted-foreground hover:text-destructive"
                 >
-                  <Trash2 className="h-3 w-3 text-destructive" />
+                  <Trash2 className="h-3 w-3" />
                 </Button>
               </div>
             </div>

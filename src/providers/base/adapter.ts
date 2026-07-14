@@ -36,6 +36,7 @@ import type {
   ChatCompletionResponse,
   WireRequest,
 } from "../../formats/wire";
+import { ORDERED_KEYS } from "../../formats/anthropic/hooks/sanitize-request";
 import { endpointPathFor, resolveKind } from "./url";
 import { fetchModelList, normalizeModels, minimalProbeBody } from "./models";
 import type {
@@ -188,9 +189,11 @@ export abstract class ProviderAdapter {
   requestTransforms(_p: Provider): AnyRequestTransform[] {
     return [];
   }
+
   responseTransforms(_p: Provider): AnyResponseTransform[] {
     return [];
   }
+
   streamTransforms(_p: Provider): AnyStreamTransform[] {
     return [];
   }
@@ -403,6 +406,7 @@ export abstract class ProviderAdapter {
       apiKey: ctx.apiKey,
       headers: { ...ctx.headers },
     };
+    (rawBody as Json).model = ctx.model;
     const transformed = applyBodyTransforms(
       plan.request,
       rawBody as Json,
@@ -563,6 +567,15 @@ export function dummyUsageWindows(seed: number): ProviderKeyUsageWindow[] {
 // from the adapter's keyUsage() output; re-exported shape for convenience.
 export type { ProviderKeyUsage };
 
+// GPT-5 family: models that reject legacy `max_tokens` (require
+// `max_completion_tokens`) and don't support `temperature`. Matches GPT-5+,
+// o3+, and Codex families so newly released models are covered without edits.
+const GPT5_FAMILY = /^(gpt-([5-9]|\d{2,})|o[3-9]\d*|codex)/i;
+
+function isGPT5Family(model: string): boolean {
+  return GPT5_FAMILY.test(model);
+}
+
 // Native chat provider (OpenAI-compatible). All inbound formats route to the
 // provider's chat endpoint by default (the engine bridges messages/responses ->
 // chat) — but a per-link endpoint wins: pointing a hop at /v1/messages makes this
@@ -583,9 +596,13 @@ export class OpenAICompatibleAdapter extends ProviderAdapter {
           content: "Reply with exactly: hi",
         },
       ],
-      max_tokens: 2,
-      temperature: 0,
     };
+    if (isGPT5Family(ctx.model)) {
+      body.max_completion_tokens = 16;
+    } else {
+      body.max_tokens = 2;
+      body.temperature = 0;
+    }
 
     return this.probeEndpoint(ctx, WireKind.Chat, {
       body,
@@ -598,6 +615,19 @@ export class OpenAICompatibleAdapter extends ProviderAdapter {
   }
 }
 
+function orderAnthropicKeys(
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const ordered: Record<string, unknown> = {};
+  for (const key of ORDERED_KEYS) {
+    if (key in body) ordered[key] = body[key];
+  }
+  for (const key of Object.keys(body)) {
+    if (!(key in ordered)) ordered[key] = body[key];
+  }
+  return ordered;
+}
+
 // Native messages provider (Anthropic-compatible). All inbound formats route to
 // the provider's /messages endpoint by default (the engine bridges chat ->
 // messages) — but a per-link endpoint wins: pointing a hop at /v1/chat/completions
@@ -607,5 +637,13 @@ export class OpenAICompatibleAdapter extends ProviderAdapter {
 export class AnthropicCompatibleAdapter extends ProviderAdapter {
   protected get nativeFmt(): WireFmt {
     return WireKind.Messages;
+  }
+
+  messages(ctx: BuildCtx): BuiltRequest {
+    return {
+      url: ctx.url,
+      headers: ctx.headers,
+      body: orderAnthropicKeys(ctx.body),
+    };
   }
 }

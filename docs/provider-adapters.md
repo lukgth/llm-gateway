@@ -29,7 +29,7 @@ src/providers/
   catalog/       — the 14 stock provider instances (one file each)
     anthropic-compatible.ts — also exports ANTHROPIC_DEFAULT_TRANSFORMS, the
                    shared family-default stack anthropic.ts and
-                   anthropic-subscription.ts both inherit (see transforms-api.md)
+                   claude-code.ts both inherit (see transforms-api.md)
   registry.ts    — ADAPTERS[] + lookup/dispatch functions
   quirks.ts      — applyTemplateDefaults / capabilitiesForTemplate (create/import time only)
   types.ts       — re-exports the catalog metadata shapes from ../types/catalog.ts
@@ -75,7 +75,7 @@ A stock provider is almost always a plain `new OpenAICompatibleAdapter({...})`
 or `new AnthropicCompatibleAdapter({...})` — no subclass needed unless it
 overrides a build method, a transform hook, or `preferredEndpoint`. Subclass
 only when the provider needs bespoke behavior (see `example-custom.ts` for a
-subclass that exercises every seam, and `anthropic-subscription.ts` for a
+subclass that exercises every seam, and `claude-code.ts` for a
 minimal one that only adds request transforms).
 
 ---
@@ -454,7 +454,7 @@ universally sane connectivity check for anything in this catalog.
 
    Subclass `OpenAICompatibleAdapter`/`AnthropicCompatibleAdapter` instead of
    instantiating directly when the provider needs a build-method override, a
-   transform hook, or `preferredEndpoint` — see `anthropic-subscription.ts`
+   transform hook, or `preferredEndpoint` — see `claude-code.ts`
    for a minimal subclass and `example-custom.ts` for the full seam list.
 
 2. Add the instance to `ADAPTERS` in `src/providers/registry.ts`. Order there
@@ -489,7 +489,7 @@ they can't regress streaming or conversion — see `src/providers/quirks.ts`);
 | `requiredHeaders` | Merged into the provider's `extraHeaders` on create (e.g. `anthropic-version`) |
 | `thinking` | Seeds a newly-imported model's thinking capability (`defaultType`, `supportsEffort`) |
 | `defaultCapabilities` | Merged onto `DEFAULT_CAPABILITIES` for imported models |
-| `defaultTransforms` | Family-default per-model transforms (see [transforms-api.md § The default provider transform stack](./transforms-api.md#the-default-provider-transform-stack)). **Not** seeded into a model's stored config at import — applied fresh as an always-on base layer on **every request** (`familyDefaultTransforms` / `dropOverriddenDefaults`, called from `engine.ts`'s `buildChain`), so a change here reaches every existing provider/model immediately, no re-import needed. Runs **before** the adapter's own `requestTransforms()`/etc. stack (see below), so e.g. prompt-caching breakpoints are in place before an adapter-specific stage inspects the body. `ANTHROPIC_DEFAULT_TRANSFORMS` (`catalog/anthropic-compatible.ts`) is the one declared today, shared by `anthropic`/`anthropic-compatible`/`anthropic-subscription` via a single array reference. |
+| `defaultTransforms` | Family-default per-model transforms (see [transforms-api.md § The default provider transform stack](./transforms-api.md#the-default-provider-transform-stack)). **Not** seeded into a model's stored config at import — applied fresh as an always-on base layer on **every request** (`familyDefaultTransforms` / `dropOverriddenDefaults`, called from `engine.ts`'s `buildChain`), so a change here reaches every existing provider/model immediately, no re-import needed. Runs **before** the adapter's own `requestTransforms()`/etc. stack (see below), so e.g. prompt-caching breakpoints are in place before an adapter-specific stage inspects the body. `ANTHROPIC_DEFAULT_TRANSFORMS` (`catalog/anthropic-compatible.ts`) is the one declared today, shared by `anthropic`/`anthropic-compatible`/`claude-code` via a single array reference. |
 
 ---
 

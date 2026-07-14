@@ -9,6 +9,7 @@ import { SseFrameReader, parseSseData } from "../../sse/frame";
 import { SYNTHETIC_THINKING_SIGNATURE } from "../../wire/anthropic";
 import {
   genId,
+  sanitizeToolId,
   extractReasoningText,
   FINISH_TO_STOP,
   chatUsageToAnthropic,
@@ -25,7 +26,7 @@ export class ChatToMessagesSseTransform extends Transform {
   private readonly model: string | null;
 
   constructor(model?: string | null) {
-    super();
+    super({ highWaterMark: 0 });
     this.model = model ?? null;
   }
 
@@ -197,7 +198,7 @@ export class ChatToMessagesSseTransform extends Transform {
               index: blockIndex,
               content_block: {
                 type: "tool_use",
-                id: tc.id || genId("toolu_"),
+                id: sanitizeToolId(tc.id, `toolu_${ci}`),
                 name: tc.function?.name ?? "",
                 input: {},
               },

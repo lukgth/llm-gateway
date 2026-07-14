@@ -3,7 +3,12 @@
 // out so none of those needs to import from one another.
 
 import crypto from "crypto";
-import type { AnthropicUsage, ChatUsage } from "../../wire";
+import type {
+  AnthropicBlock as WireAnthropicBlock,
+  AnthropicUsage,
+  ChatContentPart as WireChatContentPart,
+  ChatUsage,
+} from "../../wire";
 
 export function genId(prefix: string): string {
   return prefix + crypto.randomBytes(12).toString("hex");
@@ -127,8 +132,8 @@ export function chatUsageToAnthropic(
 
 // --- content translation ---------------------------------------------------
 
-export type AnthropicBlock = Record<string, unknown>;
-export type ChatContentPart = Record<string, unknown>;
+export type AnthropicBlock = WireAnthropicBlock;
+export type ChatContentPart = WireChatContentPart;
 
 // Anthropic content (string | block[]) -> OpenAI content (string | part[]).
 export function anthropicContentToChat(content: unknown): unknown {

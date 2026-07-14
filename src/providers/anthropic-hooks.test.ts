@@ -28,9 +28,10 @@ const provider = (over: Partial<Provider> = {}): Provider =>
 
 const BASE = [
   "anthropic:thinking-signature",
-  "anthropic:thinking-config",
   "anthropic:max-tokens",
   "anthropic:prefill",
+  "anthropic:sanitize-request",
+  "anthropic:thinking-config",
 ];
 
 function hookCtx(over: Partial<TransformCtx> = {}): TransformCtx {

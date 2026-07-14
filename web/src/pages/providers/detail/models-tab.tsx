@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { DefaultTransformsPanel } from "@/components/default-transforms";
-import { formatLabel } from "@/lib/utils";
+import { cn, formatLabel } from "@/lib/utils";
 
 export function ModelsTab({
   provider,
@@ -63,7 +63,7 @@ export function ModelsTab({
                 <TableHead>Alias</TableHead>
                 <TableHead>Upstream model</TableHead>
                 <TableHead>Type</TableHead>
-                <TableHead className="text-right">Edit</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -86,10 +86,10 @@ export function ModelsTab({
                       <Link
                         to={`/models/${m.id}`}
                         title="Edit model"
-                        className={buttonVariants({
-                          variant: "ghost",
-                          size: "icon",
-                        })}
+                        className={cn(
+                          buttonVariants({ variant: "ghost", size: "icon" }),
+                          "text-muted-foreground hover:text-foreground",
+                        )}
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Link>

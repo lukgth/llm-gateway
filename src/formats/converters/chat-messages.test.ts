@@ -301,23 +301,34 @@ test("R9: a negative temperature is clamped up to 0", () => {
 // R8 — reasoning-effort passthrough
 // ===========================================================================
 
-test("R8: chat->messages carries reasoning_effort as reasoning.effort", () => {
+test("R8: chat->messages carries reasoning_effort as output_config.effort", () => {
   const out = chatRequestToMessages({
     model: "m",
     messages: [{ role: "user", content: "hi" }],
     reasoning_effort: "high",
   });
-  assert.deepEqual(out.reasoning, { effort: "high" });
+  assert.deepEqual(out.output_config, { effort: "high" });
+  assert.equal(out.reasoning, undefined);
 });
 
-test("R8: messages->chat carries reasoning.effort as reasoning_effort", () => {
+test("R8: messages->chat carries output_config.effort as reasoning_effort", () => {
   const out = messagesRequestToChat({
     model: "m",
     max_tokens: 10,
     messages: [{ role: "user", content: "hi" }],
-    reasoning: { effort: "low" },
+    output_config: { effort: "low" },
   });
   assert.equal(out.reasoning_effort, "low");
+});
+
+test("R8: messages->chat falls back to legacy reasoning.effort for compat", () => {
+  const out = messagesRequestToChat({
+    model: "m",
+    max_tokens: 10,
+    messages: [{ role: "user", content: "hi" }],
+    reasoning: { effort: "medium" },
+  } as Record<string, unknown>);
+  assert.equal(out.reasoning_effort, "medium");
 });
 
 // ===========================================================================

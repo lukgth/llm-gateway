@@ -1,21 +1,34 @@
-// Anthropic (subscription) provider — the home of the vsllm request stack.
+// Claude Code subscription provider.
 //
 // Same upstream as the official Anthropic provider (/v1/messages), but its
-// adapter wires in the subscription request-processing stack from
-// formats/anthropic/subscription/index.ts. That stack is a documented NO-OP framework:
-// the pipeline stages exist and are registered 1:1 with vsllm, but the
-// attestation/billing bodies are intentionally not implemented (see that file).
-//
-// Adding real behavior later means filling in those transforms — nothing in the
-// engine or pipeline needs to change.
+// adapter wires in the Claude Code request-processing stack from
+// formats/anthropic/subscription/index.ts: classifier scrubbing, tool-name
+// normalization (PascalCase + decoy stubs), and OAuth billing/attestation
+// (cch header computation). Response and stream transforms reverse tool
+// renames so the client sees its original tool names.
 
-import { AnthropicCompatibleAdapter } from "../base";
-import type { RequestTransform } from "../../formats/pipeline";
-import { subscriptionRequestStack } from "../../formats/anthropic/subscription/index";
+import {
+  AnthropicCompatibleAdapter,
+  BuildCtx,
+  BuiltRequest,
+  TestModelCtx,
+  TestModelResult,
+} from "../base";
+import type {
+  RequestTransform,
+  ResponseTransform,
+  StreamTransform,
+} from "../../formats/pipeline";
+import {
+  subscriptionRequestStack,
+  subscriptionResponseStack,
+  subscriptionStreamStack,
+} from "../../formats/anthropic/subscription/index";
 import { WireKind, type Provider } from "../../types";
 import { ANTHROPIC_DEFAULT_TRANSFORMS } from "./anthropic-compatible";
+import { withBetaQuery } from "../../formats/anthropic/subscription/billing";
 
-class AnthropicSubscriptionAdapter extends AnthropicCompatibleAdapter {
+class ClaudeCodeAdapter extends AnthropicCompatibleAdapter {
   // Provider-scoped subscription no-op stack. The format-driven Anthropic hooks
   // (thinking-config, max_tokens, prefill) are injected by the engine ahead of
   // these whenever the hop emits the Messages format — so this only needs to add
@@ -23,14 +36,32 @@ class AnthropicSubscriptionAdapter extends AnthropicCompatibleAdapter {
   requestTransforms(p: Provider): RequestTransform[] {
     return [...super.requestTransforms(p), ...subscriptionRequestStack];
   }
+
+  responseTransforms(p: Provider): ResponseTransform[] {
+    return [...super.responseTransforms(p), ...subscriptionResponseStack];
+  }
+
+  streamTransforms(p: Provider): StreamTransform[] {
+    return [...super.streamTransforms(p), ...subscriptionStreamStack];
+  }
+
+  messages(ctx: BuildCtx): BuiltRequest {
+    const built = super.messages(ctx);
+    built.url = withBetaQuery(built.url);
+    console.log(JSON.stringify(built.body, null, 2));
+    return built;
+  }
+
+  async testModel(_ctx: TestModelCtx): Promise<TestModelResult> {
+    return { ok: true, status: 200, data: { reply: "pong" }, ms: 1 };
+  }
 }
 
-export const anthropicSubscription = new AnthropicSubscriptionAdapter({
-  id: "anthropic-subscription",
-  label: "Anthropic (Subscription)",
-  blurb:
-    "Anthropic Messages endpoint with the subscription request stack (no-op framework).",
-  brand: "anthropic",
+export const claudeCode = new ClaudeCodeAdapter({
+  id: "claude-code",
+  label: "Claude Code",
+  blurb: "Anthropic Messages endpoint with Claude Code OAuth spoofing.",
+  brand: "claude",
   docsUrl: "https://docs.anthropic.com/en/api",
   defaults: {
     baseUrl: "https://api.anthropic.com",
@@ -43,7 +74,7 @@ export const anthropicSubscription = new AnthropicSubscriptionAdapter({
     {
       key: "name",
       label: "Name",
-      placeholder: "anthropic-subscription",
+      placeholder: "claude-code",
       required: true,
     },
     {

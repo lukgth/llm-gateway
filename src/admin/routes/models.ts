@@ -9,7 +9,7 @@ import {
   updateModel,
   type ModelInput,
 } from "../../repo/models";
-import { getProvider } from "../../repo/providers";
+import { getProvider, listProviders } from "../../repo/providers";
 import {
   getProviderModel,
   upsertProviderModel,
@@ -19,7 +19,7 @@ import { hopStats } from "../../repo/request-logs";
 import type { UpstreamModel } from "../../providers";
 import type { RouteCtx } from "./types";
 import { parseModelInput } from "./parsers";
-import { fetchProviderModels } from "./provider-probe";
+import { fetchProviderModels, testProviderModel } from "./provider-probe";
 import { bad } from "./respond";
 
 // Reference + auto-create: ensure every (provider, upstreamModel) a chain
@@ -71,7 +71,7 @@ async function autoCreateImportedModels(
 }
 
 export function registerModelRoutes(ctx: RouteCtx): void {
-  const { db, router, r, requireAdmin } = ctx;
+  const { db, logger, router, r, requireAdmin } = ctx;
 
   // --- models (with fallback chain) ---
   r.get("/models", requireAdmin, (_req, res) => res.json(listModels(db)));
@@ -120,6 +120,66 @@ export function registerModelRoutes(ctx: RouteCtx): void {
       return res.status(404).json({ error: { message: "not found" } });
     router.reload();
     res.status(204).end();
+  });
+
+  // Test an exposed model by resolving its provider chain and probing the
+  // first viable hop — same chain-walk the forwarding engine uses, but via
+  // the adapter's testModel() seam instead of a live completion.
+  r.post("/models/:id/test", requireAdmin, async (req, res) => {
+    const model = getModel(db, String(req.params.id));
+    if (!model)
+      return res.status(404).json({ error: { message: "not found" } });
+
+    const enabledProviders = new Map(
+      listProviders(db, false).map((p) => [p.id, p]),
+    );
+
+    for (let i = 0; i < model.providers.length; i++) {
+      const link = model.providers[i];
+      if (!link.enabled) continue;
+      const provider = enabledProviders.get(link.providerId);
+      if (!provider || !provider.enabled) continue;
+
+      const imported = getProviderModel(db, provider.id, link.upstreamModel);
+      try {
+        const result = await testProviderModel(
+          provider,
+          link.upstreamModel,
+          db,
+          logger,
+          imported?.transforms,
+        );
+        return res.json({
+          ...result,
+          provider: { id: provider.id, name: provider.name },
+          upstreamModel: link.upstreamModel,
+          hopIndex: i,
+        });
+      } catch (e) {
+        return res.json({
+          ok: false,
+          status: null,
+          data: { message: (e as Error).message },
+          ms: 0,
+          provider: { id: provider.id, name: provider.name },
+          upstreamModel: link.upstreamModel,
+          hopIndex: i,
+        });
+      }
+    }
+
+    res.json({
+      ok: false,
+      status: null,
+      data: {
+        message:
+          "No viable provider in the fallback chain (all disabled or missing)",
+      },
+      ms: 0,
+      provider: null,
+      upstreamModel: null,
+      hopIndex: -1,
+    });
   });
 
   // --- transform library (for the per-model transform editor) ---

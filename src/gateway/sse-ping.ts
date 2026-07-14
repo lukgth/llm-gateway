@@ -39,7 +39,7 @@ export class SsePingKeepAlive extends Transform {
   private finished = false;
 
   constructor(opts?: PingKeepAliveOptions) {
-    super();
+    super({ highWaterMark: 0 });
     this.interval = opts?.interval ?? DEFAULT_INTERVAL;
     this.pingMessage = opts?.pingMessage ?? ": ping\n\n";
     // Arm immediately so pings flow during the initial (pre-first-token) gap,

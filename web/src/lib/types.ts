@@ -509,6 +509,16 @@ export interface TestModelResult {
   ms: number;
 }
 
+export interface ExposedModelTestResult {
+  ok: boolean;
+  status: number | null;
+  data: unknown;
+  ms: number;
+  provider: { id: string; name: string | null } | null;
+  upstreamModel: string | null;
+  hopIndex: number;
+}
+
 export interface UpstreamModelsResponse {
   models: UpstreamModel[];
   error?: string;

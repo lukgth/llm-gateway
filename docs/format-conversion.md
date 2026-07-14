@@ -165,10 +165,20 @@ format, and the per-link `maxOutputTokens` override already covers ceilings.
 *9router:* `formats/maxTokens.js` → `adjustMaxTokens` (we port the "required +
 default" rule only).
 
-### R8 — Reasoning-effort passthrough  (→ `chat` and `→ messages`)
-`reasoning_effort` (Chat) and `reasoning.effort` / `reasoning` (Anthropic
-extended-thinking hint) are passed through when present so a downstream model
-that understands them still sees them. We never *fabricate* a thinking config.
+### R8 — Reasoning-effort mapping  (→ `chat` and `→ messages`)
+`reasoning_effort` (Chat) maps to `output_config.effort` (Anthropic Messages)
+and vice versa. The Anthropic API has no `reasoning` or `reasoning_effort`
+field — effort lives under the top-level `output_config` object (see
+[platform.claude.com/docs/en/build-with-claude/effort](https://platform.claude.com/docs/en/build-with-claude/effort)).
+Valid effort levels: `"low"` | `"medium"` | `"high"` | `"xhigh"` | `"max"`.
+
+- **Chat → Messages:** `reasoning_effort` → `output_config: { effort }`.
+- **Messages → Chat:** `output_config.effort` → `reasoning_effort`. Falls
+  back to the legacy `reasoning.effort` / `reasoning_effort` fields for
+  backwards compatibility with older gateway bodies, but only the
+  `output_config` form is correct for the real Anthropic API.
+
+We never *fabricate* a thinking config from an effort hint.
 
 ---
 
@@ -302,18 +312,24 @@ The stack (`hooks/stack.ts`), in order:
 | Hook | File | What it does |
 |---|---|---|
 | `anthropic:thinking-signature` | `hooks/thinking-signature.ts` | convert every `thinking` content block — synthetic or genuine — to a signature-free `text` block carrying the same reasoning prose; always drop `redacted_thinking` blocks. See **Synthetic thinking-block signatures** above for why even a genuine signature can't be trusted here. |
-| `anthropic:thinking-config` | `hooks/thinking-config.ts` | adaptive→`{type:"enabled",budget_tokens:10000}` on Haiku; floor `budget_tokens` to 1024 and keep it `< max_tokens` (raise `max_tokens` to `budget+1024`); hoist mid-conversation `role:"system"` turns into top-level `system` |
 | `anthropic:max-tokens` | `hooks/max-tokens.ts` | clamp `max_tokens` to the hop's effective ceiling (`TransformCtx.maxOutputTokens` = link ?? imported ?? model), re-shrinking `budget_tokens` if the clamp would breach `budget < max` |
 | `anthropic:prefill` | `hooks/prefill.ts` | Claude 4.6+ prefill fix — append a trailing `user` turn when the convo ends `assistant` (with `tool_result` blocks when the last turn had `tool_use`) |
+| `anthropic:sanitize-request` | `hooks/sanitize-request.ts` | Rescue effort from non-standard fields (`reasoning.effort`, `reasoning_effort`) into `output_config.effort`, then strip every top-level field not in the Anthropic Messages API allowlist (18 fields — see hook source). Catches Chat-only fields (`presence_penalty`, `frequency_penalty`, `logprobs`, `seed`, `parallel_tool_calls`, …), the gateway's own intermediate fields, and anything else a client or converter leaves on the body that would cause an upstream 400 |
+| `anthropic:thinking-config` | `hooks/thinking-config.ts` | adaptive→`{type:"enabled",budget_tokens:10000}` on Haiku; floor `budget_tokens` to 1024 and keep it `< max_tokens` (raise `max_tokens` to `budget+1024`); hoist mid-conversation `role:"system"` turns into top-level `system`; strip `output_config.effort` on Haiku. Runs **last** so it gets the final say on `max_tokens` |
 
 `thinking-signature` runs first so every hook after it sees a body with no
 `thinking`-typed content blocks at all — a deliberate structural
-normalization before anything else inspects the message shape. These moved
+normalization before anything else inspects the message shape.
+`sanitize-request` runs before `thinking-config` so the rescued effort is
+visible when thinking-config strips `output_config.effort` on Haiku.
+`thinking-config` runs last so it gets the final say on `max_tokens` (it
+may raise it above the ceiling max-tokens imposed). These moved
 off the router middleware (which ran pre-conversion on the client body, keyed
 on the alias, and missed the web-tool loop). Verified against the live
 Anthropic Messages docs. Covered by
 `src/formats/anthropic/hooks/hooks.test.ts`,
-`src/formats/anthropic/hooks/thinking-signature.test.ts`, and
+`src/formats/anthropic/hooks/thinking-signature.test.ts`,
+`src/formats/anthropic/hooks/sanitize-request.test.ts`, and
 `src/providers/anthropic-hooks.test.ts`.
 
 ## Library transforms — defaulted vs. opt-in

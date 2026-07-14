@@ -2,6 +2,16 @@
 // live apart from the class in engine.ts.
 
 import { randomBytes } from "crypto";
+import {
+  gunzipSync,
+  brotliDecompressSync,
+  inflateRawSync,
+  inflateSync,
+  createGunzip,
+  createBrotliDecompress,
+  createInflateRaw,
+} from "zlib";
+import type { Transform } from "stream";
 import type { IncomingMessage } from "http";
 import type { Provider } from "../../types";
 import { endpointPathFor, composeUrl, type ResolveUrl } from "../../providers";
@@ -72,25 +82,74 @@ export function isEventStream(headers: IncomingMessage["headers"]): boolean {
     .includes("text/event-stream");
 }
 export function isJson(headers: IncomingMessage["headers"]): boolean {
-  if (
-    String(headers?.["content-type"] || "")
-      .toLowerCase()
-      .includes("application/json")
-  ) {
-    const enc = String(headers?.["content-encoding"] || "").toLowerCase();
-    return !enc || enc === "identity";
+  return String(headers?.["content-type"] || "")
+    .toLowerCase()
+    .includes("application/json");
+}
+
+export async function readErrorBody(
+  upRes: IncomingMessage,
+  maxBytes = 8192,
+): Promise<string> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const c of upRes) {
+    const chunk = c as Buffer;
+    chunks.push(chunk);
+    size += chunk.length;
+    if (size >= maxBytes) break;
   }
-  return false;
+  const raw = Buffer.concat(chunks);
+
+  const enc = String(upRes.headers["content-encoding"] || "").toLowerCase();
+  if (enc && enc !== "identity") {
+    try {
+      const decompressed =
+        enc === "gzip" || enc === "x-gzip"
+          ? gunzipSync(raw)
+          : enc === "br"
+            ? brotliDecompressSync(raw)
+            : enc === "deflate"
+              ? tryDeflate(raw)
+              : raw;
+      return decompressed.toString("utf8").slice(0, maxBytes);
+    } catch {
+      // Decompression failed — fall through to raw.
+    }
+  }
+  return raw.toString("utf8").slice(0, maxBytes);
+}
+
+function tryDeflate(buf: Buffer): Buffer {
+  try {
+    return inflateSync(buf);
+  } catch {
+    return inflateRawSync(buf);
+  }
+}
+
+export function decompressStream(
+  headers: IncomingMessage["headers"],
+): Transform | null {
+  const enc = String(headers?.["content-encoding"] || "").toLowerCase();
+  if (enc === "gzip" || enc === "x-gzip") return createGunzip();
+  if (enc === "br") return createBrotliDecompress();
+  if (enc === "deflate") return createInflateRaw();
+  return null;
 }
 
 export function filteredHeaders(
   raw: IncomingMessage["headers"] | undefined,
+  opts?: { stripEncoding?: boolean },
 ): Record<string, string | string[]> {
+  const stripEnc = opts?.stripEncoding ?? false;
   const out: Record<string, string | string[]> = {};
   if (!raw) return out;
   for (const [k, v] of Object.entries(raw)) {
     if (v === undefined) continue;
-    if (HOP_BY_HOP.has(k.toLowerCase())) continue;
+    const lk = k.toLowerCase();
+    if (HOP_BY_HOP.has(lk)) continue;
+    if (stripEnc && lk === "content-encoding") continue;
     out[k] = v as string | string[];
   }
   return out;

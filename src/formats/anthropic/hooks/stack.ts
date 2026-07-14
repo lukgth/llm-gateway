@@ -12,9 +12,14 @@
 //   1. thinking-signature — normalize/strip thinking-block signatures (structural
 //                          body-shape fix; runs first so every hook after this
 //                          sees a body with no `thinking`-typed content blocks)
-//   2. thinking-config  — normalize thinking + hoist system, may raise max_tokens
-//   3. max-tokens       — clamp to the hop ceiling, re-reconcile budget
-//   4. prefill          — append a trailing user turn if the convo ends assistant
+//   2. max-tokens       — clamp to the hop ceiling, re-reconcile budget
+//   3. prefill          — append a trailing user turn if the convo ends assistant
+//   4. sanitize-request — rescue effort from non-standard fields into
+//                          output_config.effort, then strip every top-level
+//                          field not in the Anthropic allowlist
+//   5. thinking-config  — normalize thinking + hoist system; may raise
+//                          max_tokens (gets the final say on the ceiling);
+//                          strips output_config.effort on Haiku
 //
 // Each stage is individually guarded by applyBodyTransforms in the engine (a
 // throw is caught and the body passes through), so one bad hook can't break the
@@ -22,14 +27,17 @@
 
 import {
   onRequest,
+  onResponse,
   type TaggedRequestTransform,
+  type TaggedResponseTransform,
   type TransformCtx,
-  type AnthropicMessagesRequest,
 } from "../../pipeline";
 import { normalizeThinkingSignatures } from "./thinking-signature";
 import { normalizeThinkingConfig } from "./thinking-config";
 import { clampMaxTokens } from "./max-tokens";
 import { applyPrefillFix } from "../prefill";
+import { sanitizeAnthropicRequest } from "./sanitize-request";
+import { sanitizeAnthropicResponse } from "./sanitize-response";
 
 // Resolve the upstream model id a hook should key on. Prefer the chain-hop's
 // upstream model; fall back to whatever is on the body.
@@ -53,16 +61,17 @@ function modelOf(body: { model?: unknown }, ctx: TransformCtx): string {
 // and a no-op when its trigger is absent.
 //
 //   1. thinking-signature — normalize/strip thinking-block signatures
-//   2. thinking-config  — normalize thinking + hoist system, may raise max_tokens
-//   3. max-tokens       — clamp to the hop ceiling, re-reconcile budget
-//   4. prefill          — append a trailing user turn if the convo ends assistant
+//   2. max-tokens       — clamp to the hop ceiling, re-reconcile budget
+//   3. prefill          — append a trailing user turn if the convo ends assistant
+//   4. sanitize-request — rescue effort, strip non-Anthropic fields
+//   5. thinking-config  — normalize thinking + hoist system, may raise max_tokens
 function messagesOnly(ctx: TransformCtx): boolean {
   return ctx.providerFmt === "messages";
 }
 
-// Shared `group` for all four hooks below — see TransformMeta's doc comment
+// Shared `group` for all five hooks below — see TransformMeta's doc comment
 // in formats/pipeline.ts: siblings with the same `group` collapse into one
-// row in the resolved-transforms UI instead of showing as four. These four
+// row in the resolved-transforms UI instead of showing as five. These five
 // always run together, in this fixed order, on every Messages-shaped hop, so
 // they read as one conceptual unit ("Anthropic request normalization") to an
 // operator, even though each is independently guarded and individually named
@@ -71,22 +80,14 @@ const GROUP = "anthropic-hooks";
 
 export function defaultAnthropicRequestHooks(): TaggedRequestTransform[] {
   return [
-    // Runs FIRST: every `thinking` content block the request carries — real
-    // or gateway-synthesized — gets normalized to a signature-free `text`
-    // block before anything else inspects the body. See
-    // thinking-signature.ts's module doc for why this can't be skipped for
-    // "genuine" Anthropic thinking blocks either (a fallback-chain retry can
-    // route the same conversation to a different Anthropic-compatible
-    // provider, which can't validate another provider's signature).
+    // 1. Runs FIRST: every `thinking` content block the request carries —
+    // real or gateway-synthesized — gets normalized to a signature-free
+    // `text` block before anything else inspects the body.
     onRequest(
       "messages",
       "anthropic:thinking-signature",
       (body, ctx) =>
-        messagesOnly(ctx)
-          ? (normalizeThinkingSignatures(
-              body as Record<string, unknown>,
-            ) as AnthropicMessagesRequest)
-          : body,
+        messagesOnly(ctx) ? normalizeThinkingSignatures(body) : body,
       {
         label: "Thinking-signature normalization",
         blurb:
@@ -94,15 +95,66 @@ export function defaultAnthropicRequestHooks(): TaggedRequestTransform[] {
         group: GROUP,
       },
     ),
+    // 2. Clamp max_tokens to the hop ceiling. Runs before thinking-config
+    // so thinking-config gets the final say (it may raise max_tokens to
+    // accommodate budget_tokens).
+    onRequest(
+      "messages",
+      "anthropic:max-tokens",
+      (body, ctx) =>
+        messagesOnly(ctx) ? clampMaxTokens(body, ctx.maxOutputTokens) : body,
+      {
+        label: "Max-tokens ceiling clamp",
+        blurb:
+          "Clamps max_tokens to the hop's effective ceiling, re-reconciling the thinking budget if the clamp would breach budget < max.",
+        group: GROUP,
+      },
+    ),
+    // 3. Prefill fix — structural, no interaction with the fields below.
+    onRequest(
+      "messages",
+      "anthropic:prefill",
+      (body, ctx) => {
+        if (messagesOnly(ctx)) applyPrefillFix(body, modelOf(body, ctx));
+        return body;
+      },
+      {
+        label: "Trailing-turn prefill fix",
+        blurb:
+          "Appends a trailing user turn (with tool_result blocks if needed) when the conversation ends on assistant — a Claude 4.6+ prefill requirement.",
+        group: GROUP,
+      },
+    ),
+    // 4. Rescue effort hints from non-standard fields (reasoning.effort,
+    // reasoning_effort) into output_config.effort, then strip every
+    // top-level field the Anthropic API does not accept. Runs before
+    // thinking-config so the rescued effort is visible when thinking-config
+    // strips output_config.effort on Haiku.
+    onRequest(
+      "messages",
+      "anthropic:sanitize-request",
+      (body, ctx) =>
+        messagesOnly(ctx)
+          ? sanitizeAnthropicRequest(body, modelOf(body, ctx))
+          : body,
+      {
+        label: "Unsupported-field sanitization",
+        blurb:
+          "Rescues effort from non-standard fields into output_config.effort, then strips every top-level field the Anthropic Messages API does not accept.",
+        group: GROUP,
+      },
+    ),
+    // 5. Runs LAST: normalize thinking config (adaptive→enabled on Haiku,
+    // budget_tokens floor), hoist system turns, and reconcile budget vs
+    // max_tokens. Gets the final say on max_tokens — may raise it above
+    // the ceiling max-tokens imposed if budget demands it. Also strips
+    // output_config.effort on Haiku (which rejects it).
     onRequest(
       "messages",
       "anthropic:thinking-config",
       (body, ctx) =>
         messagesOnly(ctx)
-          ? (normalizeThinkingConfig(
-              body as Record<string, unknown>,
-              modelOf(body, ctx),
-            ) as AnthropicMessagesRequest)
+          ? normalizeThinkingConfig(body, modelOf(body, ctx))
           : body,
       {
         label: "Thinking-config normalization",
@@ -111,35 +163,24 @@ export function defaultAnthropicRequestHooks(): TaggedRequestTransform[] {
         group: GROUP,
       },
     ),
-    onRequest(
+  ];
+}
+
+// Response sanitization — ensures every response returned to a Messages client
+// contains only valid Anthropic Messages API fields. Tagged "messages" so it
+// runs post-bridge (when clientFmt is messages). Gated on clientFmt to be a
+// no-op when the client is chat/responses.
+export function defaultAnthropicResponseHooks(): TaggedResponseTransform[] {
+  return [
+    onResponse(
       "messages",
-      "anthropic:max-tokens",
+      "anthropic:sanitize-response",
       (body, ctx) =>
-        messagesOnly(ctx)
-          ? (clampMaxTokens(
-              body as Record<string, unknown>,
-              ctx.maxOutputTokens,
-            ) as AnthropicMessagesRequest)
-          : body,
+        ctx.clientFmt === "messages" ? sanitizeAnthropicResponse(body) : body,
       {
-        label: "Max-tokens ceiling clamp",
+        label: "Response field sanitization",
         blurb:
-          "Clamps max_tokens to the hop's effective ceiling, re-reconciling the thinking budget if the clamp would breach budget < max.",
-        group: GROUP,
-      },
-    ),
-    onRequest(
-      "messages",
-      "anthropic:prefill",
-      (body, ctx) => {
-        if (messagesOnly(ctx))
-          applyPrefillFix(body as Record<string, unknown>, modelOf(body, ctx));
-        return body;
-      },
-      {
-        label: "Trailing-turn prefill fix",
-        blurb:
-          "Appends a trailing user turn (with tool_result blocks if needed) when the conversation ends on assistant — a Claude 4.6+ prefill requirement.",
+          "Strips non-Anthropic fields from the response, normalizes stop_reason, and ensures the response shape matches the Messages API spec.",
         group: GROUP,
       },
     ),

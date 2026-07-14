@@ -66,7 +66,7 @@ string union (`"chat" | "messages" | "responses"`):
 | `WireFmt` | API | Endpoint | Native to |
 |---|---|---|---|
 | `"chat"` | OpenAI Chat Completions | `/v1/chat/completions` | Most OpenAI-compatible providers (`openai`, `deepseek`, `glm`, `openrouter`, the generic `openai-compatible` catalog entry, …) |
-| `"messages"` | Anthropic Messages | `/v1/messages` | Anthropic-native providers (`anthropic`, `anthropic-subscription`, `anthropic-compatible`) |
+| `"messages"` | Anthropic Messages | `/v1/messages` | Anthropic-native providers (`anthropic`, `claude-code`, `anthropic-compatible`) |
 | `"responses"` | OpenAI Responses | `/v1/responses` | OpenAI's newer stateful/reasoning-first API — some adapters prefer it per model (see `preferredEndpoint` in provider-adapters.md) |
 
 Three generic mapping types (`formats/wire/index.ts`) tie a `WireFmt` literal
@@ -504,8 +504,9 @@ for the full reasoning.
 | `tool_choice` | `AnthropicToolChoice` | |
 | `thinking` | `AnthropicThinkingConfig` | |
 | `metadata` | `{ user_id?: unknown }` | |
-| `reasoning` | `{ effort?: unknown }` | Not a real Anthropic API field — written by the `chatRequestToMessages` converter (R8) as where an incoming OpenAI `reasoning_effort` hint lands after conversion, and read back by `messagesRequestToChat` on the reverse hop. A transform reading an `AnthropicMessagesRequest` may see this populated even though Anthropic's own API doesn't define it. See [Reasoning fields](#reasoning-fields-chatmessagereasoning_details--anthropic-thinking-blocks) |
-| `reasoning_effort` | `unknown` | Same passthrough value, read directly (rather than nested under `reasoning.effort`) when the body arrived already Anthropic-shaped from a client that sent it this way |
+| `output_config` | `{ effort?: unknown; format?: unknown }` | Effort control (`"low"` / `"medium"` / `"high"` / `"xhigh"` / `"max"`) and structured-output JSON schema. See [platform.claude.com/docs/en/build-with-claude/effort](https://platform.claude.com/docs/en/build-with-claude/effort). The `chatRequestToMessages` converter maps `reasoning_effort` (Chat) into `output_config.effort`, and the reverse maps `output_config.effort` back to `reasoning_effort` |
+| `cache_control` | `{ type: "ephemeral"; ttl?: string } \| null` | Top-level cache control — automatically applies to the last cacheable block |
+| `service_tier` | `string` | `"auto"` or `"standard_only"` — controls priority vs. standard capacity routing |
 
 ### Response (non-streaming) — `AnthropicMessagesResponse`
 
@@ -614,12 +615,16 @@ interface ReasoningDetailEntry {
 }
 ```
 
-`ChatCompletionRequest.reasoning_effort` / `AnthropicMessagesRequest.reasoning`
-/ `ResponsesRequest.reasoning` are all typed `unknown` deliberately — the
-concrete values (`"low"`/`"medium"`/`"high"`/etc., or an Anthropic-style
-`{ effort }` object) vary enough across upstream vendors that this file
-doesn't attempt a shared enum; see format-conversion.md R8 for the actual
-value-mapping rules between formats.
+`ChatCompletionRequest.reasoning_effort` / `ResponsesRequest.reasoning` are
+typed `unknown` deliberately — the concrete values
+(`"low"`/`"medium"`/`"high"`/`"xhigh"`/`"max"`, or an Anthropic/Responses-
+style `{ effort }` object) vary enough across vendors that this file doesn't
+attempt a shared enum; see format-conversion.md R8 for the actual
+value-mapping rules between formats. On the Anthropic side, effort lives
+under `output_config.effort` (not a top-level `reasoning` field — that
+doesn't exist in the real API); the `anthropic:sanitize-request` hook strips
+any leftover `reasoning`/`reasoning_effort` field before the body reaches
+the upstream.
 
 ---
 

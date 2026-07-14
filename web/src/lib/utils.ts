@@ -168,6 +168,19 @@ export function hostFromUrl(baseUrl: string | null | undefined): string {
   }
 }
 
+export function summarizeTestData(data: unknown): string | null {
+  if (data == null) return null;
+  if (typeof data === "string") return data.slice(0, 200);
+  if (typeof data === "object") {
+    try {
+      return JSON.stringify(data).slice(0, 200);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export function relTime(iso: string | null | undefined): string {
   if (!iso) return "never";
   const d = new Date(iso).getTime();

@@ -44,7 +44,7 @@ Every request passes through transforms from **four** sources — together,
 3. **Adapter transforms** — a provider's own
    `requestTransforms()`/`responseTransforms()`/`streamTransforms()`
    overrides (see [provider-adapters.md](./provider-adapters.md)). Also
-   hand-authored code (e.g. `anthropic-subscription`'s no-op stack).
+   hand-authored code (e.g. `claude-code`'s no-op stack).
 4. **Model transforms** — per-imported-model, UI-configured library
    transforms (`formats/transforms/registry.ts`'s `TRANSFORM_LIBRARY`,
    picked and parameterized per model, no code needed). A model entry with
@@ -240,7 +240,7 @@ onRequest(
 |---|---|
 | `label` | Short human name shown instead of the raw stage `name` (e.g. `"anthropic:thinking-signature"` → `"Thinking-signature normalization"`). Omit it and the UI humanizes the `name` suffix after the last `:` instead — never a requirement to set. |
 | `blurb` | One-line description shown under the label. |
-| `group` | Clusters this stage with every SIBLING (same phase, same source) that sets the identical `group` string under one collapsible row in the UI, instead of one row each — see the four Anthropic request hooks in `anthropic/hooks/stack.ts` (all `group: "anthropic-hooks"`) for the pattern. |
+| `group` | Clusters this stage with every SIBLING (same phase, same source) that sets the identical `group` string under one collapsible row in the UI, instead of one row each — see the five Anthropic request hooks in `anthropic/hooks/stack.ts` (all `group: "anthropic-hooks"`) for the pattern. |
 
 None of these three fields are read by the engine or the pipeline itself —
 `buildTransformPlan`/`applyBodyTransforms` never look at them. They exist
@@ -314,7 +314,7 @@ order from the four layers above — builtin defaults, then family defaults,
 then adapter, then model — so, e.g., the Anthropic `thinking-signature` hook
 (a builtin default) always runs before any adapter-specific Messages-shape
 request transform, and a family default like `anthropic-cache` always runs
-before an adapter's own stack (e.g. `anthropic-subscription`'s hooks).
+before an adapter's own stack (e.g. `claude-code`'s hooks).
 
 A tagged stage never needs to know or care whether conversion is even
 happening on this hop — the engine's placement logic handles both the
@@ -431,16 +431,31 @@ provider emits Messages" behavior exactly):
    [format-conversion.md § Synthetic thinking-block signatures](./format-conversion.md#synthetic-thinking-block-signatures)
    for the full reasoning and the live-API event sequence this is
    compensating for.
-2. **`anthropic:thinking-config`** — `adaptive` → `{type:"enabled",
-   budget_tokens:10000}` on Haiku; floors `budget_tokens` to 1024 and keeps
-   it `< max_tokens`; hoists mid-conversation `role:"system"` turns into the
-   top-level `system` field.
-3. **`anthropic:max-tokens`** — clamps `max_tokens` to
+2. **`anthropic:max-tokens`** — clamps `max_tokens` to
    `ctx.maxOutputTokens` (the hop's effective ceiling), re-shrinking
-   `budget_tokens` if the clamp would breach `budget < max`.
-4. **`anthropic:prefill`** — appends a trailing `user` turn (with
+   `budget_tokens` if the clamp would breach `budget < max`. Runs before
+   `thinking-config` so thinking-config gets the final say.
+3. **`anthropic:prefill`** — appends a trailing `user` turn (with
    `tool_result` blocks if the last turn had `tool_use`) when the
    conversation ends on `assistant` — a Claude 4.6+ prefill requirement.
+4. **`anthropic:sanitize-request`** — rescues effort hints from
+   non-standard fields (`reasoning.effort`, `reasoning_effort`) into the
+   canonical `output_config.effort`, then strips every top-level field the
+   Anthropic Messages API does not accept. An allowlist of the 18 supported
+   fields (`model`, `messages`, `max_tokens`, `system`, `metadata`,
+   `stop_sequences`, `stream`, `temperature`, `top_k`, `top_p`, `thinking`,
+   `tool_choice`, `tools`, `output_config`, `cache_control`, `container`,
+   `inference_geo`, `service_tier`) is the gate. Catches Chat-only fields
+   (`presence_penalty`, `frequency_penalty`, `logprobs`, `seed`, …), the
+   gateway's own intermediate fields, and anything a native `/v1/messages`
+   client sends that isn't in the spec.
+5. **`anthropic:thinking-config`** — `adaptive` → `{type:"enabled",
+   budget_tokens:10000}` on Haiku; floors `budget_tokens` to 1024 and keeps
+   it `< max_tokens`; hoists mid-conversation `role:"system"` turns into the
+   top-level `system` field; strips `output_config.effort` on Haiku. Runs
+   **last** so it gets the final say on `max_tokens` — it may raise
+   `max_tokens` above the ceiling `max-tokens` imposed if `budget_tokens`
+   demands it.
 
 Each hook is individually guarded by `applyBodyTransforms` (a throw is
 caught, body passes through) and is a no-op when its trigger condition is
@@ -535,7 +550,7 @@ for the whole family), and inherited by every Anthropic-native adapter via
 |---|---|---|
 | `anthropic-compatible` | `catalog/anthropic-compatible.ts` | *is* the base |
 | `anthropic` | `catalog/anthropic.ts` | same array reference |
-| `anthropic-subscription` | `catalog/anthropic-subscription.ts` | same array reference |
+| `claude-code` | `catalog/claude-code.ts` | same array reference |
 
 A new Anthropic-family-wide default (a new prompt-caching knob, another
 correctness fix that applies to any Claude-speaking provider) is added to
@@ -659,7 +674,7 @@ renders this exact response as a collapsible card (same idiom as
 thing open/closed, closed by default so it doesn't dominate the page):
 grouped by phase (Request/Response/Stream), and within each phase,
 consecutive stages sharing a `group` collapse into ONE nested-collapsible row
-(e.g. the four Anthropic request hooks read as "Anthropic Hooks · 4 stages"
+(e.g. the five Anthropic request hooks read as "Anthropic Hooks · 5 stages"
 until expanded) instead of one row per stage. Every stage is shown
 **non-editable** and visually separate from `<TransformEditor>` (which edits
 ONLY the model's own, layer-4 config) — so "what always happens" and "what
@@ -769,7 +784,7 @@ matching provider, unconditionally, no library entry)
 2. Add `{ id, phase, params }` to `ANTHROPIC_DEFAULT_TRANSFORMS` in
    `src/providers/catalog/anthropic-compatible.ts` (Anthropic family) — every
    adapter that references this constant (`anthropic.ts`,
-   `anthropic-subscription.ts`) picks it up automatically, nothing else to
+   `claude-code.ts`) picks it up automatically, nothing else to
    touch there. For a provider-specific (not family-wide) default instead,
    add it directly to that one catalog file's own `quirks.defaultTransforms`
    array (spread the family base first if it should still inherit the

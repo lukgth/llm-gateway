@@ -108,10 +108,13 @@ export function messagesRequestToChat(
     if (meta && typeof meta.user_id === "string") out.user = meta.user_id;
   }
 
-  // R8: carry a reasoning-effort hint through unchanged (Anthropic extended-
-  // thinking hint -> OpenAI reasoning_effort) so a reasoning-aware upstream sees it.
+  // R8: carry an effort hint through. Anthropic uses output_config.effort;
+  // Chat/OpenAI uses the flat reasoning_effort. Read whichever the incoming
+  // body actually carried (prefer the canonical Anthropic field).
+  const oc = body.output_config as { effort?: unknown } | undefined;
   const reasoning = body.reasoning as { effort?: unknown } | undefined;
-  if (body.reasoning_effort !== undefined)
+  if (oc?.effort !== undefined) out.reasoning_effort = oc.effort;
+  else if (body.reasoning_effort !== undefined)
     out.reasoning_effort = body.reasoning_effort;
   else if (reasoning?.effort !== undefined)
     out.reasoning_effort = reasoning.effort;
@@ -174,15 +177,16 @@ function assembleChatMessage(
     const parts: ChatContentPart[] = [];
     for (const b of blocks) {
       if (b.type === "tool_use") {
+        const tu = b as { id?: string; name?: unknown; input?: unknown };
         toolCalls.push({
-          id: typeof b.id === "string" ? b.id : genId("call_"),
+          id: typeof tu.id === "string" ? tu.id : genId("call_"),
           type: "function",
           function: {
-            name: String(b.name ?? ""),
+            name: String(tu.name ?? ""),
             arguments:
-              typeof b.input === "string"
-                ? b.input
-                : JSON.stringify(b.input ?? {}),
+              typeof tu.input === "string"
+                ? tu.input
+                : JSON.stringify(tu.input ?? {}),
           },
         });
       } else if (b.type === "text" && typeof b.text === "string") {
@@ -308,9 +312,10 @@ export function chatRequestToMessages(
   else if (meta && typeof meta === "object" && meta.user_id != null)
     out.metadata = { user_id: meta.user_id };
 
-  // R8: pass an OpenAI reasoning_effort hint through as Anthropic's reasoning.effort.
+  // R8: pass an OpenAI reasoning_effort hint through as Anthropic's
+  // output_config.effort (the real Anthropic API field).
   if (body.reasoning_effort !== undefined)
-    out.reasoning = { effort: body.reasoning_effort };
+    out.output_config = { effort: body.reasoning_effort };
 
   const tools = chatToolsToAnthropic(body.tools);
   if (tools) out.tools = tools;

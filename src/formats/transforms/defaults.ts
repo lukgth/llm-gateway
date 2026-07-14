@@ -20,7 +20,13 @@ import type {
 } from "../pipeline";
 import type { ThinkingConverter } from "../thinking";
 import { defaultThinkingResponse, defaultThinkingStream } from "../thinking";
-import { defaultAnthropicRequestHooks } from "../anthropic/hooks/stack";
+import {
+  defaultAnthropicRequestHooks,
+  defaultAnthropicResponseHooks,
+} from "../anthropic/hooks/stack";
+import { onResponse } from "../pipeline";
+import { sanitizeChatResponse } from "../hooks/sanitize-chat-response";
+import { sanitizeResponsesResponse } from "../hooks/sanitize-responses-response";
 
 // What a default set may need to build its (per-route) stages. Kept minimal;
 // grows only when a new default genuinely needs more route context.
@@ -51,6 +57,36 @@ export const DEFAULT_TRANSFORMS: DefaultTransformSet[] = [
     // OpenAI-type provider whose hop routes /v1/messages.
     id: "anthropic-hooks",
     request: () => defaultAnthropicRequestHooks(),
+    response: () => defaultAnthropicResponseHooks(),
+  },
+  {
+    id: "response-sanitize",
+    response: () => [
+      onResponse(
+        "chat",
+        "chat:sanitize-response",
+        (body, ctx) =>
+          ctx.clientFmt === "chat" ? sanitizeChatResponse(body) : body,
+        {
+          label: "Chat response sanitization",
+          blurb:
+            "Normalizes finish_reason to valid OpenAI values (stop, length, tool_calls, content_filter).",
+        },
+      ),
+      onResponse(
+        "responses",
+        "responses:sanitize-response",
+        (body, ctx) =>
+          ctx.clientFmt === "responses"
+            ? sanitizeResponsesResponse(body)
+            : body,
+        {
+          label: "Responses response sanitization",
+          blurb:
+            "Normalizes status to valid Responses API values (completed, incomplete, failed).",
+        },
+      ),
+    ],
   },
   {
     // <thinking>/<reasoning> extraction. Runs ONCE, on the provider-native shape,

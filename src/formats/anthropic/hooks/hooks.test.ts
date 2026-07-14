@@ -111,13 +111,14 @@ test("max-tokens: shrinks budget when clamp would breach budget < max invariant"
 
 // --- composed stack --------------------------------------------------------
 
-test("stack: order is thinking-signature, thinking-config, max-tokens, prefill", () => {
+test("stack: order is thinking-signature, max-tokens, prefill, sanitize-request, thinking-config", () => {
   const names = defaultAnthropicRequestHooks().map((h) => h.name);
   assert.deepEqual(names, [
     "anthropic:thinking-signature",
-    "anthropic:thinking-config",
     "anthropic:max-tokens",
     "anthropic:prefill",
+    "anthropic:sanitize-request",
+    "anthropic:thinking-config",
   ]);
 });
 

@@ -2,7 +2,7 @@ import { AnthropicCompatibleAdapter } from "../base";
 import { WireKind, type ModelTransformConfig } from "../../types";
 
 // The Anthropic-FAMILY default transform stack — the base every Anthropic-
-// native catalog adapter inherits (anthropic.ts, anthropic-subscription.ts),
+// native catalog adapter inherits (anthropic.ts, claude-code.ts),
 // so a new family-wide default is declared here ONCE and every subclass gets
 // it automatically, instead of copy-pasted per adapter. A generic/unknown
 // Anthropic-compatible provider (this file) gets exactly this same base — no

@@ -45,7 +45,7 @@ export class StreamingResponsesBridgeTransform extends Transform {
   private outputItems: Array<{ type: string; id: string }> = [];
 
   constructor() {
-    super({ objectMode: false });
+    super({ objectMode: false, highWaterMark: 0 });
   }
 
   _transform(

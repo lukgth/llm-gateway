@@ -20,14 +20,17 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { fmtTime, fmtNum } from "@/lib/utils";
-import { ModelIcon, useModelTypes } from "@/components/model-icon";
+import { cn, fmtTime, fmtNum } from "@/lib/utils";
+import {
+  ModelIcon,
+  useModelTypes,
+  brandForProvider,
+} from "@/components/model-icon";
 import {
   DebugPanel,
   StatusBadge,
   fmtLatency,
 } from "@/components/request-log-debug";
-import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
 
@@ -141,6 +144,65 @@ export default function RequestLogs() {
   );
 }
 
+// Known client brands for icon matching — keys are the lowercase labels
+// detectClient() returns (see gateway/client-detect.ts).
+const CLIENT_BRANDS: Record<string, string> = {
+  "claude code": "claude",
+  codex: "openai",
+  copilot: "openai",
+  postman: "postman",
+  cursor: "cursor",
+  opencode: "opencode",
+};
+
+function capitalizeClient(name: string): string {
+  const KNOWN: Record<string, string> = {
+    "claude code": "Claude Code",
+    "openai sdk": "OpenAI SDK",
+    "anthropic sdk": "Anthropic SDK",
+    "open webui": "Open WebUI",
+    "roo code": "Roo Code",
+    "kilo code": "Kilo Code",
+    "gemini cli": "Gemini CLI",
+    "qwen code": "Qwen Code",
+    "cherry studio": "Cherry Studio",
+    lobechat: "LobeChat",
+    librechat: "LibreChat",
+    litellm: "LiteLLM",
+    langchain: "LangChain",
+    llamaindex: "LlamaIndex",
+    chatbox: "ChatBox",
+    postman: "Postman",
+    insomnia: "Insomnia",
+    curl: "cURL",
+  };
+  return (
+    KNOWN[name] ??
+    name
+      .split(/\s+/)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ")
+  );
+}
+
+function ClientBadge({ name }: { name: string }) {
+  const brand = brandForProvider(CLIENT_BRANDS[name] ?? null, name);
+  return (
+    <Badge
+      variant="secondary"
+      className="inline-flex max-w-full items-center gap-1.5 truncate"
+    >
+      {brand && (
+        <span
+          className="inline-flex size-3 shrink-0 items-center justify-center [&>svg]:size-full"
+          dangerouslySetInnerHTML={{ __html: brand.svg }}
+        />
+      )}
+      <span className="truncate">{capitalizeClient(name)}</span>
+    </Badge>
+  );
+}
+
 const LogRow = memo(function LogRow({
   log: l,
   type,
@@ -195,9 +257,7 @@ const LogRow = memo(function LogRow({
         </TableCell>
         <TableCell className="max-w-[10rem]">
           {l.client ? (
-            <Badge variant="secondary" className="block max-w-full truncate">
-              {l.client}
-            </Badge>
+            <ClientBadge name={l.client} />
           ) : (
             <span className="text-muted-foreground">—</span>
           )}

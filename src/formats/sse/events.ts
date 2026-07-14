@@ -38,7 +38,7 @@ export class SseEventTransform extends Transform {
     handler: SseEventHandler,
     ctx: TransformCtx,
   ) {
-    super();
+    super({ highWaterMark: 0 });
     this.fmt = fmt;
     this.handler = handler;
     this.ctx = ctx;

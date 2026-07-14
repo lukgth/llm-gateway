@@ -176,7 +176,7 @@ test("defaultTransformsForCatalog resolves by id", () => {
 });
 
 test("every Anthropic-native catalog adapter inherits the SAME family default stack", () => {
-  // anthropic.ts, anthropic-subscription.ts, and the generic anthropic-compatible.ts
+  // anthropic.ts, claude-code.ts, and the generic anthropic-compatible.ts
   // all declare quirks.defaultTransforms = ANTHROPIC_DEFAULT_TRANSFORMS (see that
   // constant's doc comment in catalog/anthropic-compatible.ts) — a new family-wide
   // default only needs to be added in ONE place and every one of these three
@@ -186,7 +186,7 @@ test("every Anthropic-native catalog adapter inherits the SAME family default st
   // drift out of sync).
   const anthropic = defaultTransformsForCatalog("anthropic");
   const compatible = defaultTransformsForCatalog("anthropic-compatible");
-  const subscription = defaultTransformsForCatalog("anthropic-subscription");
+  const subscription = defaultTransformsForCatalog("claude-code");
 
   assert.equal(anthropic, compatible);
   assert.equal(anthropic, subscription);

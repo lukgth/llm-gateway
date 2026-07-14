@@ -1,3 +1,10 @@
+import {
+  type AnthropicMessagesRequest,
+  type AnthropicMessage,
+  type AnthropicBlock,
+  type AnthropicTool,
+} from "../../pipeline";
+
 export const OPENCODE_TOOL_NAME_MAP: ReadonlyMap<string, string> = new Map<
   string,
   string
@@ -20,8 +27,7 @@ export const OPENCODE_TOOL_NAME_MAP: ReadonlyMap<string, string> = new Map<
 
 /**
  * ohmypi's builtin tool names (snake_case / lowercase) → Claude Code-native
- * PascalCase. Same purpose as {@link OPENCODE_TOOL_NAME_MAP}: strip the
- * third-party fingerprint that Anthropic's classifier flags.
+ * PascalCase.
  *
  * Entries fall into two groups:
  *   - Close links to a real Claude Code native tool (see {@link CC_TOOL_NAMES})
@@ -78,57 +84,43 @@ export const OHMYPI_TOOL_NAME_MAP: ReadonlyMap<string, string> = new Map<
 ]);
 
 export interface NormalizedToolsResult {
-  body: Record<string, unknown>;
-  /**
-   * transformed tool name → original tool name, for response-side remapping.
-   * Built from `tools[]` (the set of tools the model can actually call);
-   * first occurrence wins so it stays consistent with de-duplication.
-   */
+  body: AnthropicMessagesRequest;
   renameMap: Map<string, string>;
 }
 
 export function normalizeToolNames(
-  requestBody: Readonly<Record<string, unknown>>,
+  requestBody: Readonly<AnthropicMessagesRequest>,
 ): NormalizedToolsResult {
-  const out: Record<string, unknown> = { ...requestBody };
+  const out: AnthropicMessagesRequest = { ...requestBody };
   const renameMap = new Map<string, string>();
 
-  // 1. Top-level tools[] array — rename (recording the reverse map, first
-  //    occurrence wins to match dedup), then drop duplicate names. Anthropic
-  //    rejects duplicate tool names with HTTP 400.
-  const tools = out["tools"];
-  if (Array.isArray(tools)) {
-    out["tools"] = dedupToolsByName(
-      tools.map((t) => renameToolDefinition(t, renameMap)),
+  if (Array.isArray(out.tools)) {
+    out.tools = dedupToolsByName(
+      out.tools.map((t) => renameToolDefinition(t, renameMap)),
     );
   }
 
-  // 2. tool_choice.name (kept consistent with tools[]; responses never echo
-  //    tool_choice, so it is not recorded in the reverse map).
-  const choice = out["tool_choice"];
-  if (choice && typeof choice === "object" && !Array.isArray(choice)) {
-    const c = choice as Record<string, unknown>;
-    const renamed = maybeRenameToolName(c["name"]);
+  const choice = out.tool_choice;
+  if (choice && typeof choice === "object" && "name" in choice) {
+    const renamed = maybeRenameToolName((choice as { name?: unknown }).name);
     if (renamed !== undefined) {
-      out["tool_choice"] = { ...c, name: renamed };
+      out.tool_choice = { ...choice, name: renamed } as typeof choice;
     }
   }
 
-  // 3. Assistant tool_use.name in messages[] (multi-turn history consistency).
-  const messages = out["messages"];
-  if (Array.isArray(messages)) {
-    out["messages"] = messages.map((m) => renameToolUseInMessage(m));
+  if (Array.isArray(out.messages)) {
+    out.messages = out.messages.map((m) => renameToolUseInMessage(m));
   }
 
   return { body: out, renameMap };
 }
 
 function renameToolDefinition(
-  t: unknown,
+  t: AnthropicTool,
   renameMap: Map<string, string>,
-): unknown {
+): AnthropicTool {
   if (typeof t !== "object" || t === null || Array.isArray(t)) return t;
-  const td = { ...(t as Record<string, unknown>) };
+  const td = { ...(t as AnthropicTool) };
   // Server / built-in tools carry a `type` that is NOT `custom` (e.g.
   // `web_search_20250305`, `computer_20250124`). Their `name` is fixed by the
   // schema (`web_search` for the web search tool) and renaming it triggers
@@ -136,10 +128,10 @@ function renameToolDefinition(
   // standard `{name, description, input_schema}` user-defined tools (no `type`)
   // are renamed.
   if (isServerTool(td)) return td;
-  const original = td["name"];
+  const original = td.name;
   const renamed = maybeRenameToolName(original);
   if (renamed !== undefined) {
-    td["name"] = renamed;
+    td.name = renamed;
     if (
       typeof original === "string" &&
       renamed !== original &&
@@ -157,29 +149,28 @@ function renameToolDefinition(
  * `bash_20250124`, `text_editor_*`, `code_execution_*`, etc. — all of which
  * mandate a specific fixed `name` and must be passed through verbatim.
  */
-function isServerTool(td: Record<string, unknown>): boolean {
+function isServerTool(td: AnthropicTool): boolean {
   const type = td["type"];
   return typeof type === "string" && type !== "custom";
 }
 
-function renameToolUseInMessage(m: unknown): unknown {
-  if (typeof m !== "object" || m === null || Array.isArray(m)) return m;
-  const msg = { ...(m as Record<string, unknown>) };
-  const content = msg["content"];
-  if (!Array.isArray(content)) return msg;
-  msg["content"] = content.map((block) => {
-    if (typeof block !== "object" || block === null || Array.isArray(block))
-      return block;
-    const b = block as Record<string, unknown>;
-    if (b["type"] === "tool_use") {
-      const renamed = maybeRenameToolName(b["name"]);
+function renameToolUseInMessage(m: AnthropicMessage): AnthropicMessage {
+  const content = m.content;
+  if (!Array.isArray(content)) return m;
+  const newContent = content.map((block: AnthropicBlock) => {
+    if (
+      block &&
+      typeof block === "object" &&
+      (block as { type?: string }).type === "tool_use"
+    ) {
+      const renamed = maybeRenameToolName((block as { name?: unknown }).name);
       if (renamed !== undefined) {
-        return { ...b, name: renamed };
+        return { ...block, name: renamed };
       }
     }
     return block;
   });
-  return msg;
+  return { ...m, content: newContent };
 }
 
 /**
@@ -230,18 +221,13 @@ function toPascalCase(name: string): string {
   return tokens.map((t) => t.charAt(0).toUpperCase() + t.slice(1)).join("");
 }
 
-/** Keep the first tool per `name`; drop later duplicates (post-rename). */
-function dedupToolsByName(tools: unknown[]): unknown[] {
+function dedupToolsByName(tools: AnthropicTool[]): AnthropicTool[] {
   const seen = new Set<string>();
-  const result: unknown[] = [];
+  const result: AnthropicTool[] = [];
   for (const t of tools) {
-    const name =
-      t && typeof t === "object" && !Array.isArray(t)
-        ? (t as Record<string, unknown>)["name"]
-        : undefined;
-    if (typeof name === "string") {
-      if (seen.has(name)) continue;
-      seen.add(name);
+    if (typeof t.name === "string") {
+      if (seen.has(t.name)) continue;
+      seen.add(t.name);
     }
     result.push(t);
   }
@@ -295,21 +281,15 @@ export const CC_TOOL_NAMES = [
   "Write",
 ] as const;
 
-export interface CcDecoyTool {
-  readonly name: string;
-  readonly description: string;
-  readonly input_schema: { type: string; properties: Record<string, unknown> };
-}
-
 const CC_UNAVAILABLE_DESCRIPTION = "This tool is currently unavailable.";
-const ccUnavailableStub = (name: string): CcDecoyTool => ({
+const ccUnavailableStub = (name: string): AnthropicTool => ({
   name,
   description: CC_UNAVAILABLE_DESCRIPTION,
   input_schema: { type: "object", properties: {} },
 });
 
 /** One generic "unavailable" stub per Claude Code native tool name. */
-export const CC_DECOY_TOOLS: readonly CcDecoyTool[] =
+export const CC_DECOY_TOOLS: readonly AnthropicTool[] =
   CC_TOOL_NAMES.map(ccUnavailableStub);
 
 /**
@@ -319,26 +299,14 @@ export const CC_DECOY_TOOLS: readonly CcDecoyTool[] =
  * are left alone (exact, case-insensitive dedup).
  */
 export function ensureCcDecoyTools(
-  requestBody: Readonly<Record<string, unknown>>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...requestBody };
-  const tools = out["tools"];
-  const list: unknown[] = Array.isArray(tools) ? tools : [];
+  requestBody: AnthropicMessagesRequest,
+): AnthropicMessagesRequest {
+  const out: AnthropicMessagesRequest = { ...requestBody };
+  const list: AnthropicTool[] = Array.isArray(out.tools) ? out.tools : [];
 
-  // Suppress a decoy only when a tool with the SAME name (case-insensitive) is
-  // already supplied. We deliberately do NOT fuzzy-match across spellings: a
-  // server `web_search` tool must NOT suppress the `WebSearch` decoy, because
-  // the conversation history can carry `WebSearch` tool_use blocks (Claude Code
-  // calls its tools by their PascalCase names) and Anthropic rejects any
-  // tool_use whose name isn't declared in `tools[]` with
-  // `Tool '<Name>' not found in provided tools`. Keeping both lets the model
-  // use the server tool while historical `WebSearch` references still resolve.
   const existing = new Set<string>();
   for (const t of list) {
-    if (t && typeof t === "object" && !Array.isArray(t)) {
-      const name = (t as Record<string, unknown>)["name"];
-      if (typeof name === "string") existing.add(name.toLowerCase());
-    }
+    if (typeof t.name === "string") existing.add(t.name.toLowerCase());
   }
 
   const decoys = CC_DECOY_TOOLS.filter(
@@ -346,6 +314,6 @@ export function ensureCcDecoyTools(
   ).map((d) => ({ ...d }));
   if (decoys.length === 0) return out;
 
-  out["tools"] = [...list, ...decoys];
+  out.tools = [...list, ...decoys];
   return out;
 }

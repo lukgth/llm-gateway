@@ -52,6 +52,10 @@ interface ParsedEvent {
 }
 
 export class AnthropicThinkingTransform extends Transform {
+  constructor() {
+    super({ highWaterMark: 0 });
+  }
+
   private readonly reader = new SseFrameReader();
   private readonly parser = new StreamingThinkingParser();
 

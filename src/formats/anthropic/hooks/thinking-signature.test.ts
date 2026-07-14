@@ -146,7 +146,9 @@ test("thinkingBlocksToText: no messages array -> shallow copy, no throw", () => 
 });
 
 test("thinkingBlocksToText: messages is not an array -> shallow copy, no throw", () => {
-  const out = thinkingBlocksToText({ messages: "not-an-array" });
+  const out = thinkingBlocksToText({
+    messages: "not-an-array" as never,
+  });
   assert.deepEqual(out, { messages: "not-an-array" });
 });
 

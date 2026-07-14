@@ -88,6 +88,7 @@ export function brandForModel(
 const PROVIDER_BRANDS: Record<string, { svg: string; label: string }> = {
   openai: { svg: openaiSvg, label: "OpenAI" },
   anthropic: { svg: anthropicSvg, label: "Anthropic" },
+  claude: { svg: claudeSvg, label: "Anthropic" },
   nvidia: { svg: nvidiaSvg, label: "NVIDIA" },
   openrouter: { svg: openrouterSvg, label: "OpenRouter" },
   opencode: { svg: opencodeSvg, label: "OpenCode" },

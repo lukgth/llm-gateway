@@ -26,7 +26,7 @@ export class MessagesToChatSseTransform extends Transform {
   private anthUsage: AnthropicUsage = {};
 
   constructor(model?: string | null) {
-    super();
+    super({ highWaterMark: 0 });
     this.model = model ?? null;
   }
 

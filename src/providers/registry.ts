@@ -10,7 +10,7 @@
 //   1. Create ./catalog/<name>.ts exporting `new OpenAICompatibleAdapter({...})`
 //      or `new AnthropicCompatibleAdapter({...})`. Subclass when it needs:
 //        - custom body transforms (override requestTransforms/responseTransforms,
-//          see ./catalog/anthropic-subscription.ts), or
+//          see ./catalog/claude-code.ts), or
 //        - a fully custom outbound request — override chatCompletions/messages/
 //          responses(ctx: BuildCtx): BuiltRequest to rewrite the URL (signed /
 //          custom host), headers (bespoke auth from ctx.apiKey), and/or body
@@ -37,7 +37,7 @@ import {
 } from "./base";
 import { openai } from "./catalog/openai";
 import { anthropic } from "./catalog/anthropic";
-import { anthropicSubscription } from "./catalog/anthropic-subscription";
+import { claudeCode } from "./catalog/claude-code";
 import { nvidiaNim } from "./catalog/nvidia-nim";
 import { openrouter } from "./catalog/openrouter";
 import { opencode } from "./catalog/opencode";
@@ -55,7 +55,7 @@ import { proxy } from "./catalog/proxy";
 const ADAPTERS: ProviderAdapter[] = [
   openai,
   anthropic,
-  anthropicSubscription,
+  claudeCode,
   nvidiaNim,
   openrouter,
   opencode,

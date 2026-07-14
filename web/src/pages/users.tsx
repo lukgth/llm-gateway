@@ -98,6 +98,7 @@ export default function Users() {
                         onClick={() => setEditing(u)}
                         title="Edit user"
                         aria-label="Edit user"
+                        className="text-muted-foreground hover:text-foreground"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>

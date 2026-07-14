@@ -6,26 +6,24 @@
 // (link ?? imported-model ?? exposed-model), threaded in via
 // TransformCtx.maxOutputTokens — not a hardcoded per-model table.
 //
-// Ordering note: this runs AFTER thinking-config, which may have raised
-// max_tokens to (budget_tokens + 1024). If the ceiling would clamp below that,
-// we keep max_tokens > budget_tokens by shrinking the budget instead, so the
-// request stays valid (Anthropic requires max_tokens strictly greater).
+// Ordering note: this runs BEFORE thinking-config (which gets the final say
+// and may raise max_tokens to accommodate budget_tokens). If the ceiling
+// would clamp below an existing budget, we shrink the budget so the request
+// stays valid (Anthropic requires max_tokens > budget_tokens).
 
-import type { Json } from "../../pipeline";
+import type {
+  AnthropicMessagesRequest,
+  AnthropicThinkingConfig,
+} from "../../pipeline";
 
 const MIN_BUDGET = 1024;
-
-interface ThinkingConfig {
-  type?: string;
-  budget_tokens?: number;
-}
 
 // Clamp body.max_tokens to `ceiling` (when set and positive), preserving the
 // Anthropic invariant max_tokens > thinking.budget_tokens. Mutates + returns.
 export function clampMaxTokens(
-  body: Json,
+  body: AnthropicMessagesRequest,
   ceiling: number | null | undefined,
-): Json {
+): AnthropicMessagesRequest {
   if (!body || typeof body !== "object") return body;
   if (typeof ceiling !== "number" || ceiling <= 0) return body;
   const cur = body.max_tokens;
@@ -33,9 +31,7 @@ export function clampMaxTokens(
 
   body.max_tokens = ceiling;
 
-  // If a thinking budget now meets/exceeds the clamped max, shrink it so the
-  // model still has room to answer (Anthropic: budget_tokens < max_tokens).
-  const t = body.thinking as ThinkingConfig | undefined;
+  const t = body.thinking as AnthropicThinkingConfig | undefined;
   if (
     t &&
     t.type === "enabled" &&

@@ -25,6 +25,7 @@ data/
 *.log
 usage.json
 hard.txt
+claude.example.json
 
 # OS / editor
 .DS_Store

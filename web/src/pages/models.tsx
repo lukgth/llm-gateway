@@ -1,9 +1,9 @@
 import { memo, useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, FlaskConical, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
-import type { Model } from "@/lib/types";
+import type { Model, ExposedModelTestResult } from "@/lib/types";
 import {
   PageHeader,
   TableSkeleton,
@@ -11,7 +11,7 @@ import {
   Pagination,
   TableSearch,
 } from "@/components/shared";
-import { fmtTokens } from "@/lib/utils";
+import { fmtTokens, summarizeTestData } from "@/lib/utils";
 import { ModelIcon } from "@/components/model-icon";
 import { Card } from "@/components/ui/card";
 import {
@@ -25,6 +25,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { endpointShort } from "./models/shared";
 
 const PAGE_SIZE = 15;
@@ -143,6 +149,31 @@ const ModelRow = memo(function ModelRow({
   onChanged: () => void;
 }) {
   const [toggling, setToggling] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<ExposedModelTestResult | null>(
+    null,
+  );
+
+  const runTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const r = await api.testModel(m.id);
+      setTestResult(r);
+      if (r.ok) {
+        const via = r.provider?.name ?? r.provider?.id ?? "unknown";
+        toast.success(`${m.alias} reachable via ${via} · ${r.ms}ms`);
+      } else {
+        toast.error(
+          `${m.alias} test failed${r.status ? ` (${r.status})` : ""}`,
+        );
+      }
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const toggle = async (enabled: boolean) => {
     setToggling(true);
@@ -252,16 +283,80 @@ const ModelRow = memo(function ModelRow({
       </TableCell>
       <TableCell className="text-right">
         <div className="flex justify-end gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={runTest}
+                disabled={testing}
+                aria-label={`Test ${m.alias}`}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                {testing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FlaskConical
+                    className={cn(
+                      "h-3.5 w-3.5",
+                      testResult &&
+                        (testResult.ok ? "text-success" : "text-destructive"),
+                    )}
+                  />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-72">
+              {testResult ? (
+                testResult.ok ? (
+                  <span>
+                    Reachable · {testResult.ms}ms
+                    {testResult.provider && (
+                      <span className="mt-0.5 block text-[0.65rem] opacity-80">
+                        via {testResult.provider.name ?? testResult.provider.id}
+                        {testResult.upstreamModel &&
+                          ` · ${testResult.upstreamModel}`}
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  <>
+                    Failed
+                    {testResult.status ? ` (${testResult.status})` : ""}
+                    {testResult.provider && (
+                      <span className="mt-0.5 block text-[0.65rem] opacity-80">
+                        via {testResult.provider.name ?? testResult.provider.id}
+                      </span>
+                    )}
+                    {summarizeTestData(testResult.data) && (
+                      <span className="mt-0.5 block font-mono text-[0.65rem] break-words opacity-80">
+                        {summarizeTestData(testResult.data)}
+                      </span>
+                    )}
+                  </>
+                )
+              ) : (
+                "Test through the fallback chain"
+              )}
+            </TooltipContent>
+          </Tooltip>
           <Button
             variant="ghost"
             size="icon"
             onClick={() => onEdit(m)}
             title="Edit"
+            className="text-muted-foreground hover:text-foreground"
           >
             <Pencil className="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={del} title="Delete">
-            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={del}
+            title="Delete"
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </div>
       </TableCell>

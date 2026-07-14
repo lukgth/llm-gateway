@@ -30,10 +30,10 @@
 //                  from the library definition itself (registry.ts). Runs
 //                  BEFORE the adapter's own stack — e.g. Anthropic prompt-
 //                  caching breakpoints are already in place by the time an
-//                  adapter-specific stage (anthropic-subscription's hooks)
+//                  adapter-specific stage (claude-code's hooks)
 //                  inspects/rewrites the body.
 //   3. adapter   — this provider's own requestTransforms()/responseTransforms()/
-//                  streamTransforms() override (e.g. anthropic-subscription's
+//                  streamTransforms() override (e.g. claude-code's
 //                  no-op stack, example-custom's stamps). Same optional
 //                  label/blurb/group as builtin stages.
 //   4. model     — the imported provider-model's OWN transforms config (only

@@ -11,6 +11,7 @@ import type {
 import { SYNTHETIC_THINKING_SIGNATURE } from "../../wire/anthropic";
 import {
   genId,
+  sanitizeToolId,
   safeParse,
   extractReasoningText,
   FINISH_TO_STOP,
@@ -60,10 +61,11 @@ export function chatResponseToMessages(
     | Array<{ id: string; function: { name: string; arguments?: string } }>
     | undefined;
   if (Array.isArray(toolCalls)) {
-    for (const tc of toolCalls) {
+    for (let i = 0; i < toolCalls.length; i++) {
+      const tc = toolCalls[i];
       content.push({
         type: "tool_use",
-        id: tc.id || genId("toolu_"),
+        id: sanitizeToolId(tc.id, `toolu_${i}`),
         name: tc.function.name,
         input: safeParse(tc.function.arguments),
       });

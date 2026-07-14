@@ -93,6 +93,14 @@ export interface TransformCtx {
   headers?: Record<string, string>;
   /** Full upstream URL a request hook wants used instead of the composed one. */
   urlOverride?: string;
+
+  // --- cross-phase state bag -------------------------------------------------
+  // A shared mutable object that survives across request → response transforms
+  // for one request. Request hooks write; response hooks read. The object
+  // reference is preserved when attemptCtx spreads route.xctx, so both sides
+  // see the same bag. Keyed by transform name to avoid collisions.
+  /** Shared state bag — request hooks write, response/stream hooks read. */
+  state?: Record<string, unknown>;
 }
 
 // `label`/`blurb`/`group` are OPTIONAL display metadata on EVERY transform
@@ -385,7 +393,11 @@ function fmtStage(
 // conversion, given the format each side is in on each side of the bridge:
 //   - pre:      tagged stages whose format == `preFmt` (run before conversion)
 //   - post:     tagged stages whose format == `postFmt` (run after conversion)
-//   - untagged: legacy stages with no format — always placed post (historical)
+//   - untagged: legacy stages with no format — placed post when a conversion
+//               exists (historical), but when preFmt === postFmt (no conversion)
+//               they merge into the pre bucket so their original position among
+//               tagged stages is preserved (otherwise untagged family defaults
+//               would be reordered after tagged adapter transforms).
 // A tagged stage matching neither format is dropped (its shape never occurs on
 // this hop). Order within each bucket is preserved.
 function splitByFormat<T extends object>(
@@ -396,10 +408,13 @@ function splitByFormat<T extends object>(
   const pre: T[] = [];
   const post: T[] = [];
   const untagged: T[] = [];
+  const noConversion = preFmt === postFmt;
   for (const s of stages) {
     const fmt = (s as { format?: WireFmt }).format;
-    if (typeof fmt !== "string") untagged.push(s);
-    else if (fmt === preFmt) pre.push(s);
+    if (typeof fmt !== "string") {
+      if (noConversion) pre.push(s);
+      else untagged.push(s);
+    } else if (fmt === preFmt) pre.push(s);
     else if (fmt === postFmt) post.push(s);
     // else: tagged for a format this hop never produces — skip.
   }

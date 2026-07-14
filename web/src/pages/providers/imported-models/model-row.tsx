@@ -35,27 +35,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { fmtTokens, cn } from "@/lib/utils";
-
-// TestModelResult.data on failure carries the upstream's own error body
-// verbatim ("the operator sees the REAL error rather than a generic 'test
-// failed'" — see the type's own doc comment) — this renders it compactly for
-// the tooltip. `data` is `unknown`: a string passes through as-is; an object
-// (the common case — a parsed JSON error body) is stringified; anything else
-// (undefined, a number) is dropped rather than shown as "undefined"/"null".
-function summarizeTestData(data: unknown): string | null {
-  if (data == null) return null;
-  if (typeof data === "string") return data.slice(0, 200);
-  if (typeof data === "object") {
-    try {
-      return JSON.stringify(data).slice(0, 200);
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
+import { fmtTokens, cn, summarizeTestData } from "@/lib/utils";
 export function ModelRow({
   providerId,
   model,

@@ -42,7 +42,7 @@ export class StreamingResponsesToChatBridgeTransform extends Transform {
   private finished = false;
 
   constructor() {
-    super({ objectMode: false });
+    super({ objectMode: false, highWaterMark: 0 });
   }
 
   _transform(

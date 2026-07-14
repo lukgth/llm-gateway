@@ -650,8 +650,9 @@ export default function ModelEditor() {
                           }
                           title="Remove hop"
                           aria-label="Remove hop"
+                          className="text-muted-foreground hover:text-destructive"
                         >
-                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>

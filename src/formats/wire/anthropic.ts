@@ -148,8 +148,9 @@ export interface AnthropicMessagesRequest {
   tool_choice?: AnthropicToolChoice;
   thinking?: AnthropicThinkingConfig;
   metadata?: { user_id?: unknown; [k: string]: unknown };
-  reasoning?: { effort?: unknown; [k: string]: unknown };
-  reasoning_effort?: unknown;
+  output_config?: { effort?: unknown; format?: unknown; [k: string]: unknown };
+  cache_control?: { type: "ephemeral"; ttl?: string } | null;
+  service_tier?: string;
   [k: string]: unknown;
 }
 
@@ -163,7 +164,13 @@ export interface AnthropicMessagesResponse {
   content?: AnthropicBlock[];
   stop_reason?: string | null;
   stop_sequence?: string | null;
+  stop_details?: {
+    type: string;
+    category?: string;
+    explanation?: string;
+  } | null;
   usage?: AnthropicUsage;
+  container?: { id: string; expires_at: string };
   [k: string]: unknown;
 }
 

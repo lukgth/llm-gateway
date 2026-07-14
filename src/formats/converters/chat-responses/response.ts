@@ -37,9 +37,9 @@ function translateUsage(
   return out;
 }
 
-// Build the Responses `output` array from a Chat choice. Emits reasoning
-// items (from reasoning_details), then function_call items (from tool_calls),
-// then the message item. Returns { output, outputText }.
+// Build the Responses `output` array from a Chat choice. Order matches the
+// real Responses API: reasoning first, then the message (text), then
+// function_call items (tool invocations come after the assistant's text).
 function choiceToOutput(
   choice: NonNullable<ChatCompletionResponse["choices"]>[number],
 ): {
@@ -50,20 +50,15 @@ function choiceToOutput(
   const textParts: string[] = [];
   const msg = choice && choice.message;
 
-  // 1) Reasoning — pull from reasoning_details (set by our <thinking>
-  //    conversion) or from a plain `reasoning` string.
+  // 1) Reasoning — pull from reasoning_details or a plain `reasoning` string.
   if (msg) {
     const details = Array.isArray(msg.reasoning_details)
       ? msg.reasoning_details
       : [];
     const summaries: Array<{ type: string; text: string }> = [];
     for (const d of details) {
-      // Support both the gateway's { type:'reasoning.text', text } shape and
-      // OpenAI's { type:'reasoning', summary:[{type:'summary_text', text}] }.
       if (d && d.type === "reasoning.text" && typeof d.text === "string") {
         summaries.push({ type: "summary_text", text: d.text });
-      } else if (d && (d as { type?: string }).type === "reasoning") {
-        // not our shape; skip
       }
     }
     if (summaries.length) {
@@ -74,7 +69,6 @@ function choiceToOutput(
         content: [],
       });
     } else if (typeof msg.reasoning === "string" && msg.reasoning) {
-      // Fallback if reasoning_details wasn't set but a raw string was.
       output.push({
         type: "reasoning",
         id: genId("rs_"),
@@ -84,22 +78,7 @@ function choiceToOutput(
     }
   }
 
-  // 2) Tool calls — each becomes its own function_call output item.
-  if (msg && Array.isArray(msg.tool_calls)) {
-    for (const tc of msg.tool_calls) {
-      if (!tc || !tc.function) continue;
-      output.push({
-        type: "function_call",
-        id: genId("fc_"),
-        call_id: tc.id || genId("call_"),
-        name: tc.function.name,
-        arguments: tc.function.arguments || "",
-      });
-    }
-  }
-
-  // 3) The message itself, if it has any content (or if there were no tool
-  //    calls — keep an empty-content message so output is never empty).
+  // 2) The message (text content) — emitted before tool calls.
   const hasToolCalls = !!(
     msg &&
     Array.isArray(msg.tool_calls) &&
@@ -124,6 +103,20 @@ function choiceToOutput(
       role: (msg && msg.role) || "assistant",
       content,
     });
+  }
+
+  // 3) Tool calls — each becomes a function_call output item, after the text.
+  if (msg && Array.isArray(msg.tool_calls)) {
+    for (const tc of msg.tool_calls) {
+      if (!tc || !tc.function) continue;
+      output.push({
+        type: "function_call",
+        id: genId("fc_"),
+        call_id: tc.id || genId("call_"),
+        name: tc.function.name,
+        arguments: tc.function.arguments || "",
+      });
+    }
   }
 
   return { output, outputText: textParts.join("") };

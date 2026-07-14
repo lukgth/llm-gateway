@@ -251,6 +251,7 @@ export function KeyManager({
                 size="icon-xs"
                 onClick={() => toggleReveal(key)}
                 title={revealed.has(key) ? "Hide" : "Reveal"}
+                className="text-muted-foreground hover:text-foreground"
               >
                 {revealed.has(key) ? (
                   <EyeOff className="h-3 w-3" />
@@ -267,6 +268,7 @@ export function KeyManager({
                       onClick={() => void testKey(key)}
                       disabled={testing.has(key)}
                       title="Test this key"
+                      className="text-muted-foreground hover:text-foreground"
                     >
                       {testing.has(key) ? (
                         <Loader2 className="h-3 w-3 animate-spin" />
@@ -297,8 +299,9 @@ export function KeyManager({
                 size="icon-xs"
                 onClick={() => remove(key)}
                 title="Remove key"
+                className="text-muted-foreground hover:text-destructive"
               >
-                <Trash2 className="h-3 w-3 text-destructive" />
+                <Trash2 className="h-3 w-3" />
               </Button>
             </div>
           ))}

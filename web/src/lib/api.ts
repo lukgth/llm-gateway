@@ -24,6 +24,7 @@ import type {
   RequestLogDetail,
   HopStat,
   TestModelResult,
+  ExposedModelTestResult,
   Settings,
   UpstreamModelsResponse,
   UsageBreakdownRow,
@@ -142,6 +143,8 @@ export const api = {
   deleteModel: (id: string) =>
     req<void>(`/api/models/${id}`, { method: "DELETE" }),
   hopStats: (id: string) => req<HopStat[]>(`/api/models/${id}/hop-stats`),
+  testModel: (id: string) =>
+    req<ExposedModelTestResult>(`/api/models/${id}/test`, { method: "POST" }),
 
   // imported provider models (per-provider catalog, not exposed)
   listProviderModels: (providerId: string) =>

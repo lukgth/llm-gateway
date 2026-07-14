@@ -28,15 +28,16 @@ test("Anthropic-native provider: builtin hooks + thinking + family defaults, no 
   assert.equal(r.nativeFormat, "anthropic");
   assert.equal(r.nativeWireKind, "messages");
 
-  // Builtin anthropic-hooks (4 stages) land first, in stack order.
+  // Builtin anthropic-hooks (5 stages) land first, in stack order.
   const builtinReq = r.request.filter((s) => s.source === "builtin");
   assert.deepEqual(
     builtinReq.map((s) => s.name),
     [
       "anthropic:thinking-signature",
-      "anthropic:thinking-config",
       "anthropic:max-tokens",
       "anthropic:prefill",
+      "anthropic:sanitize-request",
+      "anthropic:thinking-config",
     ],
   );
 
@@ -131,28 +132,22 @@ test("a model's own transform with no family counterpart is simply appended", ()
   assert.deepEqual(r.overridden, []);
 });
 
-test("family defaults run BEFORE the adapter's own stack (anthropic-subscription)", () => {
-  // anthropic-subscription's adapter appends its no-op hook stack to
+test("family defaults run BEFORE the adapter's own stack (claude-code)", () => {
+  // claude-code's adapter appends its no-op hook stack to
   // requestTransforms(). Its family base is the same ANTHROPIC_DEFAULT_TRANSFORMS
   // as plain anthropic (anthropic-cache request / sanitize-tool-args response).
   // Prompt-caching breakpoints must already be in place before the subscription
   // stack's stages inspect the body, so family:anthropic-cache must precede
-  // every anthropic-subscription:* stage in the resolved request list.
-  const r = resolveProviderTransforms(
-    provider({ catalogId: "anthropic-subscription" }),
-  );
+  // every claude-code:* stage in the resolved request list.
+  const r = resolveProviderTransforms(provider({ catalogId: "claude-code" }));
   const familyIdx = r.request.findIndex(
     (s) => s.source === "family" && s.name === "family:anthropic-cache",
   );
   const subscriptionIdx = r.request.findIndex((s) =>
-    s.name.startsWith("anthropic-subscription:"),
+    s.name.startsWith("claude-code:"),
   );
   assert.notEqual(familyIdx, -1, "family:anthropic-cache not found");
-  assert.notEqual(
-    subscriptionIdx,
-    -1,
-    "anthropic-subscription stage not found",
-  );
+  assert.notEqual(subscriptionIdx, -1, "claude-code stage not found");
   assert.ok(
     familyIdx < subscriptionIdx,
     `expected family default (${familyIdx}) before adapter stage (${subscriptionIdx})`,

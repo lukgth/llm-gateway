@@ -1,5 +1,7 @@
 import { OpenAICompatibleAdapter } from "../base";
 import { WireKind } from "../../types";
+import type { TestModelCtx, TestModelResult } from "../base/types";
+import type { ResponsesResponse } from "../../formats/wire";
 
 // OpenAI official API. Bearer auth, chat + responses endpoints.
 //
@@ -15,6 +17,27 @@ class OpenAIAdapter extends OpenAICompatibleAdapter {
     if (accepted.includes(WireKind.Responses) && prefersResponses(model))
       return WireKind.Responses;
     return undefined;
+  }
+
+  async testModel(ctx: TestModelCtx): Promise<TestModelResult> {
+    if (prefersResponses(ctx.model)) {
+      return this.probeEndpoint(ctx, WireKind.Responses, {
+        body: {
+          model: ctx.model,
+          input: "Reply with exactly: hi",
+          max_output_tokens: 16,
+        },
+        summarize: (json) => {
+          const r = json as ResponsesResponse;
+          const msg = r.output?.find((o) => o.type === "message");
+          const part = (
+            msg?.content as Array<{ type?: string; text?: string }> | undefined
+          )?.find((c) => c.type === "output_text");
+          return { reply: part?.text ?? null };
+        },
+      });
+    }
+    return super.testModel(ctx);
   }
 }
 
