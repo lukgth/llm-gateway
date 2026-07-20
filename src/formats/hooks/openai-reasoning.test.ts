@@ -224,3 +224,64 @@ test("Responses: sanitizes reasoning items even when reasoning config is absent"
     { type: "summary_text", text: "thought" },
   ]);
 });
+
+// --- GPT-5.6+ reasoning content stripping ----------------------------------
+
+test("Responses: GPT-5.6 strips content from reasoning input items, keeps summary", () => {
+  const body: Record<string, unknown> = {
+    model: "gpt-5.6",
+    input: [
+      {
+        type: "reasoning",
+        id: "rs_1",
+        encrypted_content: "gAAAA_opaque",
+        summary: [{ type: "summary_text", text: "thought" }],
+        content: [{ type: "summary_text", text: "decrypted thinking" }],
+      },
+    ],
+  };
+  normalizeOpenAIReasoning(body);
+  const items = body.input as Array<Record<string, unknown>>;
+  const r = items[0];
+  assert.equal(r.content, undefined);
+  assert.equal(r.encrypted_content, "gAAAA_opaque");
+  assert.deepEqual(r.summary, [{ type: "summary_text", text: "thought" }]);
+});
+
+test("Responses: GPT-5.6-sol also strips content from reasoning input items", () => {
+  const body: Record<string, unknown> = {
+    model: "gpt-5.6-sol",
+    input: [
+      {
+        type: "reasoning",
+        id: "rs_1",
+        encrypted_content: "gAAAA_blob",
+        summary: [{ type: "summary_text", text: "ok" }],
+        content: [{ type: "summary_text", text: "private" }],
+      },
+    ],
+  };
+  normalizeOpenAIReasoning(body);
+  const items = body.input as Array<Record<string, unknown>>;
+  assert.equal(items[0].content, undefined);
+  assert.equal(items[0].encrypted_content, "gAAAA_blob");
+});
+
+test("Responses: GPT-5 (non-5.6) still copies summary to content", () => {
+  const body: Record<string, unknown> = {
+    model: "gpt-5",
+    input: [
+      {
+        type: "reasoning",
+        id: "rs_1",
+        encrypted_content: "gAAAA_blob",
+        summary: [{ type: "summary_text", text: "step" }],
+        content: [],
+      },
+    ],
+  };
+  normalizeOpenAIReasoning(body);
+  const items = body.input as Array<Record<string, unknown>>;
+  assert.equal(items[0].encrypted_content, undefined);
+  assert.deepEqual(items[0].content, [{ type: "summary_text", text: "step" }]);
+});

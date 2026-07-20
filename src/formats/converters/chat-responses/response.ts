@@ -17,6 +17,7 @@ import {
   type ResponseOutputItem,
   type ResponseBody,
 } from "./shared";
+import { isGpt56Plus } from "../../model-version";
 
 // --- response: Chat Completions -> Responses -------------------------------
 
@@ -42,6 +43,7 @@ function translateUsage(
 // function_call items (tool invocations come after the assistant's text).
 function choiceToOutput(
   choice: NonNullable<ChatCompletionResponse["choices"]>[number],
+  model?: string,
 ): {
   output: ResponseOutputItem[];
   outputText: string;
@@ -49,10 +51,12 @@ function choiceToOutput(
   const output: ResponseOutputItem[] = [];
   const textParts: string[] = [];
   const msg = choice && choice.message;
+  const gpt56 = isGpt56Plus(model);
 
   // 1) Reasoning — one output item per reasoning_details entry (preserving
   //    the original per-item structure, including encrypted_content for
-  //    multi-turn continuity).
+  //    multi-turn continuity). GPT-5.6+ only uses encrypted thinking, so
+  //    omit the content field entirely for those models.
   if (msg) {
     const details = Array.isArray(msg.reasoning_details)
       ? msg.reasoning_details
@@ -64,8 +68,8 @@ function choiceToOutput(
         const item: Record<string, unknown> = {
           type: "reasoning",
           id: genId("rs_"),
-          content: [],
         };
+        if (!gpt56) item.content = [];
         if (typeof dr.text === "string" && dr.text)
           item.summary = [{ type: "summary_text", text: dr.text }];
         else item.summary = [];
@@ -75,12 +79,13 @@ function choiceToOutput(
       }
     }
     if (!details.length && typeof msg.reasoning === "string" && msg.reasoning) {
-      output.push({
+      const item: Record<string, unknown> = {
         type: "reasoning",
         id: genId("rs_"),
         summary: [{ type: "summary_text", text: msg.reasoning }],
-        content: [],
-      });
+      };
+      if (!gpt56) item.content = [];
+      output.push(item as ResponseOutputItem);
     }
   }
 
@@ -135,7 +140,7 @@ export function chatResponseToResponses(
   const choice = Array.isArray(chatBody.choices) ? chatBody.choices[0] : null;
   if (!choice) return null;
 
-  const { output, outputText } = choiceToOutput(choice);
+  const { output, outputText } = choiceToOutput(choice, chatBody.model);
   const finishReason = choice.finish_reason || "";
   const status = FINISH_TO_STATUS[finishReason] || "completed";
 

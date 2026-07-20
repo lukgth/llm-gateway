@@ -16,17 +16,15 @@
 // Runs as an all-provider default (DEFAULT_TRANSFORMS), tagged "chat" and
 // "responses", gated on providerFmt so it only fires for OpenAI-compatible hops.
 
+import { isGpt56Plus, isGpt5Family } from "../model-version";
+
 const OPENAI_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 type OpenAIEffort = (typeof OPENAI_EFFORTS)[number];
 
-// GPT-5.6+ supports max; GPT-5 family supports up to xhigh; older models cap at high.
-const GPT56_RE = /^gpt-?5[\.\-]?[6-9]/i;
-const GPT5_RE = /^gpt-?5/i;
-
 function maxEffortForModel(model: string | undefined): OpenAIEffort {
   if (!model) return "high";
-  if (GPT56_RE.test(model)) return "max";
-  if (GPT5_RE.test(model)) return "xhigh";
+  if (isGpt56Plus(model)) return "max";
+  if (isGpt5Family(model)) return "xhigh";
   return "high";
 }
 
@@ -133,7 +131,7 @@ function normalizeResponsesReasoning(
   if (typeof mot === "number" && mot < 16) body.max_output_tokens = 16;
 
   stripAnthropicMetadata(body);
-  sanitizeReasoningInputItems(body);
+  sanitizeReasoningInputItems(body, model);
 
   return body;
 }
@@ -148,13 +146,18 @@ function stripAnthropicMetadata(body: Record<string, unknown>): void {
   }
 }
 
-// Strip encrypted_content from reasoning input items (it's provider-specific
-// and will 400 on any provider other than the one that produced it) and
-// convert summary text to content blocks so the reasoning prose survives as
-// plain text the model can read.
-function sanitizeReasoningInputItems(body: Record<string, unknown>): void {
+// Sanitize reasoning input items for cross-provider forwarding.
+// GPT-5.6+ only accepts encrypted_content — strip content entirely, keep
+// only summary. Older models don't support encrypted thinking, so strip
+// encrypted_content and copy summary text into content instead.
+function sanitizeReasoningInputItems(
+  body: Record<string, unknown>,
+  model: string | undefined,
+): void {
   const input = body.input;
   if (!Array.isArray(input)) return;
+
+  const gpt56 = isGpt56Plus(model);
 
   for (const item of input) {
     if (!item || typeof item !== "object" || item.type !== "reasoning")
@@ -162,18 +165,22 @@ function sanitizeReasoningInputItems(body: Record<string, unknown>): void {
 
     const r = item as Record<string, unknown>;
 
-    delete r.encrypted_content;
+    if (gpt56) {
+      delete r.content;
+    } else {
+      delete r.encrypted_content;
 
-    const summary = r.summary as
-      Array<{ type?: string; text?: string }> | undefined;
+      const summary = r.summary as
+        Array<{ type?: string; text?: string }> | undefined;
 
-    if (Array.isArray(summary) && summary.length) {
-      const texts = summary
-        .filter((s) => typeof s.text === "string" && s.text)
-        .map((s) => ({ type: "summary_text", text: s.text }));
+      if (Array.isArray(summary) && summary.length) {
+        const texts = summary
+          .filter((s) => typeof s.text === "string" && s.text)
+          .map((s) => ({ type: "summary_text", text: s.text }));
 
-      if (texts.length) {
-        r.content = texts;
+        if (texts.length) {
+          r.content = texts;
+        }
       }
     }
   }
