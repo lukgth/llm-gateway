@@ -39,6 +39,7 @@ import { getProviderModel } from "../repo/provider-models";
 import {
   getProviderKeyByHash,
   listEnabledCredentials,
+  maskProviderKey,
 } from "../repo/provider-keys";
 import {
   modelTransformBags,
@@ -91,6 +92,8 @@ import {
   isEventStream,
   isJson,
   filteredHeaders,
+  finalizeResponseHeaders,
+  seedResponseHeaders,
   readErrorBody,
   decompressStream,
   sleep,
@@ -486,6 +489,10 @@ export class ForwardingEngine {
               result.error ?? null,
               startedAt,
               result.debugResponse ?? null,
+              {
+                hash: result.keyHash ?? null,
+                mask: result.keyMask ?? null,
+              },
             );
           }
           return;
@@ -556,6 +563,7 @@ export class ForwardingEngine {
   ): Promise<AttemptResult> {
     const { provider, upstreamModel } = entry;
     const keyHash = pick?.keyHash ?? null;
+    const keyMask = pick?.key ? maskProviderKey(pick.key) : null;
 
     // Fresh per-attempt ctx so a request hook's URL/header rewrites can't leak
     // across retries/hops (route.xctx is shared for the whole request).
@@ -674,8 +682,12 @@ export class ForwardingEngine {
       };
       const resolve = (r: AttemptResult) => {
         res.off("close", onClientClose);
-        // Stamp the key used so forward() can attribute the outcome to it.
-        resolvePromise({ ...r, keyHash: r.keyHash ?? keyHash });
+        // Stamp the key used so forward() can attribute health + request logs.
+        resolvePromise({
+          ...r,
+          keyHash: r.keyHash ?? keyHash,
+          keyMask: r.keyMask ?? keyMask,
+        });
       };
 
       const proxyReq = transport.request(
@@ -703,6 +715,8 @@ export class ForwardingEngine {
             upstreamModel,
             route,
             startedAt,
+            attemptCtx,
+            { hash: keyHash, mask: keyMask },
           ).then(resolve, (err) =>
             resolve({ committed: false, reason: err.message }),
           );
@@ -757,6 +771,8 @@ export class ForwardingEngine {
     upstreamModel: string,
     route: Route,
     startedAt: number,
+    attemptCtx: TransformCtx,
+    upstreamKey: { hash: string | null; mask: string | null },
   ): Promise<AttemptResult> {
     const status = upRes.statusCode || 502;
     const headers = upRes.headers || {};
@@ -814,6 +830,8 @@ export class ForwardingEngine {
         status,
         headers,
         startedAt,
+        attemptCtx,
+        upstreamKey,
       );
       return { committed: true, deferred: true, status };
     }
@@ -826,6 +844,7 @@ export class ForwardingEngine {
         route,
         status,
         headers,
+        attemptCtx,
       );
       // Settlement + logging happen centrally in forward(); hand back the
       // actual counts (falling back to the input estimate when the upstream
@@ -864,24 +883,26 @@ export class ForwardingEngine {
     status: number,
     headers: IncomingMessage["headers"],
     startedAt: number,
+    attemptCtx: TransformCtx,
+    upstreamKey: { hash: string | null; mask: string | null },
   ): void {
-    const out = filteredHeaders(headers, { stripEncoding: true });
-    delete out["content-length"];
-    delete out["Content-Length"];
-    if (route.convert) out["content-type"] = "text/event-stream";
-    out["cache-control"] = "no-cache, no-transform";
-    out["x-accel-buffering"] = "no";
+    attemptCtx.respHeaders = seedResponseHeaders(headers, {
+      stripEncoding: true,
+    });
 
-    // Materialize the ordered SSE stages from the plan: thinking (a pre-bridge,
-    // provider-format-tagged default), the format bridge, then any adapter-custom
-    // stream transforms. Log the assembled pipeline once here — never per event.
+    // Materialize stages BEFORE writeHead. A bespoke stream factory may make a
+    // synchronous respHeaders edit here; per-event handlers later observe only.
     const streamStages = route.stream.map((s) => {
       if (ctx.reqId)
         this.logger.transform("stream", s.name, {
           provider: provider.id,
           reqId: ctx.reqId,
         });
-      return s.create(route.xctx);
+      return s.create(attemptCtx);
+    });
+    const out = finalizeResponseHeaders(attemptCtx.respHeaders, {
+      contentType: route.convert ? "text/event-stream" : undefined,
+      sse: true,
     });
 
     // Unsupported streaming conversion — a format bridge was required but none
@@ -915,6 +936,8 @@ export class ForwardingEngine {
         null,
         "stream conversion unsupported",
         startedAt,
+        null,
+        upstreamKey,
       );
       return;
     }
@@ -1011,6 +1034,7 @@ export class ForwardingEngine {
         error,
         startedAt,
         debugResponse,
+        upstreamKey,
       );
     };
 
@@ -1106,6 +1130,7 @@ export class ForwardingEngine {
     route: Route,
     status: number,
     headers: IncomingMessage["headers"],
+    attemptCtx: TransformCtx,
   ): Promise<{
     input?: number;
     output?: number;
@@ -1143,6 +1168,12 @@ export class ForwardingEngine {
     // from the PROVIDER-shape body before any bridging.
     const debugResponse = ctx.debug ? safeCaptureResponse(parsed) : undefined;
 
+    // Fresh per-attempt response headers. Existing onResponse hooks may inspect
+    // and mutate this table before the client response is committed.
+    attemptCtx.respHeaders = seedResponseHeaders(headers, {
+      stripEncoding: true,
+    });
+
     // Run the response through its ordered transform stages. Thinking extraction
     // is now the FIRST stage (a provider-format-tagged default, placed pre-bridge
     // by buildTransformPlan), so it reads provider-native fields before the
@@ -1152,7 +1183,7 @@ export class ForwardingEngine {
       outBody = applyBodyTransforms(
         route.response,
         parsed,
-        route.xctx,
+        attemptCtx,
         this.stageApplyLogger(ctx, "resp"),
       );
     } catch (err) {
@@ -1164,9 +1195,10 @@ export class ForwardingEngine {
     }
 
     const out = Buffer.from(JSON.stringify(outBody), "utf8");
-    const outHeaders = filteredHeaders(headers, { stripEncoding: true });
-    outHeaders["content-length"] = String(out.length);
-    if (route.convert) outHeaders["content-type"] = "application/json";
+    const outHeaders = finalizeResponseHeaders(attemptCtx.respHeaders, {
+      contentLength: out.length,
+      contentType: route.convert ? "application/json" : undefined,
+    });
     if (!res.headersSent) res.writeHead(status, outHeaders);
     res.end(out);
     return { ...actual, debugResponse };
@@ -1290,7 +1322,9 @@ export class ForwardingEngine {
       }
       return;
     }
-    res.writeHead(status, filteredHeaders(headers));
+    const out = seedResponseHeaders(headers, { stripEncoding: true });
+    out["content-length"] = String(buf.length);
+    res.writeHead(status, out);
     res.end(buf);
   }
 
@@ -1658,6 +1692,10 @@ export class ForwardingEngine {
     error: string | null,
     startedAt?: number,
     debugResponse?: string | null,
+    upstreamKey: { hash: string | null; mask: string | null } = {
+      hash: null,
+      mask: null,
+    },
   ): void {
     try {
       insertRequestLog(this.db, {
@@ -1668,6 +1706,8 @@ export class ForwardingEngine {
         providerId: provider?.id ?? null,
         providerName: provider?.name ?? null,
         upstreamModel,
+        upstreamKeyHash: upstreamKey.hash,
+        upstreamKeyMask: upstreamKey.mask,
         status,
         inputTokens,
         outputTokens,

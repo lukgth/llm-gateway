@@ -177,8 +177,14 @@ streamTransforms(p: Provider): AnyStreamTransform[]     // default: []
 
 Author these with `onRequest` / `onResponse` / `onStreamEvent` from
 `formats/pipeline` — format-tagged, typed to the wire shape they run against.
-See **[Transforms API](./transforms-api.md)** for the full authoring guide;
-the short version: a request transform tagged `"messages"` runs wherever the
+See **[Transforms API](./transforms-api.md)** for the full authoring guide.
+Existing response/stream hooks also receive `ctx.respHeaders`: buffered
+`onResponse` hooks may mutate client-facing response headers before commit,
+while `onStreamEvent` hooks can passively observe them (event-time mutation is
+too late after `writeHead`; a bespoke stream factory may edit synchronously in
+`create(ctx)`). There is no separate header transform phase.
+
+The short version: a request transform tagged `"messages"` runs wherever the
 body is in Messages shape on this hop (pre-conversion for a Messages client,
 post-conversion for a hop converting *into* Messages), so the same transform
 fires correctly regardless of which format the client used. Each factory

@@ -165,13 +165,13 @@ export const subscriptionRequestStack: RequestTransform[] = [
       if (!parsed) return body;
 
       parsed.device_id = DEFAULT_USER_IDENTITY.device_id;
-      
+
       const accountUuid = ctx.keyMetadata?.account_uuid;
       parsed.account_uuid =
         typeof accountUuid === "string" && accountUuid.trim()
           ? accountUuid.trim()
           : DEFAULT_USER_IDENTITY.account_uuid;
-      
+
       meta.user_id = JSON.stringify(parsed);
       return body;
     },
@@ -244,6 +244,8 @@ export const subscriptionResponseStack: ResponseTransform[] = [
           if (original) block.name = original;
         }
       }
+
+      console.log(ctx.respHeaders);
       return body;
     },
     {
@@ -272,6 +274,7 @@ export const subscriptionStreamStack: StreamTransform[] = [
         if (original) block.name = original;
       }
 
+      console.log(ctx.respHeaders);
       return event;
     },
     {

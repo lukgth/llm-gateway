@@ -82,6 +82,12 @@ export function credHash(credential: string): string {
   return createHash("sha256").update(credential).digest("hex").slice(0, 32);
 }
 
+/** Mask an upstream provider credential for safe operator-facing attribution. */
+export function maskProviderKey(credential: string): string {
+  if (credential.length <= 10) return `${credential.slice(0, 2)}…`;
+  return `${credential.slice(0, 6)}…${credential.slice(-4)}`;
+}
+
 function genId(): string {
   return randomBytes(4).toString("hex");
 }

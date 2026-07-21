@@ -109,6 +109,8 @@ export interface AttemptResult {
   error?: string | null;
   /** Hash of the upstream key used, so forward() can record its health. */
   keyHash?: string | null;
+  /** Immutable masked snapshot of the selected upstream credential. */
+  keyMask?: string | null;
   /** Cooldown (ms) parsed from a 429 response's Retry-After, for the key. */
   rateLimitMs?: number;
 }

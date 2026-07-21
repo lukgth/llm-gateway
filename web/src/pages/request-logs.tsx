@@ -20,6 +20,11 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
 import { cn, fmtTime, fmtNum } from "@/lib/utils";
 import {
@@ -104,18 +109,20 @@ export default function RequestLogs() {
           ) : items.length === 0 && page === 0 ? (
             <EmptyState msg="No matching requests" />
           ) : (
-            <Table>
+            <Table className="table-fixed min-w-[64rem]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Key</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Model</TableHead>
-                  <TableHead>Provider</TableHead>
-                  <TableHead className="text-right">Status</TableHead>
-                  <TableHead className="text-right">Tok In/Out</TableHead>
-                  <TableHead className="text-right">Latency</TableHead>
-                  <TableHead>Note</TableHead>
+                  <TableHead className="w-[9%]">Time</TableHead>
+                  <TableHead className="w-[9%]">Key</TableHead>
+                  <TableHead className="w-[9%]">Client</TableHead>
+                  <TableHead className="w-[18%]">Model</TableHead>
+                  <TableHead className="w-[20%]">Provider</TableHead>
+                  <TableHead className="w-[7%] text-right">Status</TableHead>
+                  <TableHead className="w-[10%] text-right">
+                    Tok In/Out
+                  </TableHead>
+                  <TableHead className="w-[7%] text-right">Latency</TableHead>
+                  <TableHead className="w-[11%]">Note</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -244,7 +251,7 @@ const LogRow = memo(function LogRow({
             {fmtTime(l.ts)}
           </span>
         </TableCell>
-        <TableCell className="max-w-[10rem] truncate text-muted-foreground">
+        <TableCell className="truncate text-muted-foreground">
           {l.apiKeyName ? (
             l.apiKeyName
           ) : l.keyPrefix ? (
@@ -253,14 +260,14 @@ const LogRow = memo(function LogRow({
             "anon"
           )}
         </TableCell>
-        <TableCell className="max-w-[10rem]">
+        <TableCell>
           {l.client ? (
             <ClientBadge name={l.client} />
           ) : (
             <span className="text-muted-foreground">—</span>
           )}
         </TableCell>
-        <TableCell className="max-w-[14rem] font-mono text-primary">
+        <TableCell className="min-w-0 font-mono text-primary">
           {l.model ? (
             <span className="flex min-w-0 items-center gap-2">
               <ModelIcon alias={l.model} type={type} />
@@ -270,15 +277,35 @@ const LogRow = memo(function LogRow({
             "—"
           )}
         </TableCell>
-        <TableCell className="max-w-[12rem] text-muted-foreground">
-          <span className="block truncate">
-            {l.providerName ?? l.providerId ?? "—"}
-          </span>
-          {l.upstreamModel ? (
-            <span className="block truncate text-[0.6rem] text-muted-foreground/70">
-              {l.upstreamModel}
+        <TableCell className="min-w-0">
+          <div className="min-w-0">
+            <span className="block truncate font-medium text-foreground">
+              {l.providerName ?? l.providerId ?? "—"}
             </span>
-          ) : null}
+            {(l.upstreamModel || l.upstreamKeyMask) && (
+              <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                {l.upstreamModel && (
+                  <span className="min-w-0 truncate font-mono">
+                    {l.upstreamModel}
+                  </span>
+                )}
+                {l.upstreamKeyMask && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="shrink-0">
+                        <Badge variant="secondary" className="font-mono">
+                          {l.upstreamKeyMask}
+                        </Badge>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Upstream provider key used for this request
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            )}
+          </div>
         </TableCell>
         <TableCell className="text-right">
           <StatusBadge status={l.status} />
@@ -302,7 +329,10 @@ const LogRow = memo(function LogRow({
         <TableCell className="text-right tabular-nums text-muted-foreground">
           {fmtLatency(l.latencyMs)}
         </TableCell>
-        <TableCell className="max-w-[20rem] truncate text-amber-500 dark:text-amber-400">
+        <TableCell
+          className="truncate text-amber-500 dark:text-amber-400"
+          title={l.error ?? undefined}
+        >
           {l.error ?? ""}
         </TableCell>
       </TableRow>

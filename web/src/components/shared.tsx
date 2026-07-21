@@ -41,14 +41,21 @@ export function PageHeader({
           block to the description text's unwrapped width and gets clipped by
           an ancestor's overflow-hidden instead of wrapping on narrow/mobile
           viewports. */}
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <h1 className="text-lg font-semibold tracking-tight text-foreground">
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+          <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight text-foreground">
             {title}
           </h1>
           {meta}
         </div>
-        {desc && <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p>}
+        {desc && (
+          <p
+            className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground"
+            title={desc}
+          >
+            {desc}
+          </p>
+        )}
       </div>
       {actions && (
         <div className="flex flex-wrap items-center gap-2">{actions}</div>

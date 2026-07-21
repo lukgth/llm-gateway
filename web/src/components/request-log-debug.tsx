@@ -78,7 +78,7 @@ export function DebugPanel({
           </button>
         )}
       </div>
-      <div className="max-h-96 overflow-auto rounded-md border border-border bg-background p-3">
+      <div className="min-w-0 max-w-full max-h-96 overflow-auto rounded-md border border-border bg-background p-3">
         {loading ? (
           <span className="font-mono text-[0.7rem] text-muted-foreground">
             loading…

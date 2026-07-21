@@ -45,6 +45,46 @@ const extra: AdapterTransforms = {
   stream: [passStream],
 };
 
+test("existing onResponse hook can inspect and mutate ctx.respHeaders", () => {
+  const transform = onResponse("chat", "test:headers", (body, context) => {
+    assert.equal(context.respHeaders?.["x-upstream"], "seen");
+    context.respHeaders!["x-added"] = "yes";
+    delete context.respHeaders!["x-remove"];
+    return body;
+  });
+  const context = ctx("chat", "chat");
+  context.respHeaders = {
+    "x-upstream": "seen",
+    "x-remove": "remove-me",
+  };
+  applyBodyTransforms([transform], { choices: [] }, context);
+  assert.deepEqual(context.respHeaders, {
+    "x-upstream": "seen",
+    "x-added": "yes",
+  });
+});
+
+test("existing onStreamEvent hook passively observes ctx.respHeaders", async () => {
+  let observed: unknown;
+  const transform = onStreamEvent(
+    "messages",
+    "test:observe-headers",
+    (event, context) => {
+      observed = context.respHeaders?.["anthropic-request-id"];
+      return event;
+    },
+  );
+  const context = ctx("messages", "messages");
+  context.respHeaders = { "anthropic-request-id": "req-upstream" };
+  const stream = transform.create(context);
+  const chunks: Buffer[] = [];
+  stream.on("data", (chunk) => chunks.push(chunk));
+  stream.end('event: ping\ndata: {"type":"ping"}\n\n');
+  await new Promise<void>((resolve) => stream.on("end", resolve));
+  assert.equal(observed, "req-upstream");
+  assert.match(Buffer.concat(chunks).toString("utf8"), /event: ping/);
+});
+
 test("custom transforms appear in the plan for a same-format provider", () => {
   const plan = buildTransformPlan(
     "chat",

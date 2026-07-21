@@ -17,6 +17,7 @@ interface LogRow {
   provider_name: string | null;
   live_provider_name: string | null;
   upstream_model: string | null;
+  upstream_key_mask: string | null;
   status: number | null;
   input_tokens: number | null;
   output_tokens: number | null;
@@ -46,6 +47,7 @@ function mapLog(r: LogRow): RequestLog {
     // the provider was since deleted.
     providerName: r.live_provider_name ?? r.provider_name,
     upstreamModel: r.upstream_model,
+    upstreamKeyMask: r.upstream_key_mask,
     status: r.status,
     inputTokens: r.input_tokens,
     outputTokens: r.output_tokens,
@@ -69,6 +71,8 @@ export interface InsertLogInput {
   providerId: string | null;
   providerName: string | null;
   upstreamModel: string | null;
+  upstreamKeyHash: string | null;
+  upstreamKeyMask: string | null;
   status: number | null;
   inputTokens: number | null;
   outputTokens: number | null;
@@ -88,11 +92,13 @@ export function insertRequestLog(db: DB, input: InsertLogInput): void {
   db.prepare(
     `INSERT INTO request_logs
       (ts, api_key_id, api_key_name, user_id, model, provider_id, provider_name,
-       upstream_model, status, input_tokens, output_tokens, cached_tokens, latency_ms,
-       client, path, stream, error, debug_request, debug_response)
+       upstream_model, upstream_key_hash, upstream_key_mask, status, input_tokens,
+       output_tokens, cached_tokens, latency_ms, client, path, stream, error,
+       debug_request, debug_response)
      VALUES (@ts, @api_key_id, @api_key_name, @user_id, @model, @provider_id, @provider_name,
-       @upstream_model, @status, @input_tokens, @output_tokens, @cached_tokens, @latency_ms,
-       @client, @path, @stream, @error, @debug_request, @debug_response)`,
+       @upstream_model, @upstream_key_hash, @upstream_key_mask, @status, @input_tokens,
+       @output_tokens, @cached_tokens, @latency_ms, @client, @path, @stream, @error,
+       @debug_request, @debug_response)`,
   ).run({
     ts: new Date().toISOString(),
     api_key_id: input.apiKeyId,
@@ -102,6 +108,8 @@ export function insertRequestLog(db: DB, input: InsertLogInput): void {
     provider_id: input.providerId,
     provider_name: input.providerName,
     upstream_model: input.upstreamModel,
+    upstream_key_hash: input.upstreamKeyHash,
+    upstream_key_mask: input.upstreamKeyMask,
     status: input.status,
     input_tokens: input.inputTokens,
     output_tokens: input.outputTokens,
@@ -171,8 +179,9 @@ export function listRequestLogs(db: DB, opts: ListOpts = {}): RequestLog[] {
   const rows = db
     .prepare(
       `SELECT rl.id, rl.ts, rl.api_key_id, rl.api_key_name, rl.user_id, rl.model,
-              rl.provider_id, rl.provider_name, rl.upstream_model, rl.status,
-              rl.input_tokens, rl.output_tokens, rl.cached_tokens, rl.latency_ms,
+              rl.provider_id, rl.provider_name, rl.upstream_model,
+              rl.upstream_key_mask, rl.status, rl.input_tokens, rl.output_tokens,
+              rl.cached_tokens, rl.latency_ms,
               rl.client, rl.path, rl.stream, rl.error,
               (rl.debug_request IS NOT NULL) AS debug_request,
               (rl.debug_response IS NOT NULL) AS debug_response,

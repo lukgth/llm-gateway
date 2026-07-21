@@ -46,7 +46,7 @@ export default function Dashboard() {
           <StatGridSkeleton count={4} />
         </div>
         <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
+          <Card className="min-w-0 lg:col-span-2">
             <CardHeader>
               <Skeleton className="h-4 w-48" />
             </CardHeader>
@@ -125,9 +125,9 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-5">
         {/* Token usage by hour — real-time (last 24h) */}
-        <Card className="lg:col-span-2">
+        <Card className="min-w-0 lg:col-span-3">
           <CardHeader>
             <CardTitle>Token Usage — Last 24 Hours</CardTitle>
             <CardAction>
@@ -149,7 +149,7 @@ export default function Dashboard() {
         </Card>
 
         {/* Top models */}
-        <Card>
+        <Card className="min-w-0 lg:col-span-2">
           <CardHeader>
             <CardTitle>Top Models Today</CardTitle>
           </CardHeader>
@@ -157,19 +157,21 @@ export default function Dashboard() {
             {s.byModel.length === 0 ? (
               <EmptyState msg="No requests today" />
             ) : (
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Model</TableHead>
-                    <TableHead className="text-right">Requests</TableHead>
-                    <TableHead className="text-right">Tokens</TableHead>
-                    <TableHead className="text-right">Cached</TableHead>
+                    <TableHead className="w-[52%]">Model</TableHead>
+                    <TableHead className="w-[16%] text-right">
+                      Requests
+                    </TableHead>
+                    <TableHead className="w-[17%] text-right">Tokens</TableHead>
+                    <TableHead className="w-[15%] text-right">Cached</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {s.byModel.map((m) => (
                     <TableRow key={m.model}>
-                      <TableCell className="max-w-[16rem] font-mono text-primary">
+                      <TableCell className="min-w-0 font-mono text-primary">
                         <span className="flex min-w-0 items-center gap-2">
                           <ModelIcon
                             alias={m.model}
@@ -196,7 +198,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <Card className="mt-3">
+      <Card className="mt-3 min-w-0">
         <CardHeader>
           <CardTitle>Provider Load Today</CardTitle>
           <Link
@@ -210,13 +212,13 @@ export default function Dashboard() {
           {s.byProvider.length === 0 ? (
             <EmptyState msg="No upstream activity today" />
           ) : (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Provider</TableHead>
-                  <TableHead className="text-right">Requests</TableHead>
-                  <TableHead className="text-right">Tokens</TableHead>
-                  <TableHead className="text-right">Share</TableHead>
+                  <TableHead className="w-[55%]">Provider</TableHead>
+                  <TableHead className="w-[15%] text-right">Requests</TableHead>
+                  <TableHead className="w-[15%] text-right">Tokens</TableHead>
+                  <TableHead className="w-[15%] text-right">Share</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -227,7 +229,10 @@ export default function Dashboard() {
                   );
                   return (
                     <TableRow key={p.providerId}>
-                      <TableCell className="max-w-[16rem] truncate">
+                      <TableCell
+                        className="min-w-0 truncate"
+                        title={p.provider}
+                      >
                         {p.provider}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">

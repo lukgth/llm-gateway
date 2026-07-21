@@ -178,8 +178,11 @@ overrides in `mergeTransforms`.
 | `upstreamModel` | The chain hop's upstream model id |
 | `maxOutputTokens` | Effective per-hop output ceiling (link ?? imported ?? model) |
 | `apiKey` | The **raw upstream key** selected for this attempt (`null` if the provider has none) — see below |
-| `headers` | The **full mutable outbound header table** for this attempt — see below |
+| `keyMetadata` | Structured metadata for that exact selected provider key |
+| `headers` | The **full mutable outbound request header table** sent upstream — see below |
+| `respHeaders` | The mutable client-facing response headers on buffered response hooks; observable on stream hooks — see below |
 | `urlOverride` | A **request** transform may set this to replace the composed upstream URL |
+| `state` | Shared request → response/stream state bag for this route attempt |
 
 `ctx.headers` arrives **already merged**, built by the engine BEFORE any
 request stage runs: client headers first (the base — everything the inbound
@@ -217,6 +220,55 @@ edit can't leak across retries or hops. A build method still runs **after** —
 and may itself still rewrite/override anything a request transform edited
 here (see
 [provider-adapters.md](./provider-adapters.md#where-the-adapter-meets-the-engine)).
+
+### Response headers in `onResponse` / `onStreamEvent`
+
+There is deliberately **no separate response-header phase or factory**.
+Existing response and stream hooks receive `ctx.respHeaders`:
+
+```ts
+onResponse("chat", "example:headers", (body, ctx) => {
+  const remaining = ctx.respHeaders?.["x-ratelimit-remaining"];
+  if (ctx.respHeaders) {
+    ctx.respHeaders["x-gateway-provider"] = "example";
+    delete ctx.respHeaders["x-upstream-internal"];
+  }
+  return body;
+});
+
+onStreamEvent("messages", "example:observe-headers", (event, ctx) => {
+  console.log(ctx.respHeaders?.["anthropic-ratelimit-requests-remaining"]);
+  return event;
+});
+```
+
+`ctx.respHeaders` is a fresh `Record<string, string | string[]>` for the
+committed attempt. Header names are lowercase; arrays preserve repeated values
+such as `set-cookie`. Mutate it exactly like `ctx.headers`: assign to set or
+replace, and `delete` to remove.
+
+For a **buffered JSON response**, the existing `onResponse` stages run before
+`writeHead`, so their `respHeaders` edits are merged into the actual client
+response. The gateway then reasserts framing fields it owns: the real
+`content-length`, and a converted `content-type` when conversion changed the
+wire representation.
+
+For a **streaming response**, stream factories are created before `writeHead`
+and receive the same context. A bespoke factory may synchronously inspect or
+edit `respHeaders` during `create(ctx)`. `onStreamEvent` handlers run later,
+once SSE events arrive; they can passively observe upstream headers, but edits
+at event time cannot change HTTP headers that were already sent. SSE framing
+remains gateway-owned (`content-length` removed, `cache-control: no-cache,
+no-transform`, `x-accel-buffering: no`).
+
+This field is available only on the same 2xx buffered/converted streaming paths
+where response/stream hooks already run. Non-2xx responses and opaque native
+passthrough bodies do not start body/event hooks and therefore do not expose a
+new header-hook lifecycle. The table is freshly seeded per committed attempt,
+so edits never leak across retries or fallback hops.
+
+`ctx.headers` always means **request headers sent upstream**;
+`ctx.respHeaders` always means **response headers sent to the client**.
 
 ### Optional display metadata: `label` / `blurb` / `group`
 

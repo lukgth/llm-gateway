@@ -46,6 +46,8 @@ export * from "./wire";
 
 export type Json = Record<string, unknown>;
 export type BodyXform = (b: Json) => Json;
+/** Mutable client-facing HTTP response headers. Names are lowercase. */
+export type ResponseHeaders = Record<string, string | string[]>;
 
 // Context handed to every transform, so a custom transform can branch on the
 // provider, the formats in play, or the resolved model / chain hop.
@@ -95,6 +97,13 @@ export interface TransformCtx {
   headers?: Record<string, string>;
   /** Full upstream URL a request hook wants used instead of the composed one. */
   urlOverride?: string;
+
+  /**
+   * Mutable response headers sent back to the client. Buffered response hooks
+   * may edit this fresh per-attempt table before commit. Stream hooks can
+   * inspect it; per-event edits are too late after writeHead.
+   */
+  respHeaders?: ResponseHeaders;
 
   // --- cross-phase state bag -------------------------------------------------
   // A shared mutable object that survives across request → response transforms

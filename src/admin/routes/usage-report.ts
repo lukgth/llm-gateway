@@ -6,8 +6,8 @@ import type { Database as DB } from "better-sqlite3";
 import type { Provider, ProviderUsageReport } from "../../types";
 import { adapterForProvider } from "../../providers";
 import { listProviders } from "../../repo/providers";
-import { listProviderKeys } from "../../repo/provider-keys";
-import { maskKey, seedFromKey, makeUsageCtx } from "./provider-probe";
+import { listProviderKeys, maskProviderKey } from "../../repo/provider-keys";
+import { seedFromKey, makeUsageCtx } from "./provider-probe";
 
 // Build the usage report for ONE provider by asking its adapter for each key's
 // windows (keys read from provider_keys table). The adapter keyUsage() is async
@@ -35,7 +35,7 @@ export async function buildUsageReport(
     provider: p,
     apiKey: first?.key ?? "",
     keyMetadata: first?.metadata ?? {},
-    mask: first ? maskKey(first.key) : "",
+    mask: first ? maskProviderKey(first.key) : "",
     enabled: first?.enabled ?? true,
     seed: first ? seedFromKey(first.key) : 0,
     ...makeUsageCtx(p),
@@ -55,7 +55,7 @@ export async function buildUsageReport(
   let anyDummy = false;
   const keys = await Promise.all(
     rows.map(async ({ key, enabled, metadata }) => {
-      const mask = maskKey(key);
+      const mask = maskProviderKey(key);
       try {
         const { windows, expiresAt, dummy, unavailable, message } =
           await adapter.keyUsage({

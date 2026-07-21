@@ -21,7 +21,7 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-header"
       className={cn(
-        "flex flex-row items-center justify-between gap-2",
+        "flex min-w-0 flex-row items-center justify-between gap-2",
         className,
       )}
       {...props}
@@ -34,7 +34,7 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-title"
       className={cn(
-        "font-heading text-base leading-snug font-semibold text-foreground",
+        "min-w-0 truncate font-heading text-base leading-snug font-semibold text-foreground",
         className,
       )}
       {...props}
@@ -56,7 +56,7 @@ function CardAction({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-action"
-      className={cn("flex items-center gap-2", className)}
+      className={cn("flex shrink-0 items-center gap-2", className)}
       {...props}
     />
   );

@@ -91,13 +91,13 @@ export default function ProviderDetailPage() {
       <BackLink to="/providers" label="Back to Providers" />
       <PageHeader
         title={
-          <span className="inline-flex items-center gap-2">
+          <span className="inline-flex min-w-0 items-center gap-2">
             <ProviderIcon
               brand={provider.catalogId}
               name={provider.name}
-              className="size-5"
+              className="size-5 shrink-0"
             />
-            {provider.name}
+            <span className="min-w-0 truncate">{provider.name}</span>
           </span>
         }
         desc={provider.baseUrl}

@@ -317,9 +317,13 @@ export default function ModelEditor() {
       <PageHeader
         title={
           model ? (
-            <span className="inline-flex items-center gap-2.5 text-primary">
-              <ModelIcon alias={alias} type={modelType} className="size-5" />
-              Edit {model.alias}
+            <span className="inline-flex min-w-0 items-center gap-2.5 text-primary">
+              <ModelIcon
+                alias={alias}
+                type={modelType}
+                className="size-5 shrink-0"
+              />
+              <span className="min-w-0 truncate">Edit {model.alias}</span>
             </span>
           ) : (
             "New Model"

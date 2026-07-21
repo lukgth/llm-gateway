@@ -69,6 +69,10 @@ string union (`"chat" | "messages" | "responses"`):
 | `"messages"` | Anthropic Messages | `/v1/messages` | Anthropic-native providers (`anthropic`, `claude-code`, `anthropic-compatible`) |
 | `"responses"` | OpenAI Responses | `/v1/responses` | OpenAI's newer stateful/reasoning-first API — some adapters prefer it per model (see `preferredEndpoint` in provider-adapters.md) |
 
+Response HTTP headers are deliberately separate from wire bodies/events. Hooks
+see the format-neutral `ResponseHeaders = Record<string, string | string[]>`
+as `ctx.respHeaders`; see [transforms-api.md](./transforms-api.md#response-headers-in-onresponse--onstreamevent).
+
 Three generic mapping types (`formats/wire/index.ts`) tie a `WireFmt` literal
 to its concrete request / non-streaming-response / streaming-event type:
 
@@ -331,21 +335,21 @@ inline tool-call fields.
 
 ### Request — `ResponsesRequest`
 
-| Field | Type | Notes |
-|---|---|---|
-| `model` | `string` | |
-| `input` | `string \| ResponsesInputItem[]` | A plain string is shorthand for a single user message |
-| `instructions` | `string` | Responses' equivalent of a system prompt |
-| `temperature` / `top_p` | `number` | |
-| `max_output_tokens` | `number` | Responses' name for Chat's `max_tokens` |
-| `stream` | `boolean` | |
-| `parallel_tool_calls` | `boolean` | |
-| `reasoning` | `{ effort?: unknown; summary?: string }` | `effort`: reasoning intensity (`low`/`medium`/`high`/…); `summary`: whether to include reasoning summaries in the response (`"auto"` / `"concise"` / `"detailed"`). See [Reasoning fields](#reasoning-fields-chatmessagereasoning_details--anthropic-thinking-blocks) |
-| `text` | `{ format?: unknown }` | Responses' structured-output configuration |
-| `tools` | `Array<Record<string, unknown>>` | Untyped per-entry — Responses' tool schema differs enough from Chat's that this file doesn't model individual fields |
-| `tool_choice` | `unknown` | |
-| `metadata` | `unknown` | |
-| `user` | `string` | |
+| Field                   | Type                                     | Notes                                                                                                                                                                                                                                                                 |
+| ----------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`                 | `string`                                 |                                                                                                                                                                                                                                                                       |
+| `input`                 | `string \| ResponsesInputItem[]`         | A plain string is shorthand for a single user message                                                                                                                                                                                                                 |
+| `instructions`          | `string`                                 | Responses' equivalent of a system prompt                                                                                                                                                                                                                              |
+| `temperature` / `top_p` | `number`                                 |                                                                                                                                                                                                                                                                       |
+| `max_output_tokens`     | `number`                                 | Responses' name for Chat's `max_tokens`                                                                                                                                                                                                                               |
+| `stream`                | `boolean`                                |                                                                                                                                                                                                                                                                       |
+| `parallel_tool_calls`   | `boolean`                                |                                                                                                                                                                                                                                                                       |
+| `reasoning`             | `{ effort?: unknown; summary?: string }` | `effort`: reasoning intensity (`low`/`medium`/`high`/…); `summary`: whether to include reasoning summaries in the response (`"auto"` / `"concise"` / `"detailed"`). See [Reasoning fields](#reasoning-fields-chatmessagereasoning_details--anthropic-thinking-blocks) |
+| `text`                  | `{ format?: unknown }`                   | Responses' structured-output configuration                                                                                                                                                                                                                            |
+| `tools`                 | `Array<Record<string, unknown>>`         | Untyped per-entry — Responses' tool schema differs enough from Chat's that this file doesn't model individual fields                                                                                                                                                  |
+| `tool_choice`           | `unknown`                                |                                                                                                                                                                                                                                                                       |
+| `metadata`              | `unknown`                                |                                                                                                                                                                                                                                                                       |
+| `user`                  | `string`                                 |                                                                                                                                                                                                                                                                       |
 
 ### Response (non-streaming)
 

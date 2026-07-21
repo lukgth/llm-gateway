@@ -12,6 +12,7 @@ import type { AddressInfo } from "net";
 import { openDatabase, closeDatabase } from "../db";
 import { createProvider } from "../repo/providers";
 import { createModel, getModel } from "../repo/models";
+import { listRequestLogs } from "../repo/request-logs";
 import { Logger } from "../logger";
 import { ThinkingConverter } from "../formats/thinking";
 import { ForwardingEngine, type ForwardContext } from "./engine";
@@ -41,6 +42,7 @@ function mockRes() {
     body: null as unknown,
     headersSent: false,
     writableEnded: false,
+    headers: {} as Record<string, unknown>,
   };
   const res = {
     get headersSent() {
@@ -69,8 +71,9 @@ function mockRes() {
     off() {
       return res;
     },
-    writeHead(code: number) {
+    writeHead(code: number, headers?: Record<string, unknown>) {
       state.statusCode = code;
+      state.headers = headers ?? {};
       state.headersSent = true;
       return res;
     },
@@ -227,6 +230,7 @@ test("forward() sends the adapter-built request to the wire (verbatim default)",
     assert.equal(captured.auth, "Bearer k-secret");
     // The builder path stamps the upstream model id onto the body it sends.
     assert.equal(captured.body?.model, "up-1");
+    assert.equal(listRequestLogs(db)[0]?.upstreamKeyMask, "k-…");
   } finally {
     closeDatabase(db);
     await new Promise<void>((r) => server.close(() => r()));
@@ -596,6 +600,7 @@ test("streaming: primes a ping on connect + surfaces upstream error as SSE event
       state.text.includes("event: error"),
       "expected a terminal error event",
     );
+    assert.equal(listRequestLogs(db)[0]?.upstreamKeyMask, "k…");
   } finally {
     closeDatabase(db);
     await new Promise<void>((r) => server.close(() => r()));

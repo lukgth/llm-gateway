@@ -32,3 +32,4 @@ claude.example.json
 Thumbs.db
 .vscode/
 .idea/
+*/.obsidian/

@@ -142,15 +142,44 @@ export function filteredHeaders(
   raw: IncomingMessage["headers"] | undefined,
   opts?: { stripEncoding?: boolean },
 ): Record<string, string | string[]> {
+  return seedResponseHeaders(raw, opts);
+}
+
+/** Normalize upstream headers into the mutable response-hook table. */
+export function seedResponseHeaders(
+  raw: IncomingMessage["headers"] | undefined,
+  opts?: { stripEncoding?: boolean },
+): Record<string, string | string[]> {
   const stripEnc = opts?.stripEncoding ?? false;
   const out: Record<string, string | string[]> = {};
   if (!raw) return out;
-  for (const [k, v] of Object.entries(raw)) {
-    if (v === undefined) continue;
-    const lk = k.toLowerCase();
-    if (HOP_BY_HOP.has(lk)) continue;
-    if (stripEnc && lk === "content-encoding") continue;
-    out[k] = v as string | string[];
+  for (const [key, value] of Object.entries(raw)) {
+    if (value === undefined) continue;
+    const name = key.toLowerCase();
+    if (HOP_BY_HOP.has(name)) continue;
+    if (stripEnc && name === "content-encoding") continue;
+    out[name] = value as string | string[];
+  }
+  return out;
+}
+
+/** Reassert response framing invariants after hooks mutate respHeaders. */
+export function finalizeResponseHeaders(
+  headers: Record<string, string | string[]>,
+  opts: {
+    contentLength?: number;
+    contentType?: string;
+    sse?: boolean;
+  } = {},
+): Record<string, string | string[]> {
+  const out = { ...headers };
+  if (opts.contentLength !== undefined)
+    out["content-length"] = String(opts.contentLength);
+  if (opts.contentType) out["content-type"] = opts.contentType;
+  if (opts.sse) {
+    delete out["content-length"];
+    out["cache-control"] = "no-cache, no-transform";
+    out["x-accel-buffering"] = "no";
   }
   return out;
 }

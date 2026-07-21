@@ -81,7 +81,7 @@ export default function Usage() {
           <StatGridSkeleton count={4} />
         </div>
         <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <Card className="self-start lg:col-span-1">
+          <Card className="min-w-0 self-start lg:col-span-1">
             <CardHeader>
               <Skeleton className="h-4 w-32" />
             </CardHeader>
@@ -89,7 +89,7 @@ export default function Usage() {
               <Skeleton className="h-40 w-full" />
             </CardContent>
           </Card>
-          <Card className="lg:col-span-2">
+          <Card className="min-w-0 lg:col-span-2">
             <CardHeader>
               <Skeleton className="h-4 w-48" />
             </CardHeader>
@@ -102,7 +102,7 @@ export default function Usage() {
             </CardContent>
           </Card>
         </div>
-        <Card className="mt-3">
+        <Card className="mt-3 min-w-0">
           <CardHeader>
             <Skeleton className="h-4 w-56" />
           </CardHeader>
@@ -159,7 +159,7 @@ export default function Usage() {
         {/* self-start keeps the chart at its natural height instead of being
             stretched to match the (taller, expandable) keys card in the same
             grid row — which otherwise inflated the chart and never shrank back. */}
-        <Card className="self-start lg:col-span-1">
+        <Card className="min-w-0 self-start lg:col-span-1">
           <CardHeader>
             <CardTitle>14-Day History</CardTitle>
             <CardAction>
@@ -179,7 +179,7 @@ export default function Usage() {
         </Card>
 
         {/* Per-key usage with inline quota editing + drill-down breakdown */}
-        <Card className="lg:col-span-2">
+        <Card className="min-w-0 lg:col-span-2">
           <CardHeader>
             <CardTitle>Keys Today · Usage & Limits</CardTitle>
             <CardAction>
@@ -224,7 +224,7 @@ export default function Usage() {
       </div>
 
       {/* Per-(key, model, provider) breakdown — "what did each request resolve to" */}
-      <Card className="mt-3">
+      <Card className="mt-3 min-w-0">
         <CardHeader>
           <CardTitle>Resolution by Key, Model & Provider</CardTitle>
           <CardAction>
@@ -300,7 +300,7 @@ export default function Usage() {
       </Card>
 
       {/* Model resolution lookup — "gpt-5.5 resolved to which provider + tokens" */}
-      <Card className="mt-3">
+      <Card className="mt-3 min-w-0">
         <CardHeader>
           <CardTitle>Model Resolver</CardTitle>
         </CardHeader>

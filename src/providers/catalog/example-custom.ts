@@ -163,8 +163,15 @@ class ExampleCustomAdapter extends OpenAICompatibleAdapter {
       onResponse(
         "chat",
         "example:stamp",
-        (body) => {
+        (body, ctx) => {
           body.system_fingerprint = `example-${body.system_fingerprint ?? "fp"}`;
+          // Existing response hooks can also edit client-facing headers.
+          const remaining = ctx.respHeaders?.["x-ratelimit-remaining"];
+          if (ctx.respHeaders) {
+            ctx.respHeaders["x-example-provider"] = "example";
+            delete ctx.respHeaders["x-upstream-internal"];
+          }
+          if (remaining) body.system_fingerprint += `-${remaining}`;
           return body;
         },
         {
@@ -184,7 +191,12 @@ class ExampleCustomAdapter extends OpenAICompatibleAdapter {
       onStreamEvent(
         "chat",
         "example:drop-empty",
-        (event) => {
+        (event, ctx) => {
+          // Stream events can passively inspect upstream response headers.
+          // HTTP headers are already committed here, so event-time edits do not
+          // affect the wire; a custom StreamTransform factory may edit them
+          // synchronously during create(ctx) if truly needed.
+          void ctx.respHeaders?.["anthropic-ratelimit-requests-remaining"];
           const choice = event.choices?.[0];
           const delta = choice?.delta;
           const empty =

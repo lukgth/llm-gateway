@@ -290,22 +290,29 @@
    like an editor in both themes. */
 @layer components {
   .jt-container {
+    min-width: 0;
+    max-width: 100%;
     font-family: var(--font-mono);
     font-size: 0.72rem;
     line-height: 1.55;
     color: var(--foreground);
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
     word-break: break-word;
   }
   /* Each object/array row + its indented children. The library nests these as
      <ul>/<li>; strip list styling and add a left guide rule. */
   .jt-children {
+    min-width: 0;
+    max-width: 100%;
     margin: 0;
     padding: 0 0 0 0.75rem;
     list-style: none;
     border-left: 1px solid color-mix(in oklch, var(--border) 65%, transparent);
   }
   .jt-row {
+    min-width: 0;
+    max-width: 100%;
     list-style: none;
     padding: 0.5px 0;
   }

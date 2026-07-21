@@ -35,14 +35,11 @@ import { agentFor } from "../../gateway/proxy-agent";
 import { shortId } from "../../gateway/engine-support/utils";
 import type { Logger } from "../../logger";
 import { getSettings } from "../../repo/settings";
-import { listEnabledCredentials } from "../../repo/provider-keys";
+import {
+  listEnabledCredentials,
+  maskProviderKey,
+} from "../../repo/provider-keys";
 import { type ProviderLike, providerLikeFrom } from "./types";
-
-// Mask a key to head…tail; never surface the raw secret to the dashboard.
-export function maskKey(key: string): string {
-  if (key.length <= 10) return key.slice(0, 2) + "…";
-  return `${key.slice(0, 6)}…${key.slice(-4)}`;
-}
 
 // Deterministic small hash of a key -> a stable seed for placeholder usage, so
 // the same key renders the same bars every load (no random flicker).
@@ -571,7 +568,7 @@ export async function testProviderAdhoc(
     ms: res.ms,
     error: res.error,
     sample: res.body.slice(0, 240) || undefined,
-    keyMask: key ? maskKey(key) : undefined,
+    keyMask: key ? maskProviderKey(key) : undefined,
   };
 }
 
@@ -636,5 +633,8 @@ export async function testSavedProvider(
   const keys = listEnabledCredentials(db, p.id);
   const ctx = makeTestProviderCtx(p, keys, keyUsed);
   const result = await adapter.testProvider({ provider: p, ...ctx });
-  return { ...result, keyMask: ctx.apiKey ? maskKey(ctx.apiKey) : undefined };
+  return {
+    ...result,
+    keyMask: ctx.apiKey ? maskProviderKey(ctx.apiKey) : undefined,
+  };
 }

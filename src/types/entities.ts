@@ -40,6 +40,8 @@ export interface RequestLog {
   providerId: string | null;
   providerName: string | null;
   upstreamModel: string | null;
+  /** Immutable masked snapshot of the upstream provider key used. */
+  upstreamKeyMask: string | null;
   status: number | null;
   inputTokens: number | null;
   outputTokens: number | null;

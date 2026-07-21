@@ -466,6 +466,7 @@ export interface RequestLog {
   providerId: string | null;
   providerName: string | null;
   upstreamModel: string | null;
+  upstreamKeyMask: string | null;
   status: number | null;
   inputTokens: number | null;
   outputTokens: number | null;
