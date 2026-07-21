@@ -120,33 +120,6 @@ export function registerProviderKeyRoutes(ctx: RouteCtx): void {
     }
   });
 
-  // --- update single key ---
-  r.put("/providers/:id/keys/:keyId", requireAdmin, (req, res) => {
-    if (!withProvider(String(req.params.id), res)) return;
-    try {
-      const existing = getProviderKey(db, String(req.params.keyId));
-      if (!existing || existing.providerId !== String(req.params.id))
-        return res.status(404).json({ error: { message: "key not found" } });
-      const patch = parseProviderKeyUpdate(req.body);
-      const updated = updateProviderKey(db, String(req.params.keyId), patch);
-      reload();
-      res.json(updated);
-    } catch (e) {
-      bad(res, e);
-    }
-  });
-
-  // --- delete single key ---
-  r.delete("/providers/:id/keys/:keyId", requireAdmin, (req, res) => {
-    if (!withProvider(String(req.params.id), res)) return;
-    const existing = getProviderKey(db, String(req.params.keyId));
-    if (!existing || existing.providerId !== String(req.params.id))
-      return res.status(404).json({ error: { message: "key not found" } });
-    deleteProviderKey(db, String(req.params.keyId));
-    reload();
-    res.status(204).end();
-  });
-
   // --- batch operations ---
   r.post("/providers/:id/keys/batch", requireAdmin, (req, res) => {
     if (!withProvider(String(req.params.id), res)) return;
@@ -227,5 +200,36 @@ export function registerProviderKeyRoutes(ctx: RouteCtx): void {
     } catch (e) {
       bad(res, e);
     }
+  });
+
+  // --- update single key ---
+  // Registered after every literal /keys/<word> route above (stats, batch,
+  // import, sync, sync/trigger) — Express matches routes in registration
+  // order, and this wildcard would otherwise swallow those literal paths
+  // (e.g. PUT /keys/sync arriving here with keyId="sync" and 404ing).
+  r.put("/providers/:id/keys/:keyId", requireAdmin, (req, res) => {
+    if (!withProvider(String(req.params.id), res)) return;
+    try {
+      const existing = getProviderKey(db, String(req.params.keyId));
+      if (!existing || existing.providerId !== String(req.params.id))
+        return res.status(404).json({ error: { message: "key not found" } });
+      const patch = parseProviderKeyUpdate(req.body);
+      const updated = updateProviderKey(db, String(req.params.keyId), patch);
+      reload();
+      res.json(updated);
+    } catch (e) {
+      bad(res, e);
+    }
+  });
+
+  // --- delete single key ---
+  r.delete("/providers/:id/keys/:keyId", requireAdmin, (req, res) => {
+    if (!withProvider(String(req.params.id), res)) return;
+    const existing = getProviderKey(db, String(req.params.keyId));
+    if (!existing || existing.providerId !== String(req.params.id))
+      return res.status(404).json({ error: { message: "key not found" } });
+    deleteProviderKey(db, String(req.params.keyId));
+    reload();
+    res.status(204).end();
   });
 }
