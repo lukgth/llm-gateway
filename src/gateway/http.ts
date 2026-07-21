@@ -9,6 +9,7 @@ import { URL } from "url";
 
 export interface JsonResponse {
   status: number;
+  headers: http.IncomingHttpHeaders;
   text: string;
 }
 
@@ -74,6 +75,7 @@ export function requestJson(opts: PostOpts): Promise<JsonResponse> {
           if (aborted) return;
           resolve({
             status: res.statusCode ?? 0,
+            headers: res.headers,
             text: Buffer.concat(chunks).toString("utf8"),
           });
         });

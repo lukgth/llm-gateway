@@ -7,7 +7,13 @@
 // (cch header computation). Response and stream transforms reverse tool
 // renames so the client sees its original tool names.
 
-import { AnthropicCompatibleAdapter, BuildCtx, BuiltRequest } from "../base";
+import {
+  AnthropicCompatibleAdapter,
+  BuildCtx,
+  BuiltRequest,
+  type UsageCtx,
+  type KeyUsageResult,
+} from "../base";
 import type {
   RequestTransform,
   ResponseTransform,
@@ -21,6 +27,11 @@ import {
 import { WireKind, type Provider } from "../../types";
 import { ANTHROPIC_DEFAULT_TRANSFORMS } from "./anthropic-compatible";
 import { withBetaQuery } from "../../formats/anthropic/subscription/billing";
+import {
+  parseUnifiedRateLimitHeaders,
+  unifiedRateLimitToUsageWindows,
+  unifiedStatusMessage,
+} from "../../services/anthropic-unified-usage";
 
 class ClaudeCodeAdapter extends AnthropicCompatibleAdapter {
   requestTransforms(p: Provider): RequestTransform[] {
@@ -38,11 +49,34 @@ class ClaudeCodeAdapter extends AnthropicCompatibleAdapter {
   messages(ctx: BuildCtx): BuiltRequest {
     const built = super.messages(ctx);
     built.url = withBetaQuery(built.url);
-    console.log(
-      "[claude-code] outbound Messages body:\n" +
-        JSON.stringify(ctx.body, null, 2),
-    );
     return built;
+  }
+
+  supportsKeyUsage(_ctx: UsageCtx): boolean {
+    return true;
+  }
+
+  async keyUsage(ctx: UsageCtx): Promise<KeyUsageResult> {
+    if (!ctx.unifiedUsage) {
+      return {
+        windows: [],
+        unavailable: true,
+        message: "No usage captured yet — send a request with this key.",
+      };
+    }
+    const info = parseUnifiedRateLimitHeaders(ctx.unifiedUsage.headers);
+    if (!info) {
+      return {
+        windows: [],
+        unavailable: true,
+        message: "The latest response did not contain unified usage headers.",
+      };
+    }
+    return {
+      windows: unifiedRateLimitToUsageWindows(info),
+      message: unifiedStatusMessage(info),
+      dummy: false,
+    };
   }
 }
 

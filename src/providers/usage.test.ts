@@ -10,6 +10,7 @@ import type { Provider } from "../types";
 import type { UsageCtx, AdapterHttpResponse } from "./base";
 import { newapi } from "./catalog/newapi";
 import { glm } from "./catalog/glm";
+import { claudeCode } from "./catalog/claude-code";
 
 // Fills in the request/resolve primitives every UsageCtx needs (a test that
 // only exercises the default keyUsage()/supportsKeyUsage() never calls them).
@@ -406,6 +407,57 @@ test("newapi.keyUsage: malformed JSON -> unavailable, no throw", async () => {
   assert.equal(res.unavailable, true);
 });
 
+// --- claude-code passive unified usage --------------------------------------
+
+test("claude-code reports capability but untried key is unavailable", async () => {
+  const p = prov({ catalogId: "claude-code" });
+  const ctx = usageCtx(p, {
+    apiKey: "sk-ant-secret",
+    mask: "sk-ant…cret",
+    enabled: true,
+    seed: 1,
+  });
+  assert.equal(claudeCode.supportsKeyUsage(ctx), true);
+  const result = await claudeCode.keyUsage(ctx);
+  assert.equal(result.unavailable, true);
+  assert.deepEqual(result.windows, []);
+});
+
+test("claude-code maps captured unified snapshot to real windows", async () => {
+  const p = prov({ catalogId: "claude-code" });
+  const ctx: UsageCtx = {
+    ...usageCtx(p, {
+      apiKey: "sk-ant-secret",
+      mask: "sk-ant…cret",
+      enabled: true,
+      seed: 1,
+    }),
+    unifiedUsage: {
+      headers: {
+        "anthropic-ratelimit-unified-status": "allowed_warning",
+        "anthropic-ratelimit-unified-5h-status": "allowed",
+        "anthropic-ratelimit-unified-5h-utilization": "0.25",
+        "anthropic-ratelimit-unified-5h-reset": "1784607600",
+        "anthropic-ratelimit-unified-7d-status": "allowed",
+        "anthropic-ratelimit-unified-7d-utilization": "0.5",
+      },
+      httpStatus: 200,
+      capturedAt: "2026-07-21T01:00:00.000Z",
+    },
+  };
+  const result = await claudeCode.keyUsage(ctx);
+  assert.equal(result.unavailable, undefined);
+  assert.equal(result.dummy, false);
+  assert.equal(result.message, "Approaching rate limit");
+  assert.deepEqual(
+    result.windows.map((window) => [window.id, window.used]),
+    [
+      ["unified-5h", 25],
+      ["unified-7d", 50],
+    ],
+  );
+});
+
 // --- glm-coding (Z.ai) -------------------------------------------------------
 
 function glmCtx(
@@ -575,7 +627,7 @@ test("glm.keyUsage: TOKENS_LIMIT (5h + weekly prompt quota) has no absolute tota
   assert.equal(fiveHour.label, "Prompts (5h)");
   assert.equal(fiveHour.used, 40.5);
   assert.equal(fiveHour.limit, 100);
-  assert.equal(fiveHour.unit, "requests");
+  assert.equal(fiveHour.unit, "percent");
   assert.equal(fiveHour.resetsAt, new Date(1785763345975).toISOString());
   const weekly = res.windows.find((w) => w.id === "tokens-weekly")!;
   assert.equal(weekly.label, "Prompts (weekly)");

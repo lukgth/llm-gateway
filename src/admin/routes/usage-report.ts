@@ -6,6 +6,7 @@ import type { Database as DB } from "better-sqlite3";
 import type { Provider, ProviderUsageReport } from "../../types";
 import { adapterForProvider } from "../../providers";
 import { listProviders } from "../../repo/providers";
+import { getUnifiedUsage } from "../../repo/provider-key-usage";
 import { listProviderKeys, maskProviderKey } from "../../repo/provider-keys";
 import { seedFromKey, makeUsageCtx } from "./provider-probe";
 
@@ -24,6 +25,7 @@ export async function buildUsageReport(
     key: k.credential,
     enabled: k.enabled,
     metadata: k.metadata,
+    keyHash: k.credHash,
   }));
 
   // Visibility gate: if the adapter doesn't report usage at all, skip the per-key
@@ -54,7 +56,7 @@ export async function buildUsageReport(
 
   let anyDummy = false;
   const keys = await Promise.all(
-    rows.map(async ({ key, enabled, metadata }) => {
+    rows.map(async ({ key, enabled, metadata, keyHash }) => {
       const mask = maskProviderKey(key);
       try {
         const { windows, expiresAt, dummy, unavailable, message } =
@@ -65,6 +67,7 @@ export async function buildUsageReport(
             mask,
             enabled,
             seed: seedFromKey(key),
+            unifiedUsage: getUnifiedUsage(db, p.id, keyHash),
             ...makeUsageCtx(p),
           });
         if (dummy) anyDummy = true;
@@ -89,6 +92,13 @@ export async function buildUsageReport(
       }
     }),
   );
+  const visibleKeys = keys.filter((key) => {
+    if (!key.enabled) return false;
+    // Passive Claude Code usage is meaningful only after a real request has
+    // produced unified quota headers; hide unrecorded rows to avoid clutter.
+    if (p.catalogId === "claude-code" && key.unavailable) return false;
+    return true;
+  });
   return {
     providerId: p.id,
     providerName: p.name,
@@ -96,7 +106,7 @@ export async function buildUsageReport(
     brand: adapter.brand,
     supported: true,
     dummy: anyDummy,
-    keys,
+    keys: visibleKeys,
   };
 }
 
@@ -110,5 +120,5 @@ export async function buildUsageReports(
   const reports = await Promise.all(
     listProviders(db).map((p) => buildUsageReport(p, db)),
   );
-  return reports.filter((r) => r.supported);
+  return reports.filter((r) => r.supported && r.keys.length > 0);
 }

@@ -61,8 +61,8 @@ import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 //                 response observed ever carries an absolute total (only
 //                 `percentage`), so the bar is built as used=percentage /
 //                 limit=100 (a "% of window" bar, not a real count) —
-//                 `unit: "requests"` is the closest fit in the shared UsageUnit
-//                 vocabulary, not a literal request count.
+//                 `unit: "percent"` explicitly represents utilization rather
+//                 than pretending this is a literal request count.
 //   TIME_LIMIT    MCP tool-call usage (web search / web read / zread) over a
 //                 rolling month. Carries real `currentValue`/`usage` — mapped to
 //                 a real "requests" window. No `nextResetTime` (monthly, not
@@ -139,7 +139,7 @@ function tokenWindow(
     label,
     used,
     limit: 100,
-    unit: "requests",
+    unit: "percent",
     ...(limit?.nextResetTime
       ? { resetsAt: new Date(limit.nextResetTime).toISOString() }
       : {}),

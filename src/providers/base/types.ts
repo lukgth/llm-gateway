@@ -108,6 +108,12 @@ export interface UsageCtx {
   enabled: boolean;
   /** Stable per-key seed for deterministic placeholder windows. */
   seed: number;
+  /** Last passively captured Claude unified-quota snapshot for this key. */
+  unifiedUsage?: {
+    headers: Record<string, string>;
+    httpStatus: number | null;
+    capturedAt: string;
+  } | null;
   /** Provider origin — for building a custom usage-endpoint URL. */
   baseUrl: string;
   /** Path prefix between origin and any endpoint path (may be ""). */

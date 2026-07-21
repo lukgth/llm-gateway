@@ -74,6 +74,8 @@ import { readResponseUsage } from "../formats/tokens";
 import { listProviders } from "../repo/providers";
 import { addUsage, subtractUsage, addBreakdown } from "../repo/usage";
 import { insertRequestLog } from "../repo/request-logs";
+import { upsertUnifiedUsage } from "../repo/provider-key-usage";
+import { filterUnifiedRateLimitHeaders } from "../services/anthropic-unified-usage";
 import { captureRequest, packResponseSummary } from "./debug-capture";
 import type {
   ChainEntry,
@@ -776,6 +778,28 @@ export class ForwardingEngine {
   ): Promise<AttemptResult> {
     const status = upRes.statusCode || 502;
     const headers = upRes.headers || {};
+
+    // Claude Code quota headers are useful on successes AND failures (especially
+    // 429), so capture before any status branch or body handling. Best-effort:
+    // observability must never affect forwarding/failover.
+    if (provider.catalogId === "claude-code" && upstreamKey.hash) {
+      try {
+        const unified = filterUnifiedRateLimitHeaders(headers);
+        if (Object.keys(unified).length)
+          upsertUnifiedUsage(
+            this.db,
+            provider.id,
+            upstreamKey.hash,
+            unified,
+            status,
+          );
+      } catch (err) {
+        this.logger.warn("claude_usage_capture_failed", {
+          provider: provider.id,
+          err: (err as Error).message,
+        });
+      }
+    }
 
     if (RETRY_STATUS.has(status)) {
       const errBody = await readErrorBody(upRes);
@@ -1526,6 +1550,25 @@ export class ForwardingEngine {
         reason: (err as Error).message,
         retryable: true,
       };
+    }
+
+    if (provider.catalogId === "claude-code" && pick) {
+      try {
+        const unified = filterUnifiedRateLimitHeaders(res.headers);
+        if (Object.keys(unified).length)
+          upsertUnifiedUsage(
+            this.db,
+            provider.id,
+            pick.keyHash,
+            unified,
+            res.status,
+          );
+      } catch (err) {
+        this.logger.warn("claude_usage_capture_failed", {
+          provider: provider.id,
+          err: (err as Error).message,
+        });
+      }
     }
 
     if (RETRY_STATUS.has(res.status)) {

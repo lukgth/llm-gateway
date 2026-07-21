@@ -234,11 +234,22 @@ time window) for the dashboard.
 
 Two things gate visibility:
 
-- `supportsKeyUsage(ctx): boolean` — **sync**, no network. Default `false`
+- `supportsKeyUsage(ctx): boolean` — **sync**, no network. This declares the
+  provider's usage-reporting capability, not whether this particular key has
+  data yet. Default `false`
   (hidden from the dashboard — most providers expose no usage endpoint, and a
   card full of empty keys is noise). Return `true` only when `keyUsage()` does
   a real query; a live-query failure then surfaces as "unavailable" on the
   affected **key**, not the whole provider disappearing.
+
+For Claude Code subscriptions, usage is learned passively from
+`anthropic-ratelimit-unified-*` headers whenever that exact key is attempted.
+The latest filtered snapshot is persisted by `(providerId, keyHash)`, including
+headers returned on 429/error responses. `supportsKeyUsage()` is therefore true
+for the adapter, while `keyUsage()` returns unavailable for an untried key and
+real 5-hour/weekly percentage windows for tried keys. No raw credential or
+unrelated response header is persisted.
+
 - `keyUsage()` itself — default reports `{ windows: [], unavailable: true,
   message: "..." }`. An adapter with a real endpoint returns real windows; one
   that only wants demo bars can return `{ windows: dummyUsageWindows(ctx.seed),

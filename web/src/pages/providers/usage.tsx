@@ -11,17 +11,10 @@
 // native to `columns-*` (no JS masonry library needed); each card gets
 // `break-inside-avoid` so a browser never slices one across two columns.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import {
-  KeyRound,
-  ArrowUpRight,
-  RefreshCw,
-  Clock,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import { KeyRound, ArrowUpRight, RefreshCw, Clock } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
   ProviderUsageReport,
@@ -29,7 +22,12 @@ import type {
   ProviderKeyUsageWindow,
   UsageUnit,
 } from "@/lib/types";
-import { PageHeader, EmptyState } from "@/components/shared";
+import {
+  PageHeader,
+  EmptyState,
+  Pagination,
+  TableSearch,
+} from "@/components/shared";
 import { ProviderIcon } from "@/components/model-icon";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, fmtNum, fmtTokens } from "@/lib/utils";
 
-const KEYS_PER_PAGE = 3;
+const KEYS_PER_PAGE = 10;
 
 export default function ProviderUsage() {
   const [reports, setReports] = useState<ProviderUsageReport[] | null>(null);
@@ -130,56 +128,48 @@ function UsageSkeleton() {
   );
 }
 
-// Fake per-page "poll" delay — long enough to read as a deliberate fetch,
-// short enough not to feel sluggish for data that's actually already local.
-const PAGE_TRANSITION_MS = 350;
-
 function ProviderUsageCard({ report }: { report: ProviderUsageReport }) {
-  const pageCount = Math.max(1, Math.ceil(report.keys.length / KEYS_PER_PAGE));
+  const [filter, setFilter] = useState("");
   const [page, setPage] = useState(0);
-  const [pending, setPending] = useState<number | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const filteredKeys = useMemo(() => {
+    const query = filter.trim().toLowerCase();
+    return query
+      ? report.keys.filter(
+          (key) =>
+            key.keyMask.toLowerCase().includes(query) ||
+            key.message?.toLowerCase().includes(query),
+        )
+      : report.keys;
+  }, [filter, report.keys]);
+  const pageCount = Math.max(1, Math.ceil(filteredKeys.length / KEYS_PER_PAGE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageKeys = filteredKeys.slice(
+    safePage * KEYS_PER_PAGE,
+    (safePage + 1) * KEYS_PER_PAGE,
+  );
 
-  // A refresh can change key counts (a provider gains/loses keys); keep the
-  // page in bounds instead of stranding the view on a now-empty page.
-  useEffect(() => {
-    setPage((p) => Math.min(p, pageCount - 1));
-  }, [pageCount]);
-
-  useEffect(() => () => clearTimeout(timeoutRef.current), []);
-
-  const goToPage = (next: number) => {
-    const clamped = Math.max(0, Math.min(pageCount - 1, next));
-    if (clamped === page || pending !== null) return;
-    setPending(clamped);
-    clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      setPage(clamped);
-      setPending(null);
-    }, PAGE_TRANSITION_MS);
-  };
-
-  const shownPage = pending ?? page;
+  useEffect(() => setPage(0), [filter, report.keys.length]);
 
   return (
-    <Card className="gap-4">
+    <Card className="min-w-0 gap-4">
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <ProviderIcon
             brand={report.catalogId}
             name={report.providerName}
-            className="size-5"
+            className="size-5 shrink-0"
           />
           <div className="min-w-0">
             <Link
               to={`/providers/${report.providerId}/keys`}
-              className="flex items-center gap-1 truncate text-sm font-semibold text-foreground hover:text-primary"
+              className="flex min-w-0 items-center gap-1 text-sm font-semibold text-foreground hover:text-primary"
             >
               <span className="truncate">{report.providerName}</span>
               <ArrowUpRight className="h-3 w-3 shrink-0 opacity-50" />
             </Link>
-            <div className="text-[0.65rem] text-muted-foreground">
-              {report.keys.length} {report.keys.length === 1 ? "key" : "keys"}
+            <div className="text-xs text-muted-foreground">
+              {report.keys.length} recorded{" "}
+              {report.keys.length === 1 ? "key" : "keys"}
             </div>
           </div>
         </div>
@@ -194,97 +184,39 @@ function ProviderUsageCard({ report }: { report: ProviderUsageReport }) {
         )}
       </div>
 
+      {report.keys.length > KEYS_PER_PAGE && (
+        <TableSearch
+          value={filter}
+          onChange={setFilter}
+          placeholder="Filter keys…"
+          count={filter ? filteredKeys.length : undefined}
+          total={filter ? report.keys.length : undefined}
+          className="w-full sm:w-full"
+        />
+      )}
+
       {report.keys.length === 0 ? (
         <div className="flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
           <KeyRound className="h-3.5 w-3.5" />
-          No keys configured.
+          No recorded key usage yet.
         </div>
+      ) : pageKeys.length === 0 ? (
+        <EmptyState msg="No keys match this filter" />
       ) : (
-        <KeyPager keys={report.keys} page={page} pendingPage={pending} />
-      )}
-
-      {pageCount > 1 && (
-        <div className="flex items-center justify-between border-t border-border/60 pt-3">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            disabled={pending !== null || shownPage === 0}
-            onClick={() => goToPage(shownPage - 1)}
-            aria-label="Previous keys"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </Button>
-          <span className="text-[0.65rem] tabular-nums text-muted-foreground">
-            Page {shownPage + 1} of {pageCount}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            disabled={pending !== null || shownPage === pageCount - 1}
-            onClick={() => goToPage(shownPage + 1)}
-            aria-label="Next keys"
-          >
-            <ChevronRight className="h-3.5 w-3.5" />
-          </Button>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+          {pageKeys.map((key) => (
+            <KeyUsageBlock key={key.keyMask} usage={key} />
+          ))}
         </div>
       )}
+
+      <Pagination
+        page={safePage}
+        pageCount={pageCount}
+        onChange={setPage}
+        className="-mx-4 -mb-4 mt-auto px-4"
+      />
     </Card>
-  );
-}
-
-// Renders every page's key set stacked in the same grid cell (row 1 / col 1),
-// with only the active page visible. Every page therefore contributes to the
-// container's natural height, so the tallest page (not just the current one)
-// sets the card's height — paging never resizes the card, which would
-// otherwise reflow neighboring masonry columns on every click.
-//
-// While `loading`, a skeleton is layered into the same cell on top of the
-// (now-hidden) real pages — the real pages stay mounted so the container's
-// height doesn't collapse, but only the skeleton is visible. This makes each
-// page change read as its own small "poll" for that card instead of an
-// instant, jarring content swap — without a real per-page fetch to await.
-function KeyPager({
-  keys,
-  page,
-  pendingPage,
-}: {
-  keys: ProviderKeyUsage[];
-  page: number;
-  pendingPage: number | null;
-}) {
-  const pages: ProviderKeyUsage[][] = [];
-  for (let i = 0; i < keys.length; i += KEYS_PER_PAGE) {
-    pages.push(keys.slice(i, i + KEYS_PER_PAGE));
-  }
-  const loading = pendingPage !== null;
-  const skeletonCount =
-    pendingPage !== null ? (pages[pendingPage]?.length ?? KEYS_PER_PAGE) : 0;
-  return (
-    <div className="grid">
-      {pages.map((pageKeys, i) => (
-        <div
-          key={i}
-          className={cn(
-            "col-start-1 row-start-1 space-y-3",
-            i === page && !loading
-              ? "visible"
-              : "invisible pointer-events-none select-none",
-          )}
-          aria-hidden={i === page && !loading ? undefined : true}
-        >
-          {pageKeys.map((k, j) => (
-            <KeyUsageBlock key={j} usage={k} />
-          ))}
-        </div>
-      ))}
-      {loading && (
-        <div className="col-start-1 row-start-1 space-y-3" aria-hidden>
-          {Array.from({ length: skeletonCount }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full rounded-lg" />
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -327,7 +259,7 @@ export function KeyUsageBlock({ usage }: { usage: ProviderKeyUsage }) {
         </span>
       </div>
       {usage.message && (
-        <div className="mb-2.5 text-[0.65rem] leading-snug text-muted-foreground">
+        <div className="mb-2.5 text-xs leading-snug text-muted-foreground">
           {usage.message}
         </div>
       )}
@@ -339,7 +271,7 @@ export function KeyUsageBlock({ usage }: { usage: ProviderKeyUsage }) {
         </div>
       ) : (
         !usage.message && (
-          <div className="text-[0.65rem] text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             {usage.unavailable ? "Usage unavailable." : "No usage reported."}
           </div>
         )
@@ -389,15 +321,23 @@ function UsageBar({ window: w }: { window: ProviderKeyUsageWindow }) {
     pct >= 90 ? "bg-destructive" : pct >= 70 ? "bg-amber-500" : "bg-primary";
   return (
     <div>
-      <div className="mb-1.5 flex items-baseline justify-between gap-2 text-[0.7rem]">
+      <div className="mb-1.5 flex items-baseline justify-between gap-2 text-xs">
         <span className="font-medium text-foreground">{w.label}</span>
         <span className="tabular-nums text-muted-foreground">
-          <span className="font-mono text-foreground">
-            {fmtUsage(w.used, w.unit)}
-          </span>
-          {" / "}
-          <span className="font-mono">{fmtUsage(w.limit, w.unit)}</span>{" "}
-          {w.unit}
+          {w.unit === "percent" ? (
+            <span className="font-mono text-foreground">{pct.toFixed(0)}%</span>
+          ) : (
+            <>
+              <span className="font-mono text-foreground">
+                {fmtUsage(w.used, w.unit)}
+              </span>
+              {" / "}
+              <span className="font-mono">
+                {fmtUsage(w.limit, w.unit)}
+              </span>{" "}
+              {w.unit}
+            </>
+          )}
         </span>
       </div>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-border/60">
@@ -406,8 +346,12 @@ function UsageBar({ window: w }: { window: ProviderKeyUsageWindow }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <div className="mt-1 flex items-center justify-between text-[0.6rem] text-muted-foreground">
-        <span className="tabular-nums">{pct.toFixed(0)}% used</span>
+      <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+        <span className="tabular-nums">
+          {w.unit === "percent"
+            ? "Quota utilization"
+            : `${pct.toFixed(0)}% used`}
+        </span>
         {/* A one-shot balance (e.g. a prepaid credit grant) has no rolling
             reset — omit the line rather than showing a broken "resets —". */}
         {w.resetsAt && <span>resets {relativeTime(w.resetsAt)}</span>}

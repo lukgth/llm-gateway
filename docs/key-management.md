@@ -377,6 +377,29 @@ it.
 
 ---
 
+## Claude Code Passive Per-Key Usage
+
+Claude Code subscription providers learn upstream quota usage from
+`anthropic-ratelimit-unified-*` response headers after a key is actually used.
+Capture happens before response status branching, so successful streams,
+buffered responses, 429s, and other error responses can all update usage.
+
+- Snapshots are stored durably in SQLite by `(provider_id, key_hash)`.
+- Only filtered unified rate-limit headers, status, and capture time are stored.
+- Raw credentials and unrelated response headers are never stored.
+- The latest response replaces the prior snapshot atomically.
+- Usage survives restarts and is removed when the provider is deleted.
+- Untried keys show **Unavailable** until their first response carries unified
+  headers; tried and untried keys can coexist independently in one report.
+- Dynamic windows such as `5h`, `7d`, `7d_oi`, and future suffixes are parsed.
+  Standard labels are `Prompts (5h)`, `Prompts (weekly)`, and
+  `Prompts (Fable)`. Utilization is represented by the first-class `percent`
+  unit (not a fake request count); epoch reset times render as countdowns.
+- Disabled keys and Claude Code keys without recorded usage are omitted from
+  usage panels to reduce clutter. Large key sets are searchable and paginated.
+
+---
+
 ## Per-Key Metadata
 
 Metadata is a `Record<string, string>` — flat string key-value pairs attached

@@ -1,0 +1,87 @@
+import type { Database as DB } from "better-sqlite3";
+import { parseJsonObject } from "./json";
+
+export interface UnifiedUsageSnapshot {
+  providerId: string;
+  keyHash: string;
+  headers: Record<string, string>;
+  httpStatus: number | null;
+  capturedAt: string;
+}
+
+interface UsageRow {
+  provider_id: string;
+  key_hash: string;
+  headers_json: string;
+  http_status: number | null;
+  captured_at: string;
+}
+
+function mapSnapshot(row: UsageRow): UnifiedUsageSnapshot | null {
+  const headers = parseJsonObject<Record<string, string> | null>(
+    row.headers_json,
+    null,
+  );
+  if (!headers) return null;
+  return {
+    providerId: row.provider_id,
+    keyHash: row.key_hash,
+    headers,
+    httpStatus: row.http_status,
+    capturedAt: row.captured_at,
+  };
+}
+
+export function upsertUnifiedUsage(
+  db: DB,
+  providerId: string,
+  keyHash: string,
+  headers: Record<string, string>,
+  httpStatus: number | null,
+  capturedAt = new Date().toISOString(),
+): UnifiedUsageSnapshot {
+  db.prepare(
+    `INSERT INTO provider_key_unified_usage
+       (provider_id, key_hash, headers_json, http_status, captured_at)
+     VALUES (@provider_id, @key_hash, @headers_json, @http_status, @captured_at)
+     ON CONFLICT(provider_id, key_hash) DO UPDATE SET
+       headers_json = excluded.headers_json,
+       http_status = excluded.http_status,
+       captured_at = excluded.captured_at`,
+  ).run({
+    provider_id: providerId,
+    key_hash: keyHash,
+    headers_json: JSON.stringify(headers),
+    http_status: httpStatus,
+    captured_at: capturedAt,
+  });
+  return getUnifiedUsage(db, providerId, keyHash)!;
+}
+
+export function getUnifiedUsage(
+  db: DB,
+  providerId: string,
+  keyHash: string,
+): UnifiedUsageSnapshot | null {
+  const row = db
+    .prepare(
+      `SELECT provider_id, key_hash, headers_json, http_status, captured_at
+       FROM provider_key_unified_usage
+       WHERE provider_id = ? AND key_hash = ?`,
+    )
+    .get(providerId, keyHash) as UsageRow | undefined;
+  return row ? mapSnapshot(row) : null;
+}
+
+export function hasUnifiedUsage(
+  db: DB,
+  providerId: string,
+  keyHash: string,
+): boolean {
+  return !!db
+    .prepare(
+      `SELECT 1 FROM provider_key_unified_usage
+       WHERE provider_id = ? AND key_hash = ?`,
+    )
+    .get(providerId, keyHash);
+}

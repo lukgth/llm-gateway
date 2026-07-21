@@ -193,6 +193,17 @@ CREATE TABLE IF NOT EXISTS key_model_affinity (
   PRIMARY KEY (provider_id, key_hash, model)
 );
 
+-- Latest Claude Code subscription quota snapshot learned passively from
+-- anthropic-ratelimit-unified-* response headers. Never stores raw credentials.
+CREATE TABLE IF NOT EXISTS provider_key_unified_usage (
+  provider_id  TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+  key_hash     TEXT NOT NULL,
+  headers_json TEXT NOT NULL,
+  http_status  INTEGER,
+  captured_at  TEXT NOT NULL,
+  PRIMARY KEY (provider_id, key_hash)
+);
+
 -- Structured provider API keys. Each key has an id, per-key metadata, and an
 -- enabled flag. Replaces the legacy api_keys / disabled_api_keys JSON arrays
 -- on the providers table.

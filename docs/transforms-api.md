@@ -267,6 +267,11 @@ passthrough bodies do not start body/event hooks and therefore do not expose a
 new header-hook lifecycle. The table is freshly seeded per committed attempt,
 so edits never leak across retries or fallback hops.
 
+Provider-specific passive telemetry that must include failures cannot rely on
+these body/event hooks. For example, Claude Code quota capture reads filtered
+`anthropic-ratelimit-unified-*` headers at the engine's raw upstream-response
+boundary before status branching, so 429/error headers are persisted too.
+
 `ctx.headers` always means **request headers sent upstream**;
 `ctx.respHeaders` always means **response headers sent to the client**.
 

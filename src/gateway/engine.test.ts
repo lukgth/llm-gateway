@@ -13,6 +13,8 @@ import { openDatabase, closeDatabase } from "../db";
 import { createProvider } from "../repo/providers";
 import { createModel, getModel } from "../repo/models";
 import { listRequestLogs } from "../repo/request-logs";
+import { getUnifiedUsage } from "../repo/provider-key-usage";
+import { credHash } from "../repo/provider-keys";
 import { Logger } from "../logger";
 import { ThinkingConverter } from "../formats/thinking";
 import { ForwardingEngine, type ForwardContext } from "./engine";
@@ -234,6 +236,134 @@ test("forward() sends the adapter-built request to the wire (verbatim default)",
   } finally {
     closeDatabase(db);
     await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("Claude Code captures unified usage headers for the selected key", async () => {
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, {
+        "content-type": "application/json",
+        "anthropic-ratelimit-unified-status": "allowed",
+        "anthropic-ratelimit-unified-5h-status": "allowed",
+        "anthropic-ratelimit-unified-5h-utilization": "0.25",
+        "anthropic-ratelimit-unified-5h-reset": "1784607600",
+        "request-id": "must-not-persist",
+      });
+      res.end(JSON.stringify({ id: "x", content: [], usage: {} }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as AddressInfo).port;
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "cc",
+      name: "Claude Code",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["sk-ant-captured"],
+      catalogId: "claude-code",
+      retryAttempts: 1,
+      tlsVerify: false,
+    });
+    const created = createModel(db, {
+      alias: "claude-test",
+      providers: [{ providerId: "cc", upstreamModel: "claude-opus-4-6" }],
+    });
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const { res } = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctxFor(
+        getModel(db, created.id)!,
+        {
+          model: "claude-test",
+          max_tokens: 16,
+          messages: [{ role: "user", content: "hi" }],
+        },
+        "/v1/messages",
+      ),
+    );
+    const snapshot = getUnifiedUsage(db, "cc", credHash("sk-ant-captured"));
+    assert.equal(snapshot?.httpStatus, 200);
+    assert.equal(
+      snapshot?.headers["anthropic-ratelimit-unified-5h-utilization"],
+      "0.25",
+    );
+    assert.equal(snapshot?.headers["request-id"], undefined);
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("Claude Code captures unified usage headers from 429 responses", async () => {
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(429, {
+        "content-type": "application/json",
+        "retry-after": "1",
+        "anthropic-ratelimit-unified-status": "rate_limited",
+        "anthropic-ratelimit-unified-5h-status": "rejected",
+        "anthropic-ratelimit-unified-5h-utilization": "1",
+      });
+      res.end(JSON.stringify({ error: { message: "limited" } }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as AddressInfo).port;
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "cc",
+      name: "Claude Code",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["sk-ant-limited"],
+      catalogId: "claude-code",
+      retryAttempts: 1,
+      tlsVerify: false,
+    });
+    const created = createModel(db, {
+      alias: "claude-test",
+      providers: [{ providerId: "cc", upstreamModel: "claude-opus-4-6" }],
+    });
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const { res } = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctxFor(
+        getModel(db, created.id)!,
+        {
+          model: "claude-test",
+          max_tokens: 16,
+          messages: [{ role: "user", content: "hi" }],
+        },
+        "/v1/messages",
+      ),
+    );
+    const snapshot = getUnifiedUsage(db, "cc", credHash("sk-ant-limited"));
+    assert.equal(snapshot?.httpStatus, 429);
+    assert.equal(
+      snapshot?.headers["anthropic-ratelimit-unified-status"],
+      "rate_limited",
+    );
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
 

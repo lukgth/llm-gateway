@@ -245,7 +245,6 @@ export const subscriptionResponseStack: ResponseTransform[] = [
         }
       }
 
-      console.log(ctx.respHeaders);
       return body;
     },
     {
@@ -274,7 +273,6 @@ export const subscriptionStreamStack: StreamTransform[] = [
         if (original) block.name = original;
       }
 
-      console.log(ctx.respHeaders);
       return event;
     },
     {
