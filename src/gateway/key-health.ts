@@ -47,6 +47,9 @@ interface HealthRow {
   lastErrorStatus: number | null;
   lastError: string | null;
   lastErrorAt: string | null;
+  /** Lifetime count of 401/403 responses — survives recordSuccess clearing
+   *  the `authFailed` flag, since it's a history counter, not current state. */
+  authFailCount: number;
 }
 
 export interface KeyHealthSnapshot {
@@ -58,6 +61,7 @@ export interface KeyHealthSnapshot {
   lastError: string | null;
   lastErrorAt: string | null;
   usable: boolean;
+  authFailCount: number;
 }
 
 export interface RateLimitHint {
@@ -99,7 +103,10 @@ function delayHint(ms: number, source: string, now: number): RateLimitHint {
 // but understand the de-facto variants providers use in practice:
 // retry-after-ms -> retry-after (seconds/date) -> x-ratelimit-reset-ms
 // (epoch ms) -> x-ratelimit-reset / x-rate-limit-reset (usually epoch seconds)
-// -> ratelimit-reset (RFC delay seconds) -> default 60s.
+// -> ratelimit-reset (RFC delay seconds) -> anthropic-ratelimit-unified-reset
+// (epoch seconds; Anthropic's own unified-quota reset, sent on a 429 from
+// their 5h/7d subscription limiter — see services/anthropic-unified-usage.ts)
+// -> default 60s.
 export function parseRateLimitHint(
   headers: Record<string, string | string[] | undefined>,
   now: number = Date.now(),
@@ -142,6 +149,18 @@ export function parseRateLimitHint(
   if (standardReset !== null)
     return delayHint(standardReset * 1000, "ratelimit-reset", now);
 
+  // Anthropic's own unified-quota reset (epoch seconds), for a Claude Code /
+  // subscription 429 that carries no standard rate-limit header at all.
+  const unifiedReset = parsePositiveNumber(
+    headerValue(headers, "anthropic-ratelimit-unified-reset"),
+  );
+  if (unifiedReset !== null)
+    return delayHint(
+      Math.max(0, unifiedReset * 1000 - now),
+      "anthropic-ratelimit-unified-reset",
+      now,
+    );
+
   return delayHint(60_000, "default", now);
 }
 
@@ -181,7 +200,7 @@ export class KeyHealthStore {
     try {
       const hrows = this.db
         .prepare(
-          "SELECT key_hash, rate_limited_until, auth_failed, last_error_status, last_error, last_error_at FROM provider_key_health WHERE provider_id = ?",
+          "SELECT key_hash, rate_limited_until, auth_failed, last_error_status, last_error, last_error_at, auth_fail_count FROM provider_key_health WHERE provider_id = ?",
         )
         .all(providerId) as Array<{
         key_hash: string;
@@ -190,6 +209,7 @@ export class KeyHealthStore {
         last_error_status: number | null;
         last_error: string | null;
         last_error_at: string | null;
+        auth_fail_count: number;
       }>;
       for (const r of hrows)
         this.health.set(this.hk(providerId, r.key_hash), {
@@ -198,6 +218,7 @@ export class KeyHealthStore {
           lastErrorStatus: r.last_error_status,
           lastError: r.last_error,
           lastErrorAt: r.last_error_at,
+          authFailCount: r.auth_fail_count,
         });
       const arows = this.db
         .prepare(
@@ -236,6 +257,7 @@ export class KeyHealthStore {
         lastErrorStatus: null,
         lastError: null,
         lastErrorAt: null,
+        authFailCount: 0,
       };
       this.health.set(k, h);
     }
@@ -248,14 +270,15 @@ export class KeyHealthStore {
       this.db
         .prepare(
           `INSERT INTO provider_key_health
-             (provider_id, key_hash, rate_limited_until, auth_failed, last_error_status, last_error, last_error_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             (provider_id, key_hash, rate_limited_until, auth_failed, last_error_status, last_error, last_error_at, auth_fail_count, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(provider_id, key_hash) DO UPDATE SET
              rate_limited_until=excluded.rate_limited_until,
              auth_failed=excluded.auth_failed,
              last_error_status=excluded.last_error_status,
              last_error=excluded.last_error,
              last_error_at=excluded.last_error_at,
+             auth_fail_count=excluded.auth_fail_count,
              updated_at=excluded.updated_at`,
         )
         .run(
@@ -266,6 +289,7 @@ export class KeyHealthStore {
           h.lastErrorStatus,
           h.lastError,
           h.lastErrorAt,
+          h.authFailCount,
           new Date(this.now()).toISOString(),
         );
     } catch {
@@ -457,6 +481,7 @@ export class KeyHealthStore {
   ): void {
     const h = this.recordError(providerId, keyHash, status, error);
     h.authFailed = true;
+    h.authFailCount += 1;
     this.persistHealth(providerId, keyHash);
     this.clearAffinity(providerId, keyHash);
   }
@@ -555,6 +580,7 @@ export class KeyHealthStore {
       lastError: h.lastError,
       lastErrorAt: h.lastErrorAt,
       usable: !h.authFailed && h.rateLimitedUntil <= now,
+      authFailCount: h.authFailCount,
     };
   }
 

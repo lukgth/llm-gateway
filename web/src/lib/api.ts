@@ -31,6 +31,7 @@ import type {
   RequestLog,
   RequestLogDetail,
   HopStat,
+  KeyStat,
   TestModelResult,
   ExposedModelTestResult,
   Settings,
@@ -175,6 +176,8 @@ export const api = {
       limit: number;
     }>(`/api/providers/${providerId}/keys${q ? `?${q}` : ""}`);
   },
+  keyStats: (providerId: string) =>
+    req<KeyStat[]>(`/api/providers/${providerId}/keys/stats`),
   createProviderKey: (
     providerId: string,
     input: {

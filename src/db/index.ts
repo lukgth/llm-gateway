@@ -182,6 +182,11 @@ CREATE TABLE IF NOT EXISTS provider_key_health (
   last_error_status  INTEGER,
   last_error         TEXT,
   last_error_at      TEXT,
+  -- Lifetime count of 401/403 responses for this key. Auth failures short-
+  -- circuit out of the retry loop before a request_logs row is ever written
+  -- (see engine.ts forward()), so the key manager's error count sources this
+  -- column instead of request_logs for that failure class.
+  auth_fail_count    INTEGER NOT NULL DEFAULT 0,
   updated_at         TEXT NOT NULL,
   PRIMARY KEY (provider_id, key_hash)
 );
@@ -407,6 +412,12 @@ function migrate(db: DB): void {
   // recomputes the true counts.
   addColumnIfMissing(db, "provider_key_health", "last_error_status", "INTEGER");
   addColumnIfMissing(db, "provider_key_health", "last_error", "TEXT");
+  addColumnIfMissing(
+    db,
+    "provider_key_health",
+    "auth_fail_count",
+    "INTEGER NOT NULL DEFAULT 0",
+  );
   addColumnIfMissing(db, "provider_key_health", "last_error_at", "TEXT");
   addColumnIfMissing(
     db,

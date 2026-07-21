@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import type { ProviderKey, ProviderTestResult } from "@/lib/types";
+import type { KeyStat, ProviderKey, ProviderTestResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { EmptyState, Field, TableSearch } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
@@ -41,9 +41,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const ROW_HEIGHT = 64;
+const ROW_HEIGHT = 56;
+// Mirrors the exposed-model chain table's proportions: fixed-width control
+// columns bookend a single flexible column, so content reads left-to-right
+// instead of clumping against the right edge. The checkbox column matches
+// the chain table's leading (Hop) column width for the same reason. Status
+// is widened to 9rem so "Rate limited · resets in 4h 59m" never truncates.
 const GRID =
-  "grid gap-3 grid-cols-[40px_minmax(100px,1fr)_92px_120px] md:grid-cols-[40px_minmax(200px,1.5fr)_minmax(96px,0.55fr)_104px_112px_120px]";
+  "grid gap-3 grid-cols-[2.75rem_minmax(120px,1fr)_9rem_3rem_9rem] md:grid-cols-[2.75rem_13rem_minmax(10rem,1fr)_9rem_3rem_3.5rem_3.5rem_9rem]";
 
 type MetadataEntry = { key: string; value: string };
 
@@ -79,6 +84,18 @@ function relativeTime(iso: string): string {
   return past ? `${unit} ago` : `in ${unit}`;
 }
 
+// "resets in 4h 59m" (still cooling down) vs "reset 6m ago" (stale — the row
+// hasn't re-fetched since the cooldown lapsed). Same grammar as the Key
+// Usage page's resetLabel, so a rate-limited key reads identically in both
+// places regardless of whether the cooldown came from a generic 429 Retry-
+// After or Anthropic's own unified-quota reset header.
+function resetLabel(iso: string): string {
+  const rt = relativeTime(iso);
+  if (rt === "—") return "reset —";
+  if (rt === "now") return "resets now";
+  return rt.endsWith("ago") ? `reset ${rt}` : `resets ${rt}`;
+}
+
 function metadataEntries(metadata: Record<string, string>): MetadataEntry[] {
   return Object.entries(metadata).map(([key, value]) => ({ key, value }));
 }
@@ -106,6 +123,7 @@ export function ProviderKeyManager({
   onChanged?: () => void;
 }) {
   const [keys, setKeys] = useState<ProviderKey[]>([]);
+  const [stats, setStats] = useState<Record<string, KeyStat>>({});
   const [loading, setLoading] = useState(true);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [testing, setTesting] = useState<Set<string>>(new Set());
@@ -128,6 +146,12 @@ export function ProviderKeyManager({
       toast.error((error as Error).message);
     } finally {
       setLoading(false);
+    }
+    try {
+      const fetchedStats = await api.keyStats(providerId);
+      setStats(Object.fromEntries(fetchedStats.map((s) => [s.credHash, s])));
+    } catch {
+      // Stats are a nice-to-have — leave rows without them rather than block loading.
     }
   }, [providerId]);
 
@@ -186,13 +210,20 @@ export function ProviderKeyManager({
   });
 
   const testKey = useCallback(
-    async (keyId: string) => {
+    async (keyId: string, notify = false) => {
       const key = keys.find((item) => item.id === keyId);
       if (!key) return undefined;
       setTesting((current) => new Set(current).add(keyId));
       try {
         const result = await api.testProvider(providerId, key.credential);
         setResults((current) => new Map(current).set(keyId, result));
+        if (notify) {
+          toast[result.ok ? "success" : "error"](
+            result.ok
+              ? `Reachable · ${result.ms}ms`
+              : `Test failed${result.status ? ` (${result.status})` : ""}`,
+          );
+        }
         return result;
       } catch (error) {
         const result: ProviderTestResult = {
@@ -202,6 +233,7 @@ export function ProviderKeyManager({
           error: (error as Error).message,
         };
         setResults((current) => new Map(current).set(keyId, result));
+        if (notify) toast.error(result.error || "Credential test failed");
         return result;
       } finally {
         setTesting((current) => {
@@ -439,28 +471,58 @@ export function ProviderKeyManager({
         ) : filteredRows.length === 0 ? (
           <EmptyState msg="No keys match your search" />
         ) : (
-          <div className="min-w-0">
+          <div className="min-w-0" role="table" aria-label="Provider keys">
             <div
+              role="row"
               className={cn(
                 GRID,
-                "sticky top-0 z-10 h-8 items-center border-b border-border bg-muted/30 px-3 text-xs font-medium text-muted-foreground",
+                "sticky top-0 z-10 h-8 items-center border-b border-border bg-muted/30 px-4 text-xs font-medium text-muted-foreground",
               )}
             >
-              <div className="flex justify-start pr-2">
+              <div role="columnheader" className="flex justify-start pr-2">
                 <Checkbox
                   checked={allVisibleSelected}
                   onCheckedChange={(checked) => toggleAllVisible(!!checked)}
                   aria-label="Select all visible keys"
                 />
               </div>
-              <div>Key</div>
-              <div className="hidden md:block">Tags</div>
-              <div className="hidden text-center md:block">Test</div>
-              <div className="text-center">Status</div>
-              <div className="text-right">Actions</div>
-            </div>
-            <div ref={parentRef} className="max-h-[28rem] overflow-y-auto">
+              <div role="columnheader" className="truncate">
+                Key
+              </div>
+              <div role="columnheader" className="hidden truncate md:block">
+                Tags
+              </div>
+              <div role="columnheader" className="truncate">
+                Status
+              </div>
+              <div role="columnheader" className="truncate">
+                Active
+              </div>
               <div
+                role="columnheader"
+                className="hidden truncate text-right md:block"
+                title="Successful hits (2xx)"
+              >
+                Success
+              </div>
+              <div
+                role="columnheader"
+                className="hidden truncate text-right md:block"
+                title="Failed hits — non-2xx status, including timeouts and bad requests"
+              >
+                Errors
+              </div>
+              <div role="columnheader" className="text-right">
+                Actions
+              </div>
+            </div>
+            <div
+              ref={parentRef}
+              role="rowgroup"
+              className="max-h-[28rem] overflow-y-auto"
+            >
+              <div
+                role="presentation"
                 style={{
                   height: `${virtualizer.getTotalSize()}px`,
                   position: "relative",
@@ -471,6 +533,7 @@ export function ProviderKeyManager({
                   return (
                     <div
                       key={key.id}
+                      role="presentation"
                       style={{
                         position: "absolute",
                         top: 0,
@@ -482,6 +545,7 @@ export function ProviderKeyManager({
                     >
                       <ProviderKeyRow
                         providerKey={key}
+                        stat={stats[key.credHash]}
                         selected={selected.has(key.id)}
                         revealed={revealed.has(key.id)}
                         testResult={results.get(key.id)}
@@ -534,6 +598,7 @@ export function ProviderKeyManager({
 
 interface ProviderKeyRowProps {
   providerKey: ProviderKey;
+  stat?: KeyStat;
   selected: boolean;
   revealed: boolean;
   testResult?: ProviderTestResult;
@@ -542,13 +607,14 @@ interface ProviderKeyRowProps {
   onSelect: (id: string) => void;
   onToggle: (id: string, enabled: boolean) => void;
   onReveal: (id: string) => void;
-  onTest: (id: string) => void;
+  onTest: (id: string, notify?: boolean) => void;
   onEdit: (key: ProviderKey) => void;
   onRemove: (key: ProviderKey) => void;
 }
 
 const ProviderKeyRow = memo(function ProviderKeyRow({
   providerKey: key,
+  stat,
   selected,
   revealed,
   testResult,
@@ -564,30 +630,102 @@ const ProviderKeyRow = memo(function ProviderKeyRow({
   const metadata = Object.entries(key.metadata);
   const dead = !!key.health?.dead;
   const rateLimitedUntil = key.health?.rateLimitedUntil;
-  const healthTitle = [
+  // The server only sends rateLimitedUntil while the cooldown is still live,
+  // but this row can go stale between polls — re-check locally so a lapsed
+  // cooldown stops reading as an active warning the moment the client's own
+  // clock says it's over, instead of waiting for the next reload().
+  const rateLimited =
+    !!rateLimitedUntil && new Date(rateLimitedUntil).getTime() > Date.now();
+  const healthDetail = [
     key.health?.lastErrorStatus ? `Status ${key.health.lastErrorStatus}` : null,
     key.health?.lastError,
     key.health?.lastErrorAt
       ? `Observed ${new Date(key.health.lastErrorAt).toLocaleString()}`
       : null,
-    rateLimitedUntil
-      ? `Retry after ${new Date(rateLimitedUntil).toLocaleString()}`
+    // Meaningless on a dead key — auth failure needs a manual re-enable, it
+    // doesn't clear itself when a leftover cooldown timer lapses.
+    rateLimited && !dead
+      ? `Resets ${new Date(rateLimitedUntil!).toLocaleString()}`
       : null,
   ]
     .filter(Boolean)
     .join(" · ");
+
+  // Single source of truth for the status dot: persistent health problems
+  // (auth failure, rate limit) always win over a stale manual test result,
+  // which in turn wins over having no test data at all. The dot itself is
+  // never omitted — an untested-but-healthy key still gets a neutral dot,
+  // matching the always-visible indicator in the model chain table. Rate
+  // limit cooldowns are sourced from KeyHealthStore, which on a real 429
+  // reads Retry-After / X-RateLimit-Reset or — for Anthropic subscription
+  // (Claude Code) keys with neither — the unified quota system's own
+  // anthropic-ratelimit-unified-reset header (see key-health.ts
+  // parseRateLimitHint), so the countdown here is accurate either way.
+  const status = testing
+    ? {
+        tone: "neutral" as const,
+        dotClass: "bg-muted-foreground animate-pulse",
+        label: "Testing…",
+        title: "Running a live credential test",
+      }
+    : dead
+      ? {
+          tone: "destructive" as const,
+          dotClass: "bg-destructive",
+          label: "Auth failed",
+          title: healthDetail || "Credential rejected by the provider",
+        }
+      : rateLimited
+        ? {
+            // Same amber Badge uses for its "warning" variant (the exact
+            // color the Key Usage page's "Limited {time}" badge renders in),
+            // so a rate-limited key reads identically in both places.
+            tone: "warning" as const,
+            dotClass: "bg-amber-500",
+            label: `Rate limited · ${resetLabel(rateLimitedUntil!)}`,
+            title: healthDetail || "Rate limited by the provider",
+          }
+        : testResult
+          ? testResult.ok
+            ? {
+                tone: "success" as const,
+                dotClass: "bg-success",
+                label: `${testResult.ms} ms`,
+                title: "Credential is reachable",
+              }
+            : {
+                tone: "destructive" as const,
+                dotClass: "bg-destructive",
+                label: testResult.status
+                  ? `Failed (${testResult.status})`
+                  : "Test failed",
+                title: testResult.error || "Credential test failed",
+              }
+          : {
+              tone: "neutral" as const,
+              dotClass: "bg-muted-foreground/50",
+              label: "Not tested",
+              title: "Run a test to check reachability",
+            };
+  const statusToneClass = {
+    destructive: "text-destructive",
+    warning: "text-amber-700 dark:text-amber-300",
+    success: "text-success",
+    neutral: "text-muted-foreground",
+  }[status.tone];
+
   return (
     <div
+      role="row"
       className={cn(
         GRID,
-        "h-16 items-center border-b border-border/70 px-3 text-sm transition-colors hover:bg-muted/30",
+        "h-14 items-center border-b border-border/70 px-4 text-sm transition-colors hover:bg-muted/30",
         selected && "bg-primary/5",
         dead && "bg-destructive/5",
-        rateLimitedUntil && !dead && "bg-warning/5",
         !key.enabled && "text-muted-foreground",
       )}
     >
-      <div className="flex justify-start pr-2">
+      <div role="cell" className="flex justify-start pr-2">
         <Checkbox
           checked={selected}
           onCheckedChange={() => onSelect(key.id)}
@@ -595,7 +733,7 @@ const ProviderKeyRow = memo(function ProviderKeyRow({
         />
       </div>
 
-      <div className="flex min-w-0 items-center gap-1 pr-3">
+      <div role="cell" className="flex min-w-0 items-center gap-1 pr-3">
         <Button
           variant="ghost"
           size="sm"
@@ -619,7 +757,7 @@ const ProviderKeyRow = memo(function ProviderKeyRow({
         </ActionButton>
       </div>
 
-      <div className="hidden min-w-0 items-center md:flex">
+      <div role="cell" className="hidden min-w-0 items-center md:flex">
         <Button
           variant="ghost"
           size="sm"
@@ -627,7 +765,7 @@ const ProviderKeyRow = memo(function ProviderKeyRow({
           onClick={() => onEdit(key)}
           title="Edit label and metadata"
         >
-          <span className="truncate text-sm font-medium text-foreground">
+          <span className="truncate text-sm font-medium text-muted-foreground">
             {key.label || "Unlabeled"}
           </span>
           {metadata.length > 0 && (
@@ -639,77 +777,60 @@ const ProviderKeyRow = memo(function ProviderKeyRow({
         </Button>
       </div>
 
-      <div className="hidden text-center md:block">
-        {testing ? (
-          <Badge variant="secondary">
-            <Loader2 className="mr-1 h-3 w-3 animate-spin" /> Testing
-          </Badge>
-        ) : testResult ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Badge variant={testResult.ok ? "success" : "destructive"}>
-                  {testResult.ok
-                    ? `${testResult.ms} ms`
-                    : testResult.status || "Failed"}
-                </Badge>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-72">
-              {testResult.ok
-                ? "Credential is reachable"
-                : testResult.error || "Credential test failed"}
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          <span className="text-xs text-muted-foreground">Not tested</span>
-        )}
+      <div role="cell" className="min-w-0">
+        <span
+          className={cn(
+            "flex min-w-0 max-w-full items-center gap-1.5 text-xs",
+            statusToneClass,
+          )}
+          title={status.title}
+        >
+          <span
+            className={cn("h-1.5 w-1.5 shrink-0 rounded-full", status.dotClass)}
+          />
+          <span className="min-w-0 truncate whitespace-nowrap">
+            {status.label}
+          </span>
+        </span>
       </div>
 
-      <div className="flex flex-col items-center justify-center gap-1">
-        {dead ? (
-          <Badge
-            variant="destructive"
-            className="max-w-full"
-            title={healthTitle}
-          >
-            Auth failed
-          </Badge>
-        ) : rateLimitedUntil ? (
-          <Badge variant="warning" className="max-w-full" title={healthTitle}>
-            Limited {relativeTime(rateLimitedUntil)}
-          </Badge>
-        ) : (
-          <Switch
-            checked={key.enabled}
-            disabled={toggling}
-            onCheckedChange={(enabled) => onToggle(key.id, enabled)}
-            aria-label={`${key.enabled ? "Disable" : "Enable"} ${mask(key.credential)}`}
-            title={
-              toggling
-                ? "Saving key status"
-                : key.enabled
-                  ? "Active — click to disable"
-                  : "Disabled — click to enable"
-            }
-          />
-        )}
-        {(dead || rateLimitedUntil) && (
-          <Switch
-            checked={key.enabled}
-            disabled={toggling}
-            onCheckedChange={(enabled) => onToggle(key.id, enabled)}
-            aria-label={`${key.enabled ? "Disable" : "Enable"} ${mask(key.credential)}`}
-            title={
-              key.enabled
+      <div role="cell" className="flex items-center">
+        <Switch
+          checked={key.enabled}
+          disabled={toggling}
+          onCheckedChange={(enabled) => onToggle(key.id, enabled)}
+          aria-label={`${key.enabled ? "Disable" : "Enable"} ${mask(key.credential)}`}
+          title={
+            toggling
+              ? "Saving key status"
+              : key.enabled
                 ? "Active — click to disable"
                 : "Disabled — click to enable"
-            }
-          />
-        )}
+          }
+        />
       </div>
 
-      <div className="flex items-center justify-end gap-0.5">
+      <div
+        role="cell"
+        className="hidden text-right font-mono text-success md:block"
+        title={`${stat?.success ?? 0} successful hits (2xx)`}
+      >
+        {stat?.success ?? 0}
+      </div>
+      <div
+        role="cell"
+        className={cn(
+          "hidden text-right font-mono md:block",
+          stat && stat.errors > 0
+            ? "text-destructive"
+            : "text-muted-foreground",
+        )}
+        title={`${stat?.errors ?? 0} failed hits — non-2xx status, including timeouts and bad requests`}
+      >
+        {stat?.errors ?? 0}
+      </div>
+
+      <div role="cell" className="flex items-center justify-end gap-1">
         <ActionButton
           label={revealed ? "Hide credential" : "Reveal credential"}
           onClick={() => onReveal(key.id)}
@@ -719,7 +840,7 @@ const ProviderKeyRow = memo(function ProviderKeyRow({
         <ActionButton
           label="Test credential"
           disabled={testing}
-          onClick={() => onTest(key.id)}
+          onClick={() => onTest(key.id, true)}
         >
           {testing ? <Loader2 className="animate-spin" /> : <FlaskConical />}
         </ActionButton>

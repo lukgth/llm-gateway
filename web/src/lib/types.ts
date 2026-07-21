@@ -509,6 +509,12 @@ export interface HopStat {
   errors: number;
 }
 
+export interface KeyStat {
+  credHash: string;
+  success: number;
+  errors: number;
+}
+
 export interface DashboardStats {
   requestsToday: number;
   requestsErrorToday: number;

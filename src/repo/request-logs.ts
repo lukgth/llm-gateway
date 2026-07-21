@@ -248,6 +248,32 @@ export function hopStats(db: DB, modelAlias: string): HopStat[] {
   return rows;
 }
 
+export interface KeyStat {
+  credHash: string;
+  success: number;
+  /** Non-2xx status (including null, e.g. a timeout that never got a response). */
+  errors: number;
+}
+
+// Per-key success/error counts for one provider, keyed by upstream_key_hash —
+// the same cred_hash a provider_keys row is looked up by — so the key manager
+// can show each credential's own hit-rate. Same success/error split as
+// hopStats: 2xx = success, everything else (incl. null = timeout, aborted, or
+// a request that never reached the upstream) = error.
+export function keyStats(db: DB, providerId: string): KeyStat[] {
+  const rows = db
+    .prepare(
+      `SELECT upstream_key_hash AS credHash,
+         COALESCE(SUM(CASE WHEN status >= 200 AND status < 300 THEN 1 ELSE 0 END), 0) AS success,
+         COALESCE(SUM(CASE WHEN status IS NULL OR status >= 300 THEN 1 ELSE 0 END), 0) AS errors
+       FROM request_logs
+       WHERE provider_id = @providerId AND upstream_key_hash IS NOT NULL
+       GROUP BY upstream_key_hash`,
+    )
+    .all({ providerId }) as KeyStat[];
+  return rows;
+}
+
 // --- Aggregated dashboard stats -------------------------------------------
 
 export interface DashboardStats {

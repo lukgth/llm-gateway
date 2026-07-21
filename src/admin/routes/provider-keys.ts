@@ -13,6 +13,7 @@ import {
   deleteKeySyncConfig,
 } from "../../repo/provider-keys";
 import { importKeysFromUrl } from "../../services/key-import";
+import { keyStats } from "../../repo/request-logs";
 import { KeyHealthStore } from "../../gateway/key-health";
 import type { RouteCtx } from "./types";
 import {
@@ -74,6 +75,36 @@ export function registerProviderKeyRoutes(ctx: RouteCtx): void {
     const keys =
       limit > 0 ? all.slice(offset, offset + limit) : all.slice(offset);
     res.json({ keys: withHealth(keys), total: all.length, offset, limit });
+  });
+
+  // Per-key success/error counts for the key manager table — keyed by
+  // cred_hash, the same identity a credential is looked up by. Auth failures
+  // (401/403) short-circuit out of the retry loop before a request_logs row
+  // is ever written (see engine.ts forward()), so they'd be invisible to the
+  // key manager's error count if it only read request_logs — merge in
+  // KeyHealthStore's own lifetime auth-fail counter to cover that gap.
+  r.get("/providers/:id/keys/stats", requireAdmin, (req, res) => {
+    const providerId = String(req.params.id);
+    if (!withProvider(providerId, res)) return;
+    const logStats = keyStats(db, providerId);
+    const byHash = new Map(logStats.map((s) => [s.credHash, s]));
+    const health = new KeyHealthStore(db);
+    for (const key of listProviderKeys(db, providerId)) {
+      const authFailCount = health.snapshot(
+        providerId,
+        key.credHash,
+      ).authFailCount;
+      if (!authFailCount) continue;
+      const existing = byHash.get(key.credHash);
+      if (existing) existing.errors += authFailCount;
+      else
+        byHash.set(key.credHash, {
+          credHash: key.credHash,
+          success: 0,
+          errors: authFailCount,
+        });
+    }
+    res.json([...byHash.values()]);
   });
 
   // --- create single key ---

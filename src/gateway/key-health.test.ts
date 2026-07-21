@@ -277,6 +277,28 @@ test("parseRateLimitHint understands standard/de-facto reset headers", () => {
   assert.equal(xReset.source, "x-ratelimit-reset");
 });
 
+test("parseRateLimitHint falls back to Anthropic's unified-quota reset header", () => {
+  const now = 1_700_000_000_000;
+  const epochSeconds = Math.floor((now + 4 * 3_600_000) / 1000);
+  const hint = parseRateLimitHint(
+    { "anthropic-ratelimit-unified-reset": String(epochSeconds) },
+    now,
+  );
+  assert.ok(Math.abs(hint.ms - 4 * 3_600_000) <= 1000);
+  assert.equal(hint.source, "anthropic-ratelimit-unified-reset");
+  // Standard headers still win when both are present — the unified header
+  // is a fallback for when Anthropic's 429 carries no standard header.
+  const withRetryAfter = parseRateLimitHint(
+    {
+      "retry-after": "5",
+      "anthropic-ratelimit-unified-reset": String(epochSeconds),
+    },
+    now,
+  );
+  assert.equal(withRetryAfter.source, "retry-after");
+  assert.equal(withRetryAfter.ms, 5000);
+});
+
 test("snapshot surfaces auth failure and rate-limit error metadata", () => {
   const db = openDatabase(":memory:");
   try {
@@ -296,6 +318,29 @@ test("snapshot surfaces auth failure and rate-limit error metadata", () => {
       limited.rateLimitedUntilIso,
       new Date(clk.now() + 30_000).toISOString(),
     );
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test("markAuthFailed accumulates a lifetime count that survives recordSuccess", () => {
+  const db = openDatabase(":memory:");
+  try {
+    const p = provider(db, ["a"]);
+    const store = new KeyHealthStore(db);
+    store.markAuthFailed(p.id, hashKey("a"), 401, "bad key");
+    store.markAuthFailed(p.id, hashKey("a"), 401, "bad key");
+    assert.equal(store.snapshot(p.id, hashKey("a")).authFailCount, 2);
+    // A later success clears the live authFailed/usable flags but the
+    // lifetime counter is history, not current state — it must not reset.
+    store.recordSuccess(p.id, hashKey("a"), null);
+    const after = store.snapshot(p.id, hashKey("a"));
+    assert.equal(after.authFailed, false);
+    assert.equal(after.authFailCount, 2);
+    // Reloading from a fresh store (simulating a process restart) must
+    // still see the persisted count.
+    const reloaded = new KeyHealthStore(db);
+    assert.equal(reloaded.snapshot(p.id, hashKey("a")).authFailCount, 2);
   } finally {
     closeDatabase(db);
   }
