@@ -41,13 +41,15 @@ import { cn, fmtNum, fmtTokens } from "@/lib/utils";
 
 const KEYS_PER_PAGE = 10;
 
-// Tracks how many masonry columns fit the viewport, mirroring the
-// `sm`/`xl` Tailwind breakpoints (640px / 1280px) this page used as a CSS
-// grid before. Re-evaluated on resize so dragging the window across a
-// breakpoint re-balances the columns.
+// Tracks how many masonry columns fit the viewport. Thresholds are double
+// the `sm`/`xl` Tailwind breakpoints (640px / 1280px) this page used as a
+// CSS grid before, so each card gets roughly twice the width — cards read
+// better wide since a single key can carry several usage bars side by side.
+// Re-evaluated on resize so dragging the window across a breakpoint
+// re-balances the columns.
 function useColumnCount(): number {
   const getCount = () =>
-    window.innerWidth >= 1280 ? 3 : window.innerWidth >= 640 ? 2 : 1;
+    window.innerWidth >= 2560 ? 3 : window.innerWidth >= 1280 ? 2 : 1;
   const [count, setCount] = useState(getCount);
   useEffect(() => {
     const onResize = () => setCount(getCount());
@@ -178,7 +180,7 @@ export default function ProviderUsage() {
 
 function UsageSkeleton() {
   return (
-    <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid items-start gap-4 min-[1280px]:grid-cols-2 min-[2560px]:grid-cols-3">
       {Array.from({ length: 6 }).map((_, i) => (
         <Card key={i} className="gap-4">
           <div className="flex items-center gap-2.5">
@@ -271,7 +273,7 @@ function ProviderUsageCard({ report }: { report: ProviderUsageReport }) {
       ) : pageKeys.length === 0 ? (
         <EmptyState msg="No keys match this filter" />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2 [&>*:last-child:nth-child(odd)]:col-span-2">
           {pageKeys.map((key) => (
             <KeyUsageBlock key={key.keyMask} usage={key} />
           ))}
@@ -390,8 +392,13 @@ function UsageBar({ window: w }: { window: ProviderKeyUsageWindow }) {
   return (
     <div>
       <div className="mb-1.5 flex items-baseline justify-between gap-2 text-xs">
-        <span className="font-medium text-foreground">{w.label}</span>
-        <span className="tabular-nums text-muted-foreground">
+        <span
+          className="min-w-0 truncate font-medium text-foreground"
+          title={w.label}
+        >
+          {w.label}
+        </span>
+        <span className="shrink-0 tabular-nums text-muted-foreground">
           {w.unit === "percent" ? (
             <span className="font-mono text-foreground">{pct.toFixed(0)}%</span>
           ) : (
@@ -414,15 +421,17 @@ function UsageBar({ window: w }: { window: ProviderKeyUsageWindow }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-        <span className="tabular-nums">
-          {w.unit === "percent"
-            ? "Quota utilization"
-            : `${pct.toFixed(0)}% used`}
+      <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-2 text-xs text-muted-foreground">
+        <span className="shrink-0 whitespace-nowrap tabular-nums">
+          {pct.toFixed(0)}% used
         </span>
         {/* A one-shot balance (e.g. a prepaid credit grant) has no rolling
             reset — omit the line rather than showing a broken "resets —". */}
-        {w.resetsAt && <span>resets {relativeTime(w.resetsAt)}</span>}
+        {w.resetsAt && (
+          <span className="shrink-0 whitespace-nowrap">
+            {resetLabel(w.resetsAt)}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -451,4 +460,14 @@ function relativeTime(iso: string): string {
     unit = `${Math.round(totalMin / 60 / 24)}d`;
   }
   return past ? `${unit} ago` : `in ${unit}`;
+}
+
+// "resets in 21h" (future) vs "reset 6h ago" (past) — relativeTime's "ago"
+// suffix already carries the past tense, so pairing it with "resets" reads
+// as a grammar error ("resets 6h ago").
+function resetLabel(iso: string): string {
+  const rt = relativeTime(iso);
+  if (rt === "—") return "reset —";
+  if (rt === "now") return "resets now";
+  return rt.endsWith("ago") ? `reset ${rt}` : `resets ${rt}`;
 }
