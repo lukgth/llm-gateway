@@ -9,6 +9,7 @@ import { listProviders } from "../../repo/providers";
 import { getUnifiedUsage } from "../../repo/provider-key-usage";
 import { listProviderKeys, maskProviderKey } from "../../repo/provider-keys";
 import { seedFromKey, makeUsageCtx } from "./provider-probe";
+import { KeyHealthStore } from "../../gateway/key-health";
 
 // Build the usage report for ONE provider by asking its adapter for each key's
 // windows (keys read from provider_keys table). The adapter keyUsage() is async
@@ -20,13 +21,29 @@ export async function buildUsageReport(
   db: DB,
 ): Promise<ProviderUsageReport> {
   const adapter = adapterForProvider(p);
+  const healthStore = new KeyHealthStore(db);
   const providerKeys = listProviderKeys(db, p.id);
-  const rows = providerKeys.map((k) => ({
-    key: k.credential,
-    enabled: k.enabled,
-    metadata: k.metadata,
-    keyHash: k.credHash,
-  }));
+  const rows = providerKeys.map((k) => {
+    const h = healthStore.snapshot(p.id, k.credHash);
+    return {
+      key: k.credential,
+      enabled: k.enabled,
+      metadata: k.metadata,
+      keyHash: k.credHash,
+      health: {
+        usable: h.usable,
+        dead: h.authFailed,
+        ...(h.rateLimitedUntilIso
+          ? { rateLimitedUntil: h.rateLimitedUntilIso }
+          : {}),
+        ...(h.lastErrorStatus !== null
+          ? { lastErrorStatus: h.lastErrorStatus }
+          : {}),
+        ...(h.lastError ? { lastError: h.lastError } : {}),
+        ...(h.lastErrorAt ? { lastErrorAt: h.lastErrorAt } : {}),
+      },
+    };
+  });
 
   // Visibility gate: if the adapter doesn't report usage at all, skip the per-key
   // queries and return an empty, unsupported report. The dashboard drops these;
@@ -56,7 +73,7 @@ export async function buildUsageReport(
 
   let anyDummy = false;
   const keys = await Promise.all(
-    rows.map(async ({ key, enabled, metadata, keyHash }) => {
+    rows.map(async ({ key, enabled, metadata, keyHash, health }) => {
       const mask = maskProviderKey(key);
       try {
         const { windows, expiresAt, dummy, unavailable, message } =
@@ -74,6 +91,7 @@ export async function buildUsageReport(
         return {
           keyMask: mask,
           enabled,
+          health,
           windows,
           ...(expiresAt ? { expiresAt } : {}),
           ...(unavailable ? { unavailable: true } : {}),
@@ -85,6 +103,7 @@ export async function buildUsageReport(
         return {
           keyMask: mask,
           enabled,
+          health,
           windows: [],
           unavailable: true,
           message: `Usage query failed: ${(e as Error).message}`,
@@ -93,10 +112,21 @@ export async function buildUsageReport(
     }),
   );
   const visibleKeys = keys.filter((key) => {
-    if (!key.enabled) return false;
+    // Operator-disabled keys stay hidden, but runtime-dead/rate-limited keys are
+    // shown with their health/error state so operators can see why a provider fell
+    // through the fallback chain. Their adapters still skip live usage queries
+    // because `enabled` is false.
+    const hasHealthState = !!(
+      key.health?.dead ||
+      key.health?.rateLimitedUntil ||
+      key.health?.lastError
+    );
+    if (!key.enabled && !hasHealthState) return false;
     // Passive Claude Code usage is meaningful only after a real request has
-    // produced unified quota headers; hide unrecorded rows to avoid clutter.
-    if (p.catalogId === "claude-code" && key.unavailable) return false;
+    // produced unified quota headers; hide unrecorded rows to avoid clutter unless
+    // the row explains an actual health problem.
+    if (p.catalogId === "claude-code" && key.unavailable && !hasHealthState)
+      return false;
     return true;
   });
   return {

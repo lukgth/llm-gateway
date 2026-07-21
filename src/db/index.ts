@@ -179,6 +179,9 @@ CREATE TABLE IF NOT EXISTS provider_key_health (
   key_hash           TEXT NOT NULL,
   rate_limited_until INTEGER NOT NULL DEFAULT 0,
   auth_failed        INTEGER NOT NULL DEFAULT 0,
+  last_error_status  INTEGER,
+  last_error         TEXT,
+  last_error_at      TEXT,
   updated_at         TEXT NOT NULL,
   PRIMARY KEY (provider_id, key_hash)
 );
@@ -191,6 +194,21 @@ CREATE TABLE IF NOT EXISTS key_model_affinity (
   model       TEXT NOT NULL,
   fails       INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (provider_id, key_hash, model)
+);
+
+-- The single "sticky" key currently preferred for a (provider, model) pair —
+-- the last key that successfully served this model. Selection prefers this
+-- exact key over round-robin/affinity-pool picking so repeat requests reuse
+-- the same upstream key (better provider-side prompt-cache hit rates, more
+-- predictable per-key rate-limit budgeting) instead of spreading evenly
+-- across the whole pool. Falls through to the normal pool once the sticky
+-- key goes unhealthy (auth-failed/rate-limited) or its affinity is evicted.
+CREATE TABLE IF NOT EXISTS key_model_sticky (
+  provider_id TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+  model       TEXT NOT NULL,
+  key_hash    TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  PRIMARY KEY (provider_id, model)
 );
 
 -- Latest Claude Code subscription quota snapshot learned passively from
@@ -387,6 +405,9 @@ function migrate(db: DB): void {
   // for one (key, day, model, provider); without this column COUNT(*) is always
   // 1 (one row per group). Backfilled to 1 for existing rows; rebuild-from-logs
   // recomputes the true counts.
+  addColumnIfMissing(db, "provider_key_health", "last_error_status", "INTEGER");
+  addColumnIfMissing(db, "provider_key_health", "last_error", "TEXT");
+  addColumnIfMissing(db, "provider_key_health", "last_error_at", "TEXT");
   addColumnIfMissing(
     db,
     "usage_breakdown",

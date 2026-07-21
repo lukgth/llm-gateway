@@ -118,6 +118,7 @@ export function syncFromConfig(db: DB, cfg: ConfigJson): SyncResult {
     upstreamTlsVerify: cfg.upstreamTlsVerify ?? null,
     gatewayApiKeys: cfg.gatewayApiKeys ?? null,
     webTools: cfg.webTools ?? null,
+    disabledApiKeyMessage: cfg.disabledApiKeyMessage,
     models: m,
   };
   const hash = sha256(JSON.stringify(seedSlice));
@@ -144,6 +145,9 @@ export function syncFromConfig(db: DB, cfg: ConfigJson): SyncResult {
       ...(wt?.provider !== undefined && { webToolsProvider: wt.provider }),
       ...(wtBaseUrl !== undefined && { webProviderBaseUrl: wtBaseUrl }),
       ...(wtApiKey !== undefined && { webProviderApiKey: wtApiKey }),
+      ...(cfg.disabledApiKeyMessage !== undefined && {
+        disabledApiKeyMessage: cfg.disabledApiKeyMessage,
+      }),
     });
 
     // --- provider ---

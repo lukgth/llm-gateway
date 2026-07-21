@@ -111,8 +111,12 @@ export interface AttemptResult {
   keyHash?: string | null;
   /** Immutable masked snapshot of the selected upstream credential. */
   keyMask?: string | null;
-  /** Cooldown (ms) parsed from a 429 response's Retry-After, for the key. */
+  /** Cooldown (ms) parsed from a 429 response's standard rate-limit headers. */
   rateLimitMs?: number;
+  /** Absolute epoch ms when a rate-limited key should be usable again. */
+  rateLimitResetAt?: number;
+  /** Header/source used to derive rateLimitMs (retry-after, ratelimit-reset, etc.). */
+  rateLimitSource?: string;
 }
 
 // Upstream-reported usage shape (subset of readResponseUsage's return).

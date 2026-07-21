@@ -8,7 +8,12 @@ import assert from "node:assert/strict";
 import { openDatabase, closeDatabase } from "../db";
 import { createProvider } from "../repo/providers";
 import { listEnabledCredentials } from "../repo/provider-keys";
-import { KeyHealthStore, parseRateLimit, hashKey } from "./key-health";
+import {
+  KeyHealthStore,
+  parseRateLimit,
+  parseRateLimitHint,
+  hashKey,
+} from "./key-health";
 
 function provider(
   db: ReturnType<typeof openDatabase>,
@@ -128,6 +133,78 @@ test("model affinity: proven key is preferred, evicted after threshold", () => {
   }
 });
 
+test("sticky: a successful key is reused for the same model instead of round-robining", () => {
+  const db = openDatabase(":memory:");
+  try {
+    const p = provider(db, ["a", "b", "c"]);
+    const store = new KeyHealthStore(db);
+    // "a" succeeds for "gpt" first (round-robin's natural first pick).
+    store.recordSuccess(p.id, hashKey("a"), "gpt");
+    // Every subsequent select for "gpt" reuses "a" — no spreading across b/c,
+    // even though a fresh call with no `tried` set would otherwise round-robin.
+    for (let i = 0; i < 6; i++)
+      assert.equal(store.select(p.id, p.keys, "gpt", new Set())!.key, "a");
+    // A different model is unaffected by "gpt"'s sticky pin — it has no
+    // sticky/affinity of its own yet, so it falls through to round-robin
+    // (cursor untouched by the sticky picks above, since those bypass
+    // rrPick entirely — starts fresh at "a").
+    assert.equal(store.select(p.id, p.keys, "claude", new Set())!.key, "a");
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test("sticky: falls over to another key once the sticky key goes unhealthy", () => {
+  const db = openDatabase(":memory:");
+  try {
+    const p = provider(db, ["a", "b", "c"]);
+    const store = new KeyHealthStore(db);
+    store.recordSuccess(p.id, hashKey("a"), "gpt");
+    assert.equal(store.select(p.id, p.keys, "gpt", new Set())!.key, "a");
+    // "a" gets rate-limited — sticky key is unhealthy, select() must skip it.
+    store.markRateLimited(p.id, hashKey("a"), 60_000);
+    const pick = store.select(p.id, p.keys, "gpt", new Set())!.key;
+    assert.notEqual(pick, "a");
+    // The new key proves itself and becomes the new sticky pick.
+    store.recordSuccess(p.id, hashKey(pick), "gpt");
+    for (let i = 0; i < 3; i++)
+      assert.equal(store.select(p.id, p.keys, "gpt", new Set())!.key, pick);
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test("sticky: a confirmed auth failure clears the sticky pointer for every model", () => {
+  const db = openDatabase(":memory:");
+  try {
+    const p = provider(db, ["a", "b"]);
+    const store = new KeyHealthStore(db);
+    store.recordSuccess(p.id, hashKey("a"), "gpt");
+    store.recordSuccess(p.id, hashKey("a"), "claude");
+    assert.equal(store.select(p.id, p.keys, "gpt", new Set())!.key, "a");
+    store.markAuthFailed(p.id, hashKey("a"));
+    // Both models must fall through to "b" — a dead key is never sticky.
+    assert.equal(store.select(p.id, p.keys, "gpt", new Set())!.key, "b");
+    assert.equal(store.select(p.id, p.keys, "claude", new Set())!.key, "b");
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test("sticky pointer persists across store reopen (same DB)", () => {
+  const db = openDatabase(":memory:");
+  try {
+    const p = provider(db, ["a", "b", "c"]);
+    const s1 = new KeyHealthStore(db);
+    s1.recordSuccess(p.id, hashKey("b"), "gpt");
+    const s2 = new KeyHealthStore(db);
+    for (let i = 0; i < 3; i++)
+      assert.equal(s2.select(p.id, p.keys, "gpt", new Set())!.key, "b");
+  } finally {
+    closeDatabase(db);
+  }
+});
+
 test("health persists across store reopen (same DB)", () => {
   const db = openDatabase(":memory:");
   try {
@@ -182,4 +259,44 @@ test("parseRateLimit: retry-after-ms > retry-after secs > date > default", () =>
   const parsed = parseRateLimit({ "retry-after": when }, now);
   // HTTP-date has second resolution; allow a 1s slop.
   assert.ok(Math.abs(parsed - 5000) <= 1000);
+});
+
+test("parseRateLimitHint understands standard/de-facto reset headers", () => {
+  const now = 1_700_000_000_000;
+  assert.deepEqual(parseRateLimitHint({ "ratelimit-reset": "7" }, now), {
+    ms: 7000,
+    resetAt: now + 7000,
+    source: "ratelimit-reset",
+  });
+  const epochSeconds = Math.floor((now + 11_000) / 1000);
+  const xReset = parseRateLimitHint(
+    { "x-ratelimit-reset": String(epochSeconds) },
+    now,
+  );
+  assert.ok(Math.abs(xReset.ms - 11_000) <= 1000);
+  assert.equal(xReset.source, "x-ratelimit-reset");
+});
+
+test("snapshot surfaces auth failure and rate-limit error metadata", () => {
+  const db = openDatabase(":memory:");
+  try {
+    const p = provider(db, ["a", "b"]);
+    const clk = clock();
+    const store = new KeyHealthStore(db, clk.now);
+    store.markAuthFailed(p.id, hashKey("a"), 401, "bad key");
+    store.markRateLimited(p.id, hashKey("b"), 30_000, 429, "too many");
+    const dead = store.snapshot(p.id, hashKey("a"));
+    assert.equal(dead.authFailed, true);
+    assert.equal(dead.lastErrorStatus, 401);
+    assert.equal(dead.lastError, "bad key");
+    const limited = store.snapshot(p.id, hashKey("b"));
+    assert.equal(limited.usable, false);
+    assert.equal(limited.lastErrorStatus, 429);
+    assert.equal(
+      limited.rateLimitedUntilIso,
+      new Date(clk.now() + 30_000).toISOString(),
+    );
+  } finally {
+    closeDatabase(db);
+  }
 });

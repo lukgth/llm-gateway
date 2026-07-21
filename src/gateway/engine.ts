@@ -40,6 +40,8 @@ import {
   getProviderKeyByHash,
   listEnabledCredentials,
   maskProviderKey,
+  updateProviderKey,
+  countProviderKeys,
 } from "../repo/provider-keys";
 import {
   modelTransformBags,
@@ -47,7 +49,7 @@ import {
 } from "../formats/transforms";
 import {
   KeyHealthStore,
-  parseRateLimit,
+  parseRateLimitHint,
   AUTH_FAIL_STATUS,
   type KeyPick,
 } from "./key-health";
@@ -139,6 +141,42 @@ export class ForwardingEngine {
     model: string | null,
   ): KeyPick | null {
     return this.keyHealth.select(providerId, keys, model, new Set());
+  }
+
+  // A key just got a real auth failure (401/403) from upstream — it's dead,
+  // not just cooling down. Beyond keyHealth's in-memory/health-table flag
+  // (which only affects THIS process's rotation), persistently disable the
+  // provider_keys row so it drops out of `listEnabledCredentials` for every
+  // future request AND out of the usage report's `visibleKeys` filter
+  // (src/admin/routes/usage-report.ts skips `!enabled` keys) — the operator
+  // re-enables it manually once the credential is fixed/rotated.
+  private disableDeadKey(
+    providerId: string,
+    keyHash: string,
+    status: number,
+  ): void {
+    try {
+      const row = getProviderKeyByHash(this.db, providerId, keyHash);
+      if (!row || !row.enabled) return;
+      updateProviderKey(this.db, row.id, {
+        enabled: false,
+        metadata: {
+          ...row.metadata,
+          disabledReason: `auth failure (${status})`,
+          disabledAt: new Date().toISOString(),
+        },
+      });
+      this.logger.warn("provider_key_disabled", {
+        provider: providerId,
+        keyMask: maskProviderKey(row.credential),
+        status,
+      });
+    } catch (err) {
+      this.logger.warn("disable_dead_key_failed", {
+        provider: providerId,
+        err: (err as Error).message,
+      });
+    }
   }
 
   // --- chain + route --------------------------------------------------------
@@ -415,10 +453,49 @@ export class ForwardingEngine {
       // so a multi-key provider can fail a rate-limited/auth-failed key over to
       // a healthy one within this request (bounded by the key count).
       const providerKeys = listEnabledCredentials(this.db, entry.provider.id);
+      // Every configured key for this provider is disabled (auth-failed or
+      // manually turned off) — NOT the same as a genuinely keyless provider
+      // (0 keys ever configured), which intentionally forwards the client's
+      // own auth (see buildHeaders). Attempting anyway here would silently
+      // leak the client's credentials upstream to a provider that expects
+      // gateway-held auth. Log clearly and fail this provider over instead.
+      if (providerKeys.length === 0) {
+        const total = countProviderKeys(this.db, entry.provider.id).total;
+        if (total > 0) {
+          lastReason = `all ${total} key(s) dead (auth-failed/disabled)`;
+          this.logger.warn("provider_keys_exhausted", {
+            provider: entry.provider.id,
+            model: entry.upstreamModel,
+            totalKeys: total,
+            failover:
+              entry === chain[chain.length - 1] ? "exhausted" : "next-provider",
+          });
+          continue; // try the next provider in the chain
+        }
+      }
       const usable = this.keyHealth.usableCount(
         entry.provider.id,
         providerKeys,
       );
+      if (providerKeys.length > 0 && usable === 0) {
+        const nextReadyAt = this.keyHealth.nextReadyAt(
+          entry.provider.id,
+          providerKeys,
+        );
+        lastReason = nextReadyAt
+          ? `all ${providerKeys.length} enabled key(s) rate-limited until ${new Date(nextReadyAt).toISOString()}`
+          : `all ${providerKeys.length} enabled key(s) unavailable`;
+        this.logger.warn("provider_keys_exhausted", {
+          provider: entry.provider.id,
+          model: entry.upstreamModel,
+          enabledKeys: providerKeys.length,
+          usableKeys: usable,
+          nextReadyAt: nextReadyAt ? new Date(nextReadyAt).toISOString() : null,
+          failover:
+            entry === chain[chain.length - 1] ? "exhausted" : "next-provider",
+        });
+        continue; // all enabled keys are cooling down/auth-failed; try next provider
+      }
       const attempts = Math.max(
         1,
         entry.provider.retryAttempts,
@@ -452,12 +529,20 @@ export class ForwardingEngine {
               entry.upstreamModel,
             );
           } else if (result.status && AUTH_FAIL_STATUS.has(result.status)) {
-            this.keyHealth.markAuthFailed(entry.provider.id, pick.keyHash);
+            this.keyHealth.markAuthFailed(
+              entry.provider.id,
+              pick.keyHash,
+              result.status,
+              result.reason ?? `upstream auth failed (${result.status})`,
+            );
+            this.disableDeadKey(entry.provider.id, pick.keyHash, result.status);
           } else if (result.status === 429) {
             this.keyHealth.markRateLimited(
               entry.provider.id,
               pick.keyHash,
               result.rateLimitMs ?? 60_000,
+              result.status,
+              result.reason ?? "upstream rate limited",
             );
             this.keyHealth.recordFailure(
               entry.provider.id,
@@ -500,18 +585,35 @@ export class ForwardingEngine {
           return;
         }
         lastReason = result.reason || lastReason;
-        const more = attempt < attempts;
+        const remainingUsable = this.keyHealth.usableCount(
+          entry.provider.id,
+          providerKeys,
+        );
+        const exhaustedThisProvider =
+          providerKeys.length > 0 && remainingUsable === 0;
+        if (exhaustedThisProvider) {
+          const nextReadyAt = this.keyHealth.nextReadyAt(
+            entry.provider.id,
+            providerKeys,
+          );
+          lastReason = nextReadyAt
+            ? `all ${providerKeys.length} enabled key(s) rate-limited until ${new Date(nextReadyAt).toISOString()}`
+            : `all ${providerKeys.length} enabled key(s) dead/unavailable`;
+        }
+        const more = attempt < attempts && !exhaustedThisProvider;
         this.logger.warn("provider_attempt_failed", {
           provider: entry.provider.id,
           attempt: `${attempt}/${attempts}`,
           model: entry.upstreamModel,
           reason: lastReason,
+          remainingUsableKeys: remainingUsable,
           failover: more
             ? "retry"
             : entry === chain[chain.length - 1]
               ? "exhausted"
               : "next-provider",
         });
+        if (exhaustedThisProvider) break;
         if (more) await sleep(entry.provider.retryIntervalMs);
       }
     }
@@ -803,19 +905,54 @@ export class ForwardingEngine {
 
     if (RETRY_STATUS.has(status)) {
       const errBody = await readErrorBody(upRes);
+      const rateLimitHint = status === 429 ? parseRateLimitHint(headers) : null;
       this.logger.warn("upstream_retryable", {
         status,
         provider: provider.id,
         upstreamModel,
         path: ctx.clientPath,
+        keyMask: upstreamKey.mask,
         body: errBody,
+        ...(rateLimitHint
+          ? {
+              rateLimitMs: rateLimitHint.ms,
+              rateLimitResetAt: new Date(rateLimitHint.resetAt).toISOString(),
+              rateLimitSource: rateLimitHint.source,
+            }
+          : {}),
       });
-      const rateLimitMs = status === 429 ? parseRateLimit(headers) : undefined;
       return {
         committed: false,
         status,
         reason: `status ${status}: ${errBody.slice(0, 200)}`,
-        rateLimitMs,
+        ...(rateLimitHint
+          ? {
+              rateLimitMs: rateLimitHint.ms,
+              rateLimitResetAt: rateLimitHint.resetAt,
+              rateLimitSource: rateLimitHint.source,
+            }
+          : {}),
+      };
+    }
+
+    // Auth failure (bad/revoked key): don't commit this to the client — the
+    // key is dead, not the request. Read the body (for logging/reason only,
+    // never forwarded) and fail this attempt over so forward()'s retry loop
+    // can disable the key and pick another one, same as a rate limit.
+    if (AUTH_FAIL_STATUS.has(status)) {
+      const errBody = await readErrorBody(upRes);
+      this.logger.warn("upstream_auth_failed", {
+        status,
+        provider: provider.id,
+        upstreamModel,
+        path: ctx.clientPath,
+        keyMask: upstreamKey.mask,
+        body: errBody,
+      });
+      return {
+        committed: false,
+        status,
+        reason: `status ${status}: ${errBody.slice(0, 200)}`,
       };
     }
 
@@ -1423,7 +1560,51 @@ export class ForwardingEngine {
         lastReason = route.unsupported;
         continue;
       }
-      const attempts = Math.max(1, entry.provider.retryAttempts);
+      // Same widening as forward(): a multi-key provider gets enough attempts
+      // to fail an auth-failed/rate-limited key over to a healthy one within
+      // this turn, bounded by how many keys it actually has.
+      const turnKeys = listEnabledCredentials(this.db, entry.provider.id);
+      // Same "all keys dead" guard as forward() — see its comment. A
+      // genuinely keyless provider (0 keys ever configured) still routes.
+      if (turnKeys.length === 0) {
+        const total = countProviderKeys(this.db, entry.provider.id).total;
+        if (total > 0) {
+          lastReason = `all ${total} key(s) dead (auth-failed/disabled)`;
+          this.logger.warn("provider_keys_exhausted", {
+            provider: entry.provider.id,
+            model: entry.upstreamModel,
+            totalKeys: total,
+            failover:
+              entry === chain[chain.length - 1] ? "exhausted" : "next-provider",
+          });
+          continue;
+        }
+      }
+      const usable = this.keyHealth.usableCount(entry.provider.id, turnKeys);
+      if (turnKeys.length > 0 && usable === 0) {
+        const nextReadyAt = this.keyHealth.nextReadyAt(
+          entry.provider.id,
+          turnKeys,
+        );
+        lastReason = nextReadyAt
+          ? `all ${turnKeys.length} enabled key(s) rate-limited until ${new Date(nextReadyAt).toISOString()}`
+          : `all ${turnKeys.length} enabled key(s) unavailable`;
+        this.logger.warn("provider_keys_exhausted", {
+          provider: entry.provider.id,
+          model: entry.upstreamModel,
+          enabledKeys: turnKeys.length,
+          usableKeys: usable,
+          nextReadyAt: nextReadyAt ? new Date(nextReadyAt).toISOString() : null,
+          failover:
+            entry === chain[chain.length - 1] ? "exhausted" : "next-provider",
+        });
+        continue;
+      }
+      const attempts = Math.max(
+        1,
+        entry.provider.retryAttempts,
+        Math.min(usable || 1, turnKeys.length || 1),
+      );
       for (let attempt = 1; attempt <= attempts; attempt++) {
         const r = await this.runOneTurnAttempt(
           req,
@@ -1436,6 +1617,32 @@ export class ForwardingEngine {
         if (r.ok) return r;
         lastReason = r.reason;
         lastStatus = r.status;
+        const remainingUsable = this.keyHealth.usableCount(
+          entry.provider.id,
+          turnKeys,
+        );
+        const exhaustedThisProvider =
+          turnKeys.length > 0 && remainingUsable === 0;
+        if (exhaustedThisProvider) {
+          const nextReadyAt = this.keyHealth.nextReadyAt(
+            entry.provider.id,
+            turnKeys,
+          );
+          lastReason = nextReadyAt
+            ? `all ${turnKeys.length} enabled key(s) rate-limited until ${new Date(nextReadyAt).toISOString()}`
+            : `all ${turnKeys.length} enabled key(s) dead/unavailable`;
+          this.logger.warn("provider_keys_exhausted", {
+            provider: entry.provider.id,
+            model: entry.upstreamModel,
+            remainingUsableKeys: remainingUsable,
+            nextReadyAt: nextReadyAt
+              ? new Date(nextReadyAt).toISOString()
+              : null,
+            failover:
+              entry === chain[chain.length - 1] ? "exhausted" : "next-provider",
+          });
+          break;
+        }
         if (r.retryable && attempt < attempts)
           await sleep(entry.provider.retryIntervalMs);
         else if (!r.retryable) break; // move to next provider
@@ -1573,14 +1780,29 @@ export class ForwardingEngine {
 
     if (RETRY_STATUS.has(res.status)) {
       const errBody = res.text.slice(0, 2000);
+      const rateLimitHint =
+        res.status === 429 ? parseRateLimitHint(res.headers) : null;
       this.logger.warn("upstream_retryable", {
         status: res.status,
         provider: provider.id,
         upstreamModel,
         body: errBody,
+        ...(rateLimitHint
+          ? {
+              rateLimitMs: rateLimitHint.ms,
+              rateLimitResetAt: new Date(rateLimitHint.resetAt).toISOString(),
+              rateLimitSource: rateLimitHint.source,
+            }
+          : {}),
       });
       if (pick && res.status === 429)
-        this.keyHealth.markRateLimited(provider.id, pick.keyHash, 60_000);
+        this.keyHealth.markRateLimited(
+          provider.id,
+          pick.keyHash,
+          rateLimitHint?.ms ?? 60_000,
+          res.status,
+          `status ${res.status}: ${errBody.slice(0, 200)}`,
+        );
       return {
         ok: false,
         status: res.status,
@@ -1589,13 +1811,25 @@ export class ForwardingEngine {
       };
     }
     if (res.status < 200 || res.status >= 300) {
-      if (pick && AUTH_FAIL_STATUS.has(res.status))
-        this.keyHealth.markAuthFailed(provider.id, pick.keyHash);
+      const authFailed = AUTH_FAIL_STATUS.has(res.status);
+      if (pick && authFailed) {
+        this.keyHealth.markAuthFailed(
+          provider.id,
+          pick.keyHash,
+          res.status,
+          `upstream ${res.status}: ${res.text.slice(0, 300)}`,
+        );
+        this.disableDeadKey(provider.id, pick.keyHash, res.status);
+      }
       return {
         ok: false,
         status: res.status,
         reason: `upstream ${res.status}: ${res.text.slice(0, 300)}`,
-        retryable: false,
+        // Auth failure: the key is dead, not the request — retry this
+        // provider so the next attempt picks a different (now-disabled-key-
+        // excluded) key instead of immediately failing over to the next
+        // provider in the chain.
+        retryable: authFailed,
       };
     }
 

@@ -19,11 +19,13 @@ import { ThinkingConverter } from "../formats/thinking";
 import { countInputTokens, readMaxOutputTokens } from "../formats/tokens";
 import { sha256 } from "../config";
 import {
-  countEnabledApiKeys,
+  countApiKeys,
   getApiKeyByHash,
+  getAnyApiKeyByHash,
   touchLastUsed,
 } from "../repo/api-keys";
 import { addUsage, getUsage, nextUtcMidnight } from "../repo/usage";
+import { getSetting } from "../repo/settings";
 import type { KeyPick } from "./key-health";
 
 export interface GatewayRequest extends Request {
@@ -97,7 +99,7 @@ export class GatewayRouter {
 
     // --- client-key auth ---
     app.use("/v1", (req, res, next) => {
-      if (countEnabledApiKeys(this.db) === 0) return next(); // no keys -> open
+      if (countApiKeys(this.db) === 0) return next(); // no gateway keys configured -> open
       const bearer = (req.header("authorization") || "").replace(
         /^Bearer\s+/i,
         "",
@@ -108,8 +110,22 @@ export class GatewayRouter {
           error: { type: "authentication_error", message: "Missing API key" },
         });
       }
-      const apiKey = getApiKeyByHash(this.db, sha256(provided));
+      const hash = sha256(provided);
+      const apiKey = getApiKeyByHash(this.db, hash);
       if (!apiKey) {
+        const known = getAnyApiKeyByHash(this.db, hash);
+        if (known && !known.enabled) {
+          const message =
+            getSetting<string>(this.db, "disabledApiKeyMessage") ||
+            "Your API key was revoked. Please contact your gateway's administrator for help.";
+          this.logger.warn("auth_rejected_disabled", {
+            path: req.originalUrl,
+            apiKeyId: known.id,
+          });
+          return res.status(401).json({
+            error: { type: "authentication_error", message },
+          });
+        }
         this.logger.warn("auth_rejected", { path: req.originalUrl });
         return res.status(401).json({
           error: { type: "authentication_error", message: "Invalid API key" },

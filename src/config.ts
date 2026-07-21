@@ -43,6 +43,8 @@ export interface ConfigJson {
   upstreamApiKey?: string;
   upstreamTlsVerify?: boolean;
   gatewayApiKeys?: unknown;
+  /** Auth error returned when a known gateway API key is disabled/revoked. */
+  disabledApiKeyMessage?: string;
   // Pluggable web-tools backing (seeds the webTools* / webProvider* settings).
   // `enabled` turns the feature on; `provider` picks the backend (default
   // "firecrawl"); baseUrl/apiKey are the provider's connection settings.

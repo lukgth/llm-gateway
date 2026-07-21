@@ -70,7 +70,14 @@ export function maskKey(full: string): string {
   return `${full.slice(0, 10)}…${full.slice(-4)}`;
 }
 
-// Cheap existence check used by the per-request auth middleware.
+// Cheap existence checks used by the per-request auth middleware.
+export function countApiKeys(db: DB): number {
+  const row = db.prepare("SELECT COUNT(*) AS n FROM api_keys").get() as {
+    n: number;
+  };
+  return row.n;
+}
+
 export function countEnabledApiKeys(db: DB): number {
   const row = db
     .prepare("SELECT COUNT(*) AS n FROM api_keys WHERE enabled = 1")
@@ -96,6 +103,15 @@ export function getApiKeyByHash(db: DB, hash: string): ApiKey | null {
   const row = db
     .prepare(`${SELECT_JOIN} WHERE k.key_hash = ? AND k.enabled = 1`)
     .get(hash) as ApiKeyRow | undefined;
+  return row ? mapKey(row) : null;
+}
+
+// Auth lookup that intentionally includes disabled keys so the gateway can
+// distinguish "known but revoked" from "not a key we issued" and return a
+// configurable operator-friendly error message.
+export function getAnyApiKeyByHash(db: DB, hash: string): ApiKey | null {
+  const row = db.prepare(`${SELECT_JOIN} WHERE k.key_hash = ?`).get(hash) as
+    ApiKeyRow | undefined;
   return row ? mapKey(row) : null;
 }
 

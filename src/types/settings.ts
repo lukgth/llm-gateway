@@ -20,6 +20,9 @@ export interface Settings {
   webProviderBaseUrl: string;
   /** Optional provider API key (blank = keyless where supported). */
   webProviderApiKey: string;
+  /** Message returned in Anthropic-compatible auth errors when a known gateway
+   *  API key exists but is disabled/revoked. */
+  disabledApiKeyMessage: string;
   adminPasswordHash: string | null;
   jwtSecret: string;
 }
@@ -37,6 +40,8 @@ export const DEFAULT_SETTINGS: Settings = {
   webToolsProvider: "firecrawl",
   webProviderBaseUrl: "",
   webProviderApiKey: "",
+  disabledApiKeyMessage:
+    "Your API key was revoked. Please contact your gateway's administrator for help.",
   adminPasswordHash: null,
   jwtSecret: "",
 };

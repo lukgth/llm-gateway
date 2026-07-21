@@ -7,11 +7,22 @@
 // choose a key and `record*` to feed back the outcome.
 //
 // Selection priority (per request, `tried` = key hashes already used this call):
-//   1. round-robin among FRESH keys (not tried, not auth-failed, not
-//      rate-limited), preferring keys already PROVEN for this model (affinity);
-//   2. else the untried non-auth-failed key whose cooldown expires soonest;
-//   3. else round-robin among non-auth-failed;
-//   4. else round-robin among all.
+//   1. the STICKY key for this model, if fresh (not tried, not auth-failed,
+//      not rate-limited) — the last key that successfully served this exact
+//      model, reused as-is instead of round-robin/affinity-pool picking, so
+//      repeat requests concentrate on one key (better provider-side
+//      prompt-cache hit rates, predictable per-key rate-limit budgeting)
+//      rather than spreading evenly across the whole pool;
+//   2. else round-robin among FRESH keys (not tried, not auth-failed, not
+//      rate-limited), preferring keys already PROVEN for this model (affinity)
+//      — the FIRST key to win this pool becomes the new sticky key for the
+//      model (see recordSuccess);
+//   3. else the untried non-auth-failed key whose cooldown expires soonest;
+//   4. else round-robin among non-auth-failed;
+//   5. else round-robin among all.
+// A key falls out of "sticky" (back to step 2's pool) the moment it goes
+// unhealthy (auth-failed/rate-limited) or its (key,model) affinity is
+// evicted after repeated failures — see markAuthFailed/recordFailure.
 
 import crypto from "crypto";
 import type { Database as DB } from "better-sqlite3";
@@ -33,6 +44,26 @@ export interface KeyPick {
 interface HealthRow {
   rateLimitedUntil: number;
   authFailed: boolean;
+  lastErrorStatus: number | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+}
+
+export interface KeyHealthSnapshot {
+  keyHash: string;
+  rateLimitedUntil: number;
+  rateLimitedUntilIso: string | null;
+  authFailed: boolean;
+  lastErrorStatus: number | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  usable: boolean;
+}
+
+export interface RateLimitHint {
+  ms: number;
+  resetAt: number;
+  source: string;
 }
 
 // Hash a raw key to a stable short id (never persist the raw key here).
@@ -40,26 +71,85 @@ export function hashKey(key: string): string {
   return crypto.createHash("sha256").update(key).digest("hex").slice(0, 32);
 }
 
-// Parse an upstream rate-limit hint into a cooldown in ms. Order matches vsllm:
-// retry-after-ms -> retry-after (seconds or HTTP date) -> default 60s.
+function headerValue(
+  headers: Record<string, string | string[] | undefined>,
+  name: string,
+): string | undefined {
+  const exact = headers[name];
+  if (exact !== undefined) return Array.isArray(exact) ? exact[0] : exact;
+  const lower = name.toLowerCase();
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.toLowerCase() === lower) return Array.isArray(v) ? v[0] : v;
+  }
+  return undefined;
+}
+
+function parsePositiveNumber(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const n = Number(raw.trim());
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function delayHint(ms: number, source: string, now: number): RateLimitHint {
+  const safeMs = Math.max(0, Math.round(ms));
+  return { ms: safeMs, resetAt: now + safeMs, source };
+}
+
+// Parse an upstream rate-limit hint into a cooldown. Prefer standard headers,
+// but understand the de-facto variants providers use in practice:
+// retry-after-ms -> retry-after (seconds/date) -> x-ratelimit-reset-ms
+// (epoch ms) -> x-ratelimit-reset / x-rate-limit-reset (usually epoch seconds)
+// -> ratelimit-reset (RFC delay seconds) -> default 60s.
+export function parseRateLimitHint(
+  headers: Record<string, string | string[] | undefined>,
+  now: number = Date.now(),
+): RateLimitHint {
+  const retryAfterMs = parsePositiveNumber(
+    headerValue(headers, "retry-after-ms"),
+  );
+  if (retryAfterMs !== null)
+    return delayHint(retryAfterMs, "retry-after-ms", now);
+
+  const retryAfter = headerValue(headers, "retry-after");
+  if (retryAfter) {
+    const trimmed = retryAfter.trim();
+    const seconds = parsePositiveNumber(trimmed);
+    if (seconds !== null) return delayHint(seconds * 1000, "retry-after", now);
+    const when = Date.parse(trimmed);
+    if (!Number.isNaN(when))
+      return delayHint(Math.max(0, when - now), "retry-after-date", now);
+  }
+
+  const resetMs = parsePositiveNumber(
+    headerValue(headers, "x-ratelimit-reset-ms"),
+  );
+  if (resetMs !== null)
+    return delayHint(Math.max(0, resetMs - now), "x-ratelimit-reset-ms", now);
+
+  for (const name of ["x-ratelimit-reset", "x-rate-limit-reset"]) {
+    const raw = parsePositiveNumber(headerValue(headers, name));
+    if (raw !== null) {
+      // These headers are usually Unix seconds. If a provider sends a tiny
+      // value, treat it as a relative delay rather than an epoch in 1970.
+      const resetAt = raw > 1_000_000_000 ? raw * 1000 : now + raw * 1000;
+      return delayHint(Math.max(0, resetAt - now), name, now);
+    }
+  }
+
+  const standardReset = parsePositiveNumber(
+    headerValue(headers, "ratelimit-reset"),
+  );
+  if (standardReset !== null)
+    return delayHint(standardReset * 1000, "ratelimit-reset", now);
+
+  return delayHint(60_000, "default", now);
+}
+
 export function parseRateLimit(
   headers: Record<string, string | string[] | undefined>,
   now: number = Date.now(),
 ): number {
-  const get = (n: string): string | undefined => {
-    const v = headers[n];
-    return Array.isArray(v) ? v[0] : v;
-  };
-  const ms = get("retry-after-ms");
-  if (ms && /^\d+$/.test(ms.trim())) return Math.max(0, parseInt(ms, 10));
-  const ra = get("retry-after");
-  if (ra) {
-    const s = ra.trim();
-    if (/^\d+$/.test(s)) return Math.max(0, parseInt(s, 10) * 1000);
-    const when = Date.parse(s);
-    if (!Number.isNaN(when)) return Math.max(0, when - now);
-  }
-  return 60_000;
+  return parseRateLimitHint(headers, now).ms;
 }
 
 export class KeyHealthStore {
@@ -67,6 +157,7 @@ export class KeyHealthStore {
   private health = new Map<string, HealthRow>(); // `${providerId}|${keyHash}`
   private affinity = new Map<string, Set<string>>(); // `${providerId}|${keyHash}` -> proven models
   private affinityFails = new Map<string, number>(); // `${providerId}|${keyHash}|${model}` -> fails
+  private sticky = new Map<string, string>(); // `${providerId}|${model}` -> keyHash
   private loaded = new Set<string>(); // providerIds hydrated from DB
 
   constructor(
@@ -79,6 +170,10 @@ export class KeyHealthStore {
     return `${providerId}|${keyHash}`;
   }
 
+  private mk(providerId: string, model: string): string {
+    return `${providerId}|${model}`;
+  }
+
   // Lazily hydrate a provider's health + affinity from SQLite on first use.
   private ensureLoaded(providerId: string): void {
     if (this.loaded.has(providerId)) return;
@@ -86,17 +181,23 @@ export class KeyHealthStore {
     try {
       const hrows = this.db
         .prepare(
-          "SELECT key_hash, rate_limited_until, auth_failed FROM provider_key_health WHERE provider_id = ?",
+          "SELECT key_hash, rate_limited_until, auth_failed, last_error_status, last_error, last_error_at FROM provider_key_health WHERE provider_id = ?",
         )
         .all(providerId) as Array<{
         key_hash: string;
         rate_limited_until: number;
         auth_failed: number;
+        last_error_status: number | null;
+        last_error: string | null;
+        last_error_at: string | null;
       }>;
       for (const r of hrows)
         this.health.set(this.hk(providerId, r.key_hash), {
           rateLimitedUntil: r.rate_limited_until,
           authFailed: !!r.auth_failed,
+          lastErrorStatus: r.last_error_status,
+          lastError: r.last_error,
+          lastErrorAt: r.last_error_at,
         });
       const arows = this.db
         .prepare(
@@ -113,6 +214,13 @@ export class KeyHealthStore {
         this.affinity.get(k)!.add(r.model);
         this.affinityFails.set(`${k}|${r.model}`, r.fails);
       }
+      const srows = this.db
+        .prepare(
+          "SELECT model, key_hash FROM key_model_sticky WHERE provider_id = ?",
+        )
+        .all(providerId) as Array<{ model: string; key_hash: string }>;
+      for (const r of srows)
+        this.sticky.set(this.mk(providerId, r.model), r.key_hash);
     } catch {
       /* health is best-effort; a read failure just means an empty slate */
     }
@@ -122,7 +230,13 @@ export class KeyHealthStore {
     const k = this.hk(providerId, keyHash);
     let h = this.health.get(k);
     if (!h) {
-      h = { rateLimitedUntil: 0, authFailed: false };
+      h = {
+        rateLimitedUntil: 0,
+        authFailed: false,
+        lastErrorStatus: null,
+        lastError: null,
+        lastErrorAt: null,
+      };
       this.health.set(k, h);
     }
     return h;
@@ -134,11 +248,14 @@ export class KeyHealthStore {
       this.db
         .prepare(
           `INSERT INTO provider_key_health
-             (provider_id, key_hash, rate_limited_until, auth_failed, updated_at)
-           VALUES (?, ?, ?, ?, ?)
+             (provider_id, key_hash, rate_limited_until, auth_failed, last_error_status, last_error, last_error_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(provider_id, key_hash) DO UPDATE SET
              rate_limited_until=excluded.rate_limited_until,
              auth_failed=excluded.auth_failed,
+             last_error_status=excluded.last_error_status,
+             last_error=excluded.last_error,
+             last_error_at=excluded.last_error_at,
              updated_at=excluded.updated_at`,
         )
         .run(
@@ -146,6 +263,9 @@ export class KeyHealthStore {
           keyHash,
           h.rateLimitedUntil,
           h.authFailed ? 1 : 0,
+          h.lastErrorStatus,
+          h.lastError,
+          h.lastErrorAt,
           new Date(this.now()).toISOString(),
         );
     } catch {
@@ -173,6 +293,17 @@ export class KeyHealthStore {
         !tried.has(hashes[i]) && !h.authFailed && h.rateLimitedUntil <= now
       );
     };
+
+    // Sticky key for this model, if it's still fresh — cache locality wins
+    // over spreading load, as long as the proven key is actually healthy.
+    if (model) {
+      const stuckHash = this.sticky.get(this.mk(providerId, model));
+      if (stuckHash) {
+        const i = hashes.indexOf(stuckHash);
+        if (i !== -1 && isFresh(i))
+          return { key: keys[i], keyHash: hashes[i], index: i };
+      }
+    }
 
     const fresh = idx.filter(isFresh);
     if (fresh.length) {
@@ -240,9 +371,12 @@ export class KeyHealthStore {
     model: string | null,
   ): void {
     const h = this.getHealth(providerId, keyHash);
-    if (h.authFailed || h.rateLimitedUntil) {
+    if (h.authFailed || h.rateLimitedUntil || h.lastError) {
       h.authFailed = false;
       h.rateLimitedUntil = 0;
+      h.lastErrorStatus = null;
+      h.lastError = null;
+      h.lastErrorAt = null;
       this.persistHealth(providerId, keyHash);
     }
     if (!model) return;
@@ -254,6 +388,14 @@ export class KeyHealthStore {
       set.add(model);
     }
     this.persistAffinity(providerId, keyHash, model, 0);
+    // This key just proved itself for this model — make it (or re-confirm
+    // it as) the sticky pick so subsequent requests for this model reuse it
+    // instead of round-robining to a different key.
+    const mkey = this.mk(providerId, model);
+    if (this.sticky.get(mkey) !== keyHash) {
+      this.sticky.set(mkey, keyHash);
+      this.persistSticky(providerId, model, keyHash);
+    }
   }
 
   // A proven (key,model) pair failed: bump its counter and evict once it
@@ -272,23 +414,48 @@ export class KeyHealthStore {
       this.affinity.get(k)!.delete(model);
       this.affinityFails.delete(fk);
       this.deleteAffinity(providerId, keyHash, model);
+      this.clearStickyIfPointsTo(providerId, model, keyHash);
     } else {
       this.affinityFails.set(fk, fails);
       this.persistAffinity(providerId, keyHash, model, fails);
     }
   }
 
-  // Rate-limit a key for `ms` (from parseRateLimit).
-  markRateLimited(providerId: string, keyHash: string, ms: number): void {
-    if (ms <= 0) return;
+  private recordError(
+    providerId: string,
+    keyHash: string,
+    status: number | null,
+    error: string | null,
+  ): HealthRow {
     const h = this.getHealth(providerId, keyHash);
+    h.lastErrorStatus = status;
+    h.lastError = error ? error.slice(0, 500) : null;
+    h.lastErrorAt = new Date(this.now()).toISOString();
+    return h;
+  }
+
+  // Rate-limit a key for `ms` (from parseRateLimit).
+  markRateLimited(
+    providerId: string,
+    keyHash: string,
+    ms: number,
+    status = RATE_LIMIT_STATUS,
+    error: string | null = null,
+  ): void {
+    if (ms <= 0) return;
+    const h = this.recordError(providerId, keyHash, status, error);
     h.rateLimitedUntil = this.now() + ms;
     this.persistHealth(providerId, keyHash);
   }
 
   // Disable a key after an auth failure and drop its affinity.
-  markAuthFailed(providerId: string, keyHash: string): void {
-    const h = this.getHealth(providerId, keyHash);
+  markAuthFailed(
+    providerId: string,
+    keyHash: string,
+    status: number | null = null,
+    error: string | null = null,
+  ): void {
+    const h = this.recordError(providerId, keyHash, status, error);
     h.authFailed = true;
     this.persistHealth(providerId, keyHash);
     this.clearAffinity(providerId, keyHash);
@@ -298,7 +465,10 @@ export class KeyHealthStore {
     const k = this.hk(providerId, keyHash);
     const set = this.affinity.get(k);
     if (set) {
-      for (const m of set) this.affinityFails.delete(`${k}|${m}`);
+      for (const m of set) {
+        this.affinityFails.delete(`${k}|${m}`);
+        this.clearStickyIfPointsTo(providerId, m, keyHash);
+      }
       set.clear();
     }
     try {
@@ -307,6 +477,50 @@ export class KeyHealthStore {
           "DELETE FROM key_model_affinity WHERE provider_id = ? AND key_hash = ?",
         )
         .run(providerId, keyHash);
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  // A key just lost affinity for `model` (evicted after repeated failures,
+  // or wiped entirely on a confirmed auth failure) — stop preferring it as
+  // the sticky pick for that model so the next select() falls through to the
+  // normal fresh/proven pool instead of reusing a key that just proved
+  // itself unreliable.
+  private clearStickyIfPointsTo(
+    providerId: string,
+    model: string,
+    keyHash: string,
+  ): void {
+    const mkey = this.mk(providerId, model);
+    if (this.sticky.get(mkey) !== keyHash) return;
+    this.sticky.delete(mkey);
+    try {
+      this.db
+        .prepare(
+          "DELETE FROM key_model_sticky WHERE provider_id = ? AND model = ? AND key_hash = ?",
+        )
+        .run(providerId, model, keyHash);
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  private persistSticky(
+    providerId: string,
+    model: string,
+    keyHash: string,
+  ): void {
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO key_model_sticky (provider_id, model, key_hash, updated_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(provider_id, model) DO UPDATE SET
+             key_hash=excluded.key_hash,
+             updated_at=excluded.updated_at`,
+        )
+        .run(providerId, model, keyHash, new Date(this.now()).toISOString());
     } catch {
       /* best-effort */
     }
@@ -323,6 +537,39 @@ export class KeyHealthStore {
       const h = this.getHealth(providerId, hashKey(key));
       return !h.authFailed && h.rateLimitedUntil <= now;
     }).length;
+  }
+
+  snapshot(providerId: string, keyHash: string): KeyHealthSnapshot {
+    this.ensureLoaded(providerId);
+    const h = this.getHealth(providerId, keyHash);
+    const now = this.now();
+    return {
+      keyHash,
+      rateLimitedUntil: h.rateLimitedUntil,
+      rateLimitedUntilIso:
+        h.rateLimitedUntil > now
+          ? new Date(h.rateLimitedUntil).toISOString()
+          : null,
+      authFailed: h.authFailed,
+      lastErrorStatus: h.lastErrorStatus,
+      lastError: h.lastError,
+      lastErrorAt: h.lastErrorAt,
+      usable: !h.authFailed && h.rateLimitedUntil <= now,
+    };
+  }
+
+  snapshots(providerId: string, keyHashes: string[]): KeyHealthSnapshot[] {
+    return keyHashes.map((h) => this.snapshot(providerId, h));
+  }
+
+  nextReadyAt(providerId: string, keys: string[]): number | null {
+    if (!keys.length) return null;
+    this.ensureLoaded(providerId);
+    const candidates = keys
+      .map((key) => this.getHealth(providerId, hashKey(key)))
+      .filter((h) => !h.authFailed && h.rateLimitedUntil > this.now())
+      .map((h) => h.rateLimitedUntil);
+    return candidates.length ? Math.min(...candidates) : null;
   }
 
   private persistAffinity(

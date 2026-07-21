@@ -293,11 +293,20 @@ function ProviderUsageCard({ report }: { report: ProviderUsageReport }) {
 // Exported so the provider detail Keys tab can render the same per-key usage
 // blocks inline (fed by the per-provider usage endpoint).
 export function KeyUsageBlock({ usage }: { usage: ProviderKeyUsage }) {
+  const health = usage.health;
+  const rateLimited = !!health?.rateLimitedUntil;
+  const healthNote = health?.dead
+    ? "Dead key — auth failed"
+    : rateLimited
+      ? `Rate-limited — ${resetLabel(health.rateLimitedUntil!)}`
+      : null;
   return (
     <div
       className={cn(
         "rounded-lg border border-border/70 bg-muted/20 p-3 transition-colors",
-        !usage.enabled && "opacity-60",
+        health?.dead && "border-destructive/40 bg-destructive/5",
+        rateLimited && !health?.dead && "border-warning/40 bg-warning/5",
+        !usage.enabled && !health?.dead && "opacity-60",
       )}
     >
       <div
@@ -315,22 +324,53 @@ export function KeyUsageBlock({ usage }: { usage: ProviderKeyUsage }) {
           {usage.keyMask}
         </span>
         <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          {health?.dead && <Badge variant="destructive">Dead</Badge>}
+          {rateLimited && !health?.dead && (
+            <Badge variant="warning">
+              Limited {relativeTime(health.rateLimitedUntil!)}
+            </Badge>
+          )}
           {usage.expiresAt && <ExpiryBadge expiresAt={usage.expiresAt} />}
           {usage.unavailable && (
             <Badge variant="secondary" className="opacity-70">
               Unavailable
             </Badge>
           )}
-          {!usage.enabled && (
+          {!usage.enabled && !health?.dead && (
             <Badge variant="secondary" className="opacity-70">
               off
             </Badge>
           )}
         </span>
       </div>
-      {usage.message && (
-        <div className="mb-2.5 text-xs leading-snug text-muted-foreground">
-          {usage.message}
+      {(healthNote || usage.message || health?.lastError) && (
+        <div className="mb-2.5 space-y-1 text-xs leading-snug text-muted-foreground">
+          {healthNote && (
+            <div
+              className={cn(
+                "font-medium",
+                health?.dead
+                  ? "text-destructive"
+                  : rateLimited
+                    ? "text-warning"
+                    : "text-muted-foreground",
+              )}
+              title={
+                health?.rateLimitedUntil
+                  ? new Date(health.rateLimitedUntil).toLocaleString()
+                  : undefined
+              }
+            >
+              {healthNote}
+            </div>
+          )}
+          {usage.message && <div>{usage.message}</div>}
+          {health?.lastError && (
+            <div className="truncate" title={health.lastError}>
+              {health.lastErrorStatus ? `${health.lastErrorStatus}: ` : ""}
+              {health.lastError}
+            </div>
+          )}
         </div>
       )}
       {usage.windows.length > 0 ? (
@@ -340,7 +380,9 @@ export function KeyUsageBlock({ usage }: { usage: ProviderKeyUsage }) {
           ))}
         </div>
       ) : (
-        !usage.message && (
+        !usage.message &&
+        !healthNote &&
+        !health?.lastError && (
           <div className="text-xs text-muted-foreground">
             {usage.unavailable ? "Usage unavailable." : "No usage reported."}
           </div>

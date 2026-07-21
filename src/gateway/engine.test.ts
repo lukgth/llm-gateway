@@ -14,10 +14,11 @@ import { createProvider } from "../repo/providers";
 import { createModel, getModel } from "../repo/models";
 import { listRequestLogs } from "../repo/request-logs";
 import { getUnifiedUsage } from "../repo/provider-key-usage";
-import { credHash } from "../repo/provider-keys";
+import { credHash, listProviderKeys } from "../repo/provider-keys";
 import { Logger } from "../logger";
 import { ThinkingConverter } from "../formats/thinking";
 import { ForwardingEngine, type ForwardContext } from "./engine";
+import { KeyHealthStore } from "./key-health";
 import type { Model } from "../types";
 import { WireKind } from "../types";
 
@@ -1131,6 +1132,304 @@ test("anthropic:thinking-signature strips a client-echoed thinking block (real O
         (b) => b.type === "text" && b.text === "I should search for x",
       ),
       "expected the reasoning prose preserved as plain text",
+    );
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("forward() on a 401: doesn't fail the request, disables the dead key, and retries with another", async () => {
+  // key "bad" always 401s; key "good" always 200s. Whichever key round-robin
+  // picks first, the request must still succeed (the client never sees the
+  // 401) and "bad" must end up disabled in provider_keys.
+  const server = http.createServer((req, res) => {
+    const auth = req.headers["authorization"];
+    req.resume();
+    req.on("end", () => {
+      if (auth === "Bearer bad") {
+        res.writeHead(401, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "invalid api key" } }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "x",
+          usage: { prompt_tokens: 3, completion_tokens: 5 },
+        }),
+      );
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "up",
+      name: "up",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["bad", "good"],
+      catalogId: "openai",
+      authScheme: "bearer",
+      // 1 configured retry — the engine must still widen the attempt budget
+      // to the usable-key count so a dead key fails over within this request.
+      retryAttempts: 1,
+      retryIntervalMs: 1,
+    });
+    const m = createModel(db, {
+      alias: "test-model",
+      providers: [{ providerId: "up", upstreamModel: "up-1" }],
+    });
+    const model = getModel(db, m.id)!;
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const { res, state } = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctxFor(model, {
+        model: "test-model",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+    // The client sees a clean 200, never the 401.
+    assert.equal(state.statusCode || 200, 200);
+
+    const keys = listProviderKeys(db, "up");
+    const badKey = keys.find((k) => k.credential === "bad")!;
+    const goodKey = keys.find((k) => k.credential === "good")!;
+    assert.equal(badKey.enabled, false, "the 401-ing key must be disabled");
+    assert.equal(
+      badKey.metadata.disabledReason,
+      "auth failure (401)",
+      "disable reason should be recorded",
+    );
+    assert.equal(goodKey.enabled, true, "the healthy key stays enabled");
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("forward() falls over to the next provider once every key on the first is dead", async () => {
+  // Provider "dead" has a single key that's already disabled (simulating a
+  // prior request's auth failures having exhausted it). The chain's second
+  // provider "alive" must serve the request — and the client must never see
+  // an attempt against "dead" (no auth header leak, no wasted round trip).
+  let aliveHit = false;
+  const server = http.createServer((req, res) => {
+    aliveHit = true;
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "x",
+          usage: { prompt_tokens: 3, completion_tokens: 5 },
+        }),
+      );
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "dead",
+      name: "dead",
+      // A bogus address that would hang/refuse if ever actually hit —
+      // proves the engine skips it outright rather than attempting first.
+      baseUrl: "http://127.0.0.1:1",
+      apiKeys: [],
+      disabledApiKeys: ["exhausted-key"],
+      catalogId: "openai",
+      authScheme: "bearer",
+      retryAttempts: 1,
+      retryIntervalMs: 1,
+    });
+    createProvider(db, {
+      id: "alive",
+      name: "alive",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["good"],
+      catalogId: "openai",
+      authScheme: "bearer",
+      retryAttempts: 1,
+      retryIntervalMs: 1,
+    });
+    const m = createModel(db, {
+      alias: "test-model",
+      providers: [
+        { providerId: "dead", upstreamModel: "up-1" },
+        { providerId: "alive", upstreamModel: "up-1" },
+      ],
+    });
+    const model = getModel(db, m.id)!;
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const { res, state } = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctxFor(model, {
+        model: "test-model",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+    assert.equal(state.statusCode || 200, 200);
+    assert.ok(aliveHit, "the second provider in the chain must have served it");
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("forward() falls over to the next provider once every enabled key on the first is rate-limited", async () => {
+  let aliveHit = false;
+  const server = http.createServer((req, res) => {
+    aliveHit = true;
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "x",
+          usage: { prompt_tokens: 3, completion_tokens: 5 },
+        }),
+      );
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "limited",
+      name: "limited",
+      baseUrl: "http://127.0.0.1:1",
+      apiKeys: ["limited-1", "limited-2"],
+      catalogId: "openai",
+      authScheme: "bearer",
+      retryAttempts: 1,
+      retryIntervalMs: 1,
+    });
+    createProvider(db, {
+      id: "alive",
+      name: "alive",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["good"],
+      catalogId: "openai",
+      authScheme: "bearer",
+      retryAttempts: 1,
+      retryIntervalMs: 1,
+    });
+    const h = new KeyHealthStore(db);
+    h.markRateLimited("limited", credHash("limited-1"), 60_000, 429, "limited");
+    h.markRateLimited("limited", credHash("limited-2"), 60_000, 429, "limited");
+    const m = createModel(db, {
+      alias: "test-model",
+      providers: [
+        { providerId: "limited", upstreamModel: "up-1" },
+        { providerId: "alive", upstreamModel: "up-1" },
+      ],
+    });
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const { res, state } = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctxFor(getModel(db, m.id)!, {
+        model: "test-model",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+    assert.equal(state.statusCode || 200, 200);
+    assert.ok(
+      aliveHit,
+      "the second provider must serve while first is cooling down",
+    );
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("forward() reuses the same key across repeat requests for a model (sticky) instead of round-robining every time", async () => {
+  const seenKeys: string[] = [];
+  const server = http.createServer((req, res) => {
+    seenKeys.push(String(req.headers["authorization"]));
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "x",
+          usage: { prompt_tokens: 3, completion_tokens: 5 },
+        }),
+      );
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "up",
+      name: "up",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["k1", "k2", "k3"],
+      catalogId: "openai",
+      authScheme: "bearer",
+      retryAttempts: 1,
+      retryIntervalMs: 1,
+    });
+    const m = createModel(db, {
+      alias: "test-model",
+      providers: [{ providerId: "up", upstreamModel: "up-1" }],
+    });
+    const model = getModel(db, m.id)!;
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    for (let i = 0; i < 5; i++) {
+      const { res } = mockRes();
+      await engine.forward(
+        { method: "POST", headers: {} } as never,
+        res as never,
+        ctxFor(model, {
+          model: "test-model",
+          messages: [{ role: "user", content: "hi" }],
+        }),
+      );
+    }
+    // Every request after the first proves the same key (sticky), instead of
+    // round-robining k1/k2/k3 across requests.
+    assert.equal(seenKeys.length, 5);
+    assert.equal(
+      new Set(seenKeys).size,
+      1,
+      `expected one key reused for every request, got: ${seenKeys.join(", ")}`,
     );
   } finally {
     closeDatabase(db);

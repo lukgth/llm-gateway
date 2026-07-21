@@ -31,6 +31,15 @@ export interface ProviderKeyUsage {
   keyMask: string;
   /** Whether this key is currently active (false = operator-disabled). */
   enabled: boolean;
+  /** Runtime health from KeyHealthStore: dead auth failure / cooling-down 429. */
+  health?: {
+    usable: boolean;
+    dead: boolean;
+    rateLimitedUntil?: string;
+    lastErrorStatus?: number;
+    lastError?: string;
+    lastErrorAt?: string;
+  };
   windows: ProviderKeyUsageWindow[];
   /**
    * ISO timestamp when the KEY ITSELF becomes invalid (distinct from a

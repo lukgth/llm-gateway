@@ -142,6 +142,14 @@ export interface ProviderKeyUsageWindow {
 export interface ProviderKeyUsage {
   keyMask: string;
   enabled: boolean;
+  health?: {
+    usable: boolean;
+    dead: boolean;
+    rateLimitedUntil?: string;
+    lastErrorStatus?: number;
+    lastError?: string;
+    lastErrorAt?: string;
+  };
   windows: ProviderKeyUsageWindow[];
   /** When the KEY ITSELF becomes invalid — distinct from a window's
    *  resetsAt, which refills rather than expiring. */
