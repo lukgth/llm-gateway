@@ -40,7 +40,7 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, fmtNum, fmtTokens } from "@/lib/utils";
 
-const KEYS_PER_PAGE = 10;
+const KEYS_PER_PAGE = 6;
 
 // A key sitting in a 429 cooldown. Dead (auth-failed) keys never reach the
 // client — they're filtered server-side — so a live rate-limit is the only
