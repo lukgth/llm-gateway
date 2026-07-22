@@ -400,4 +400,10 @@ export const api = {
       modelCooldownsCleared: number;
       unifiedUsageCleared: number;
     }>("/api/maintenance/clear-rate-limits", json("POST")),
+  clearModelKeyPairs: () =>
+    req<{
+      stickyCleared: number;
+      affinityCleared: number;
+      classAffinityCleared: number;
+    }>("/api/maintenance/clear-model-key-pairs", json("POST")),
 };

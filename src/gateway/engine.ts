@@ -135,6 +135,14 @@ export class ForwardingEngine {
     return this.keyHealth.clearAllRateLimits();
   }
 
+  clearAllModelKeyPairs(): {
+    stickyCleared: number;
+    affinityCleared: number;
+    classAffinityCleared: number;
+  } {
+    return this.keyHealth.clearAllModelKeyPairs();
+  }
+
   // Health-aware key pick using the SAME live rotation/health state a real
   // request would get (this.keyHealth is shared with the forward() path) —
   // for the admin "Test connection" probe, so the reported key isn't a fake
@@ -579,6 +587,7 @@ export class ForwardingEngine {
               pick.keyHash,
               entry.upstreamModel,
               result.status,
+              result.rateLimitScope ?? null,
             );
           } else if (!result.committed) {
             this.keyHealth.recordFailure(
@@ -1995,6 +2004,7 @@ export class ForwardingEngine {
           pick.keyHash,
           upstreamModel,
           res.status,
+          scope.scope,
         );
       }
       return {

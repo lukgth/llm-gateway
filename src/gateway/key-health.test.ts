@@ -160,6 +160,46 @@ test("clearAllRateLimits resets live and persisted cooldowns but preserves auth 
   }
 });
 
+test("clearAllModelKeyPairs resets live and persisted routing evidence only", () => {
+  const db = openDatabase(":memory:");
+  try {
+    const p = provider(db, ["a", "b", "c"]);
+    const clk = clock();
+    const store = new KeyHealthStore(db, clk.now);
+    store.recordSuccess(p.id, hashKey("b"), "claude-fable-5");
+    store.recordSuccess(p.id, hashKey("b"), "claude-sonnet-5");
+    store.markRateLimited(p.id, hashKey("a"), 60_000, 429, "global");
+    store.markModelCooldown(p.id, hashKey("b"), "fable", 60_000, 429, "7d_oi");
+    store.markAuthFailed(p.id, hashKey("c"), 401, "bad key");
+
+    assert.deepEqual(store.clearAllModelKeyPairs(), {
+      stickyCleared: 2,
+      affinityCleared: 2,
+      classAffinityCleared: 2,
+    });
+    assert.ok(store.snapshot(p.id, hashKey("a")).rateLimitedUntil > clk.now());
+    assert.equal(store.snapshot(p.id, hashKey("c")).authFailed, true);
+    assert.equal(
+      store.usableCount(p.id, p.keys, "claude-fable-5"),
+      0,
+      "model/global cooldowns must survive pair clearing",
+    );
+
+    const reloaded = new KeyHealthStore(db, clk.now);
+    assert.deepEqual(reloaded.clearAllModelKeyPairs(), {
+      stickyCleared: 0,
+      affinityCleared: 0,
+      classAffinityCleared: 0,
+    });
+    assert.ok(
+      reloaded.snapshot(p.id, hashKey("a")).rateLimitedUntil > clk.now(),
+    );
+    assert.equal(reloaded.snapshot(p.id, hashKey("c")).authFailed, true);
+  } finally {
+    closeDatabase(db);
+  }
+});
+
 test("base affinity is shared across Sonnet, Opus, and Haiku", () => {
   const db = openDatabase(":memory:");
   try {
@@ -209,24 +249,38 @@ test("premium affinity is isolated but can overflow to base", () => {
   }
 });
 
-test("Fable 429 evicts premium class evidence without removing base evidence", () => {
+test("model-scoped Fable 429 preserves premium evidence for Sonnet overflow", () => {
   const db = openDatabase(":memory:");
   try {
     const p = provider(db, ["a", "b"]);
     const store = new KeyHealthStore(db, Date.now, 3);
-    store.recordSuccess(p.id, hashKey("a"), "claude-opus-4-8");
     store.recordSuccess(p.id, hashKey("a"), "claude-fable-5");
-    store.recordSuccess(p.id, hashKey("b"), "claude-mythos-5");
-    store.recordFailure(p.id, hashKey("a"), "claude-fable-5", 429);
+    for (let i = 0; i < 4; i++)
+      store.recordFailure(p.id, hashKey("a"), "claude-fable-5", 429, "model");
 
-    assert.equal(
-      store.select(p.id, p.keys, "claude-mythos-5", new Set())!.key,
-      "b",
-    );
     assert.equal(
       store.select(p.id, p.keys, "claude-sonnet-5", new Set())!.key,
       "a",
     );
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test("global Fable 429 still evicts premium class evidence at threshold", () => {
+  const db = openDatabase(":memory:");
+  try {
+    const p = provider(db, ["a", "b"]);
+    const store = new KeyHealthStore(db, Date.now, 3);
+    store.recordSuccess(p.id, hashKey("a"), "claude-fable-5");
+    for (let i = 0; i < 3; i++)
+      store.recordFailure(p.id, hashKey("a"), "claude-fable-5", 429, "global");
+
+    const picks = new Set([
+      store.select(p.id, p.keys, "claude-sonnet-5", new Set())!.key,
+      store.select(p.id, p.keys, "claude-sonnet-5", new Set())!.key,
+    ]);
+    assert.equal(picks.size, 2);
   } finally {
     closeDatabase(db);
   }

@@ -118,6 +118,17 @@ export function registerUsageRoutes(ctx: RouteCtx): void {
     }
   });
 
+  r.post("/maintenance/clear-model-key-pairs", requireAdmin, (_req, res) => {
+    try {
+      const result = router.clearAllModelKeyPairs();
+      logger.info("model_key_pairs_cleared", result);
+      broadcast(["providers", "usage"], "maintenance:clear-model-key-pairs");
+      res.json(result);
+    } catch (e) {
+      bad(res, e);
+    }
+  });
+
   // Delete request logs for cleaner readings. `?scope=errors` removes only
   // failed rows; `?scope=all` clears the whole log. Frees the reclaimed pages
   // back to the OS afterward so the DB file shrinks.

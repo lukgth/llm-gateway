@@ -540,6 +540,7 @@ export class KeyHealthStore {
     keyHash: string,
     model: string | null,
     status: number | null = null,
+    rateLimitScope: "global" | "model" | null = null,
   ): void {
     if (!model) return;
     const k = this.hk(providerId, keyHash);
@@ -559,11 +560,17 @@ export class KeyHealthStore {
 
     const modelClass = modelClassOf(model);
     if (!modelClass || !this.classAffinity.get(k)?.has(modelClass)) return;
+    // A model-scoped premium quota cooldown says nothing about whether this key
+    // can serve base Claude traffic. Preserve that proof for Sonnet/Opus/Haiku
+    // overflow while the exact Fable/Mythos pairing ages normally above.
+    if (
+      modelClass === "fable" &&
+      status === RATE_LIMIT_STATUS &&
+      rateLimitScope === "model"
+    )
+      return;
     const classKey = `${k}|${modelClass}`;
-    const classFails =
-      modelClass === "fable" && status === RATE_LIMIT_STATUS
-        ? this.affinityFailThreshold
-        : (this.classAffinityFails.get(classKey) ?? 0) + 1;
+    const classFails = (this.classAffinityFails.get(classKey) ?? 0) + 1;
     if (classFails >= this.affinityFailThreshold) {
       this.classAffinity.get(k)!.delete(modelClass);
       this.classAffinityFails.delete(classKey);
@@ -662,6 +669,29 @@ export class KeyHealthStore {
     const result = clear();
     for (const health of this.health.values()) health.rateLimitedUntil = 0;
     this.modelCooldowns.clear();
+    return result;
+  }
+
+  clearAllModelKeyPairs(): {
+    stickyCleared: number;
+    affinityCleared: number;
+    classAffinityCleared: number;
+  } {
+    const clear = this.db.transaction(() => ({
+      stickyCleared: this.db.prepare("DELETE FROM key_model_sticky").run()
+        .changes,
+      affinityCleared: this.db.prepare("DELETE FROM key_model_affinity").run()
+        .changes,
+      classAffinityCleared: this.db
+        .prepare("DELETE FROM key_class_affinity")
+        .run().changes,
+    }));
+    const result = clear();
+    this.sticky.clear();
+    this.affinity.clear();
+    this.affinityFails.clear();
+    this.classAffinity.clear();
+    this.classAffinityFails.clear();
     return result;
   }
 

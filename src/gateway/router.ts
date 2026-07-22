@@ -70,6 +70,14 @@ export class GatewayRouter {
     return this.engine.clearAllRateLimits();
   }
 
+  clearAllModelKeyPairs(): {
+    stickyCleared: number;
+    affinityCleared: number;
+    classAffinityCleared: number;
+  } {
+    return this.engine.clearAllModelKeyPairs();
+  }
+
   // Health-aware key pick for the admin "Test connection" probe — see
   // ForwardingEngine.pickKeyForTest. Exposes just this one capability rather
   // than the whole engine, so the admin routes get the live rotation/health

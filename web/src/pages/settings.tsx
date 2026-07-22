@@ -94,6 +94,26 @@ export default function Settings() {
     }
   };
 
+  const clearModelKeyPairs = async () => {
+    if (
+      !confirm(
+        "Clear all learned model-key pairings? Cooldowns and auth-failed keys remain unchanged; subsequent requests will re-establish preferred keys.",
+      )
+    )
+      return;
+    setBusy("model-key-pairs");
+    try {
+      const r = await api.clearModelKeyPairs();
+      toast.success(
+        `Cleared ${fmtNum(r.stickyCleared)} sticky pair${r.stickyCleared === 1 ? "" : "s"}, ${fmtNum(r.affinityCleared)} model pair${r.affinityCleared === 1 ? "" : "s"}, and ${fmtNum(r.classAffinityCleared)} model-class pair${r.classAffinityCleared === 1 ? "" : "s"}`,
+      );
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : (e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   useEffect(() => {
     api
       .getSettings()
@@ -402,6 +422,27 @@ export default function Settings() {
                   className="shrink-0"
                 >
                   {busy === "rate-limits" ? "Clearing…" : "Clear limits"}
+                </Button>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 py-4">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-foreground">
+                    Clear model-key pairings
+                  </div>
+                  <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                    Discard learned sticky and model-affinity routing so future
+                    requests re-establish the best keys. Active cooldowns and
+                    auth-failed keys remain unchanged.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={clearModelKeyPairs}
+                  disabled={busy !== null}
+                  className="shrink-0"
+                >
+                  {busy === "model-key-pairs" ? "Clearing…" : "Clear pairings"}
                 </Button>
               </div>
 
