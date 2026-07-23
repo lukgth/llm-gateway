@@ -121,6 +121,12 @@ export interface AttemptResult {
   rateLimitScope?: "global" | "model";
   /** Model class affected when rateLimitScope is "model" (currently "fable"). */
   rateLimitModelClass?: string;
+  /** A SECOND, Fable-only cooldown (ms) to layer on top of a GLOBAL rate limit
+   *  when the same Claude Code 429 also exhausted the premium 7d_oi window.
+   *  The global cooldown (rateLimitMs, from the base 5h/7d windows) frees the
+   *  key for base models on the base clock; this keeps only the Fable class
+   *  blocked to its own (longer) 7d_oi reset. Absent for non-Fable 429s. */
+  fableCooldownMs?: number;
   /** Operator-facing explanation of the chosen cooldown scope. */
   rateLimitReason?: string;
   /** The upstream returned the Claude Code long-context usage-credits 429 for
@@ -129,6 +135,12 @@ export interface AttemptResult {
    * cooling, or recording any key-health failure (see forward()'s credit
    * rotation), and only fails the provider over once every key is credit-less. */
   usageCreditsRequired?: boolean;
+  /** The upstream returned the Claude Code PREMIUM-model usage-credits 429 for
+   * this key: its plan has no Fable/Mythos access, but the key is healthy and
+   * can still serve base models. Handled exactly like usageCreditsRequired —
+   * rotate to another key with no penalty/cooldown/log — but WITHOUT clearing or
+   * setting the long-context credit-proof (that's a different credit ceiling). */
+  modelCreditsRequired?: boolean;
   /** The pre-flight count_tokens gate found the input over the model's context
    * window for this provider (Claude Code Sonnet 4.6 → 200k). Abandon this
    * provider and fail over to the next hop WITHOUT any key-health penalty — the

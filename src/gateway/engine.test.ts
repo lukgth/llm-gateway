@@ -1497,6 +1497,202 @@ test("Claude Code rotates immediately past a key without long-context usage cred
   }
 });
 
+test("Claude Code rotates past a key without premium-model (Fable) credits, no penalty", async () => {
+  // key-1 has no Fable access → premium-model credits 429. It must be skipped
+  // (not rate-limited, not failed), rotated past immediately, and stay fully
+  // usable for base models afterwards; key-2 serves the request.
+  const seenKeys: string[] = [];
+  const server = http.createServer((req, res) => {
+    const auth = String(req.headers.authorization);
+    seenKeys.push(auth);
+    req.resume();
+    req.on("end", () => {
+      if (auth === "Bearer key-1") {
+        res.writeHead(429, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            type: "error",
+            error: {
+              type: "rate_limit_error",
+              message: "Usage credits are required for this model.",
+              details: {
+                error_code: "credits_required",
+                has_chargeable_saved_payment_method: false,
+              },
+            },
+          }),
+        );
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: "ok", content: [], usage: {} }));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "cc-modelcred",
+      name: "Claude Code",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["key-1", "key-2"],
+      catalogId: "claude-code",
+      authScheme: "bearer",
+      retryAttempts: 1,
+      retryIntervalMs: 5_000,
+    });
+    const created = createModel(db, {
+      alias: "fable",
+      type: "anthropic",
+      providers: [
+        { providerId: "cc-modelcred", upstreamModel: "claude-fable-5" },
+      ],
+    });
+    const logger = quietLogger();
+    const warnings: string[] = [];
+    let upstreamErrors = 0;
+    logger.warn = (message: string) => warnings.push(message);
+    logger.upstreamError = () => {
+      upstreamErrors++;
+    };
+    const engine = new ForwardingEngine(db, logger, new ThinkingConverter(), 0);
+    const { res, state } = mockRes();
+    const started = Date.now();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctxFor(
+        getModel(db, created.id)!,
+        {
+          model: "fable",
+          max_tokens: 16,
+          messages: [{ role: "user", content: "hi" }],
+        },
+        "/v1/messages",
+      ),
+    );
+    assert.equal(state.statusCode || 200, 200);
+    assert.deepEqual(seenKeys, ["Bearer key-1", "Bearer key-2"]);
+    assert.ok(Date.now() - started < 1_000, "must not wait retryIntervalMs");
+    // Not logged as an upstream error, not a normal attempt failure.
+    assert.equal(upstreamErrors, 0);
+    assert.equal(warnings.includes("provider_attempt_failed"), false);
+    const health = new KeyHealthStore(db);
+    // Both keys stay fully usable for base models — key-1 wasn't penalized…
+    assert.equal(
+      health.usableCount("cc-modelcred", ["key-1", "key-2"], "claude-opus-4-8"),
+      2,
+    );
+    // …and its long-context credit proof was never touched (still unproven).
+    assert.equal(
+      health.isCreditProven("cc-modelcred", credHash("key-1")),
+      false,
+    );
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("Claude Code fails a fully premium-credit-less provider over to the next hop cleanly", async () => {
+  // Every key on the first provider lacks Fable credits → the provider fails
+  // over to the fallback with NO key-health penalty; the fallback serves it.
+  const modelCredBody = JSON.stringify({
+    type: "error",
+    error: {
+      type: "rate_limit_error",
+      message: "Usage credits are required for this model.",
+      details: { error_code: "credits_required" },
+    },
+  });
+  const primary = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(429, { "content-type": "application/json" });
+      res.end(modelCredBody);
+    });
+  });
+  let fallbackHit = false;
+  const fallback = http.createServer((req, res) => {
+    fallbackHit = true;
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: "ok", content: [], usage: {} }));
+    });
+  });
+  await new Promise<void>((r) => primary.listen(0, "127.0.0.1", r));
+  await new Promise<void>((r) => fallback.listen(0, "127.0.0.1", r));
+  const pPort = (primary.address() as AddressInfo).port;
+  const fPort = (fallback.address() as AddressInfo).port;
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "cc-prem",
+      name: "Claude Code",
+      baseUrl: `http://127.0.0.1:${pPort}`,
+      apiKeys: ["key-1", "key-2"],
+      catalogId: "claude-code",
+      authScheme: "bearer",
+      retryAttempts: 1,
+      retryIntervalMs: 1,
+    });
+    createProvider(db, {
+      id: "fb",
+      name: "Anthropic",
+      baseUrl: `http://127.0.0.1:${fPort}`,
+      apiKeys: ["fb-key"],
+      catalogId: "anthropic",
+      authScheme: "bearer",
+      retryAttempts: 1,
+    });
+    const created = createModel(db, {
+      alias: "fable",
+      type: "anthropic",
+      providers: [
+        { providerId: "cc-prem", upstreamModel: "claude-fable-5" },
+        { providerId: "fb", upstreamModel: "claude-fable-5" },
+      ],
+    });
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const { res, state } = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctxFor(
+        getModel(db, created.id)!,
+        {
+          model: "fable",
+          max_tokens: 16,
+          messages: [{ role: "user", content: "hi" }],
+        },
+        "/v1/messages",
+      ),
+    );
+    assert.equal(state.statusCode || 200, 200);
+    assert.equal(fallbackHit, true);
+    // The premium-less keys are NOT rate-limited/dead — still usable for base.
+    assert.equal(
+      new KeyHealthStore(db).usableCount(
+        "cc-prem",
+        ["key-1", "key-2"],
+        "claude-opus-4-8",
+      ),
+      2,
+    );
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => primary.close(() => r()));
+    await new Promise<void>((r) => fallback.close(() => r()));
+  }
+});
+
 test("Claude Code bounds all-keys-without-credits retries without logging or cooldown", async () => {
   const seenKeys: string[] = [];
   const server = http.createServer((req, res) => {
@@ -2088,6 +2284,103 @@ test("Claude Code 7d_oi exhaustion cools a key for Fable without blocking Opus",
     );
     assert.equal(opusRes.state.statusCode || 200, 200);
     assert.equal(opusHits, 1);
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("base + Fable both exhausted: base cools on the 5h clock, Fable on 7d_oi", async () => {
+  // The reported bug: a 429 that maxes BOTH the base 5h window (resets ~15m) and
+  // the Fable 7d_oi window (resets ~3d) must NOT lock the key out of base models
+  // for 3d. Base cools to the 5h reset; a SEPARATE Fable cooldown holds 7d_oi.
+  const fiveHourReset = Math.floor((Date.now() + 900_000) / 1000); // ~15m
+  const fableReset = Math.floor((Date.now() + 3 * 86_400_000) / 1000); // ~3d
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(429, {
+        "content-type": "application/json",
+        // NOTE: no `retry-after` — the old code fell back to the representative
+        // unified reset (7d_oi, 3d) here, which is exactly the bug.
+        "anthropic-ratelimit-unified-status": "rate_limited",
+        "anthropic-ratelimit-unified-reset": String(fableReset),
+        "anthropic-ratelimit-unified-5h-status": "rejected",
+        "anthropic-ratelimit-unified-5h-utilization": "1",
+        "anthropic-ratelimit-unified-5h-reset": String(fiveHourReset),
+        "anthropic-ratelimit-unified-7d-status": "allowed_warning",
+        "anthropic-ratelimit-unified-7d-utilization": "0.77",
+        "anthropic-ratelimit-unified-7d_oi-status": "rejected",
+        "anthropic-ratelimit-unified-7d_oi-utilization": "1",
+        "anthropic-ratelimit-unified-7d_oi-reset": String(fableReset),
+      });
+      res.end(JSON.stringify({ error: { message: "rate limited" } }));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "cc-dual",
+      name: "cc-dual",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["key-1"],
+      catalogId: "claude-code",
+      authScheme: "bearer",
+      retryAttempts: 1,
+      retryIntervalMs: 1,
+    });
+    const opus = createModel(db, {
+      alias: "opus-client",
+      type: "anthropic",
+      providers: [{ providerId: "cc-dual", upstreamModel: "claude-opus-4-8" }],
+    });
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    // Drive an OPUS (base) request that trips the dual-exhaustion 429.
+    const opusRes = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      opusRes.res as never,
+      ctxFor(getModel(db, opus.id)!, {
+        model: "opus-client",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    const health = new KeyHealthStore(db);
+    // Base (Opus) is cooling only to the 5h reset — NOT the 3d 7d_oi reset.
+    const opusReadyAt = health.nextReadyAt(
+      "cc-dual",
+      ["key-1"],
+      "claude-opus-4-8",
+    )!;
+    assert.ok(
+      opusReadyAt !== null &&
+        Math.abs(opusReadyAt - fiveHourReset * 1000) < 5_000,
+      `Opus readyAt ${opusReadyAt} not ~5h reset ${fiveHourReset * 1000}`,
+    );
+    // Fable is cooling to the long 7d_oi reset (a separate, layered cooldown).
+    const fableReadyAt = health.nextReadyAt(
+      "cc-dual",
+      ["key-1"],
+      "claude-fable-5",
+    )!;
+    assert.ok(
+      fableReadyAt !== null &&
+        Math.abs(fableReadyAt - fableReset * 1000) < 5_000,
+      `Fable readyAt ${fableReadyAt} not ~3d reset ${fableReset * 1000}`,
+    );
+    // Concretely: Fable stays blocked far longer than base.
+    assert.ok(
+      fableReadyAt - opusReadyAt > 86_400_000,
+      "Fable must stay cooled at least a day longer than base",
+    );
   } finally {
     closeDatabase(db);
     await new Promise<void>((r) => server.close(() => r()));

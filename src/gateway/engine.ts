@@ -80,8 +80,15 @@ import { addUsage, subtractUsage, addBreakdown } from "../repo/usage";
 import { insertRequestLog, throttleLogError } from "../repo/request-logs";
 import { upsertUnifiedUsage } from "../repo/provider-key-usage";
 import { filterUnifiedRateLimitHeaders } from "../services/anthropic/unified-usage";
-import { classifyAnthropicRateLimit } from "../services/anthropic/rate-limit-scope";
-import { isClaudeCodeUsageCreditsError } from "../services/anthropic/usage-credits";
+import {
+  classifyAnthropicRateLimit,
+  type RateLimitScope,
+} from "../services/anthropic/rate-limit-scope";
+import type { RateLimitHint } from "./key-health";
+import {
+  isClaudeCodeUsageCreditsError,
+  isClaudeCodeModelCreditsError,
+} from "../services/anthropic/usage-credits";
 import {
   contextWindowLimit,
   countInputTokens,
@@ -559,6 +566,11 @@ export class ForwardingEngine {
       // when it followed another key's credits rejection.
       const tried = new Set<string>();
       const creditLess = new Set<string>();
+      // Keys that returned the PREMIUM-model credits 429 (no Fable/Mythos
+      // access). Tracked separately from long-context `creditLess` so the two
+      // ceilings don't cross-contaminate, but handled the same way: rotate free
+      // of the attempt budget, fail the provider over once EVERY key lacks it.
+      const modelCreditLess = new Set<string>();
       let sawCreditError = false;
       let normalAttempts = 0; // genuine failures — bounded by `attempts`
       let creditRotations = 0; // free credit-driven rotations — bounded by cap
@@ -632,6 +644,36 @@ export class ForwardingEngine {
           continue; // rotate to another key, free of the normal attempt budget
         }
 
+        // Premium-model usage-credits 429: this key's plan has no Fable/Mythos
+        // access. Identical handling to the long-context skip above — silent
+        // rotate, no health penalty/cooldown/log, provider fails over once every
+        // key lacks premium — EXCEPT it never touches the long-context credit
+        // proof (a premium-less key can still hold long-context credits). The key
+        // stays fully healthy and usable for base models.
+        if (pick && result.modelCreditsRequired) {
+          modelCreditLess.add(pick.keyHash);
+          lastReason = result.reason || lastReason;
+          creditRotations++;
+          const allModelCreditLess = providerKeys.every((k) =>
+            modelCreditLess.has(hashKey(k)),
+          );
+          if (allModelCreditLess || creditRotations >= MAX_CREDIT_ROTATIONS) {
+            lastReason = `all ${providerKeys.length} enabled key(s) lack usage credits for ${entry.upstreamModel}`;
+            this.logger.warn("provider_model_credit_exhausted", {
+              provider: entry.provider.id,
+              model: entry.upstreamModel,
+              modelCreditLessKeys: modelCreditLess.size,
+              rotations: creditRotations,
+              failover:
+                entry === chain[chain.length - 1]
+                  ? "exhausted"
+                  : "next-provider",
+            });
+            break; // move to the next provider in the chain
+          }
+          continue; // rotate to another key, free of the normal attempt budget
+        }
+
         // Feed the outcome back into key health (skip client-disconnect 499).
         if (pick && result.status !== 499) {
           if (result.committed && result.status && result.status < 400) {
@@ -674,13 +716,35 @@ export class ForwardingEngine {
                 result.status,
                 result.reason ?? "upstream rate limited",
               );
+              // A GLOBAL rate limit that also maxed the premium 7d_oi window
+              // layers a SEPARATE, longer Fable cooldown on top: the base rate
+              // limit above frees the key for Opus/Sonnet/Haiku on the base
+              // clock, while this keeps only the Fable class blocked to its own
+              // reset (so base traffic isn't starved for days — the bug this
+              // whole split fixes).
+              if (result.fableCooldownMs !== undefined) {
+                this.keyHealth.markModelCooldown(
+                  entry.provider.id,
+                  pick.keyHash,
+                  "fable",
+                  result.fableCooldownMs,
+                  result.status,
+                  "Fable 7d_oi exhausted (base recovers sooner)",
+                );
+              }
             }
             this.keyHealth.recordFailure(
               entry.provider.id,
               pick.keyHash,
               entry.upstreamModel,
               result.status,
-              result.rateLimitScope ?? null,
+              // Preserve the key's premium (Fable) class evidence whenever a
+              // Fable window drove this 429 — a quota exhaustion isn't proof the
+              // key can't serve Fable, so don't let it demote the class.
+              result.rateLimitScope === "model" ||
+                result.fableCooldownMs !== undefined
+                ? "model"
+                : "global",
             );
           } else if (!result.committed) {
             this.keyHealth.recordFailure(
@@ -1100,6 +1164,58 @@ export class ForwardingEngine {
     });
   }
 
+  // Turn a classified Claude Code 429 (+ generic header hint) into the concrete
+  // cooldown an attempt reports back. The whole point of the scope split (see
+  // rate-limit-scope.ts) lands here: a GLOBAL rate limit is cooled on the BASE
+  // clock — scope.baseResetAt when the base window carried a reset, else the
+  // standard Retry-After hint, else a short 60s default — and NEVER inherits the
+  // Fable 7d_oi reset (which lives only in the representative unified-reset
+  // header that parseRateLimitHint would otherwise pick up, wrongly locking base
+  // out for days). When that same 429 also maxed 7d_oi, `fableCooldownMs` carries
+  // the separate, longer Fable-only cooldown to layer on top.
+  private resolveRateLimit(
+    scope: RateLimitScope,
+    hint: RateLimitHint | null,
+    now: number,
+  ): {
+    rateLimitMs: number | undefined;
+    resetAt: number | undefined;
+    source: string | undefined;
+    fableCooldownMs: number | undefined;
+  } {
+    if (scope.scope === "model") {
+      // Only the Fable class is limited; cool it to the 7d_oi reset.
+      return {
+        rateLimitMs: Math.max(0, scope.resetAt - now),
+        resetAt: scope.resetAt,
+        source: "anthropic-ratelimit-unified-7d_oi-reset",
+        fableCooldownMs: undefined,
+      };
+    }
+    // GLOBAL: base cooldown from the base window reset, else the header hint,
+    // else a short default (a missing base reset must not fall through to the
+    // representative unified reset, which is the 3d Fable window).
+    const baseResetAt = scope.baseResetAt ?? hint?.resetAt;
+    const rateLimitMs = baseResetAt
+      ? Math.max(0, baseResetAt - now)
+      : (hint?.ms ?? undefined);
+    const source =
+      scope.baseResetAt !== undefined
+        ? "anthropic-ratelimit-unified-base-reset"
+        : hint?.source;
+    return {
+      rateLimitMs,
+      resetAt: baseResetAt,
+      source,
+      // Layer a separate Fable cooldown when 7d_oi is also maxed, so the key
+      // frees for base models on the base clock but stays blocked for Fable.
+      fableCooldownMs:
+        scope.fableResetAt !== undefined
+          ? Math.max(0, scope.fableResetAt - now)
+          : undefined,
+    };
+  }
+
   private async handleUpstreamResponse(
     upRes: IncomingMessage,
     res: Response,
@@ -1152,7 +1268,26 @@ export class ForwardingEngine {
           usageCreditsRequired: true,
         };
 
+      // Premium-model (Fable/Mythos) usage-credits 429: a plain key with no
+      // premium access. Not a fault, not a rate limit — skip + rotate with no
+      // penalty (the key still serves base models), same as long-context above.
+      if (
+        isClaudeCodeModelCreditsError({
+          status,
+          catalogId: provider.catalogId,
+          upstreamModel,
+          body: errBody,
+        })
+      )
+        return {
+          committed: false,
+          status,
+          reason: "Claude Code key lacks usage credits for this model",
+          modelCreditsRequired: true,
+        };
+
       captureClaudeUsage();
+      const now = Date.now();
       const rateLimitHint = status === 429 ? parseRateLimitHint(headers) : null;
       const scope = classifyAnthropicRateLimit({
         status,
@@ -1160,11 +1295,7 @@ export class ForwardingEngine {
         upstreamModel,
         headers,
       });
-      const scopedResetAt =
-        scope.scope === "model" ? scope.resetAt : rateLimitHint?.resetAt;
-      const rateLimitMs = scopedResetAt
-        ? Math.max(0, scopedResetAt - Date.now())
-        : rateLimitHint?.ms;
+      const cd = this.resolveRateLimit(scope, rateLimitHint, now);
       logUpstreamNon2xx(this.logger, {
         status,
         provider: provider.id,
@@ -1179,11 +1310,16 @@ export class ForwardingEngine {
         details: {
           rateLimitScope: scope.scope,
           rateLimitReason: scope.reason,
-          ...(rateLimitMs !== undefined ? { rateLimitMs } : {}),
-          ...(scopedResetAt
-            ? { rateLimitResetAt: new Date(scopedResetAt).toISOString() }
+          ...(cd.rateLimitMs !== undefined
+            ? { rateLimitMs: cd.rateLimitMs }
             : {}),
-          ...(rateLimitHint ? { rateLimitSource: rateLimitHint.source } : {}),
+          ...(cd.resetAt
+            ? { rateLimitResetAt: new Date(cd.resetAt).toISOString() }
+            : {}),
+          ...(cd.fableCooldownMs !== undefined
+            ? { fableCooldownMs: cd.fableCooldownMs }
+            : {}),
+          ...(cd.source ? { rateLimitSource: cd.source } : {}),
         },
       });
       return {
@@ -1195,14 +1331,16 @@ export class ForwardingEngine {
         ...(scope.scope === "model"
           ? { rateLimitModelClass: scope.modelClass }
           : {}),
-        ...(rateLimitMs !== undefined
+        // A global rate limit that ALSO maxed Fable carries a separate Fable
+        // cooldown (layered on top of the base rate limit in forward()).
+        ...(cd.fableCooldownMs !== undefined
+          ? { fableCooldownMs: cd.fableCooldownMs }
+          : {}),
+        ...(cd.rateLimitMs !== undefined
           ? {
-              rateLimitMs,
-              rateLimitResetAt: scopedResetAt,
-              rateLimitSource:
-                scope.scope === "model"
-                  ? "anthropic-ratelimit-unified-7d_oi-reset"
-                  : rateLimitHint?.source,
+              rateLimitMs: cd.rateLimitMs,
+              rateLimitResetAt: cd.resetAt,
+              rateLimitSource: cd.source,
             }
           : {}),
       };
@@ -1969,7 +2107,12 @@ export class ForwardingEngine {
           });
           break;
         }
-        if (r.retryable && attempt < attempts && !r.usageCreditsRequired)
+        if (
+          r.retryable &&
+          attempt < attempts &&
+          !r.usageCreditsRequired &&
+          !r.modelCreditsRequired
+        )
           await sleep(entry.provider.retryIntervalMs);
         else if (!r.retryable) break; // move to next provider
       }
@@ -1993,6 +2136,7 @@ export class ForwardingEngine {
         reason: string;
         retryable: boolean;
         usageCreditsRequired?: boolean;
+        modelCreditsRequired?: boolean;
       }
   > {
     // Health-aware key pick for the (non-streaming) web-tool turn. Each turn is
@@ -2131,7 +2275,26 @@ export class ForwardingEngine {
           usageCreditsRequired: true,
         };
 
+      // Premium-model usage-credits 429 (see the buffered path): skip + rotate,
+      // no penalty — the key just lacks Fable/Mythos access.
+      if (
+        isClaudeCodeModelCreditsError({
+          status: res.status,
+          catalogId: provider.catalogId,
+          upstreamModel,
+          body: errBody,
+        })
+      )
+        return {
+          ok: false,
+          status: res.status,
+          reason: "Claude Code key lacks usage credits for this model",
+          retryable: true,
+          modelCreditsRequired: true,
+        };
+
       captureClaudeUsage();
+      const now = Date.now();
       const rateLimitHint =
         res.status === 429 ? parseRateLimitHint(res.headers) : null;
       const scope = classifyAnthropicRateLimit({
@@ -2140,11 +2303,7 @@ export class ForwardingEngine {
         upstreamModel,
         headers: res.headers,
       });
-      const scopedResetAt =
-        scope.scope === "model" ? scope.resetAt : rateLimitHint?.resetAt;
-      const rateLimitMs = scopedResetAt
-        ? Math.max(0, scopedResetAt - Date.now())
-        : rateLimitHint?.ms;
+      const cd = this.resolveRateLimit(scope, rateLimitHint, now);
       logUpstreamNon2xx(this.logger, {
         status: res.status,
         provider: provider.id,
@@ -2161,11 +2320,16 @@ export class ForwardingEngine {
         details: {
           rateLimitScope: scope.scope,
           rateLimitReason: scope.reason,
-          ...(rateLimitMs !== undefined ? { rateLimitMs } : {}),
-          ...(scopedResetAt
-            ? { rateLimitResetAt: new Date(scopedResetAt).toISOString() }
+          ...(cd.rateLimitMs !== undefined
+            ? { rateLimitMs: cd.rateLimitMs }
             : {}),
-          ...(rateLimitHint ? { rateLimitSource: rateLimitHint.source } : {}),
+          ...(cd.resetAt
+            ? { rateLimitResetAt: new Date(cd.resetAt).toISOString() }
+            : {}),
+          ...(cd.fableCooldownMs !== undefined
+            ? { fableCooldownMs: cd.fableCooldownMs }
+            : {}),
+          ...(cd.source ? { rateLimitSource: cd.source } : {}),
         },
       });
       if (pick && res.status === 429) {
@@ -2174,24 +2338,40 @@ export class ForwardingEngine {
             provider.id,
             pick.keyHash,
             scope.modelClass,
-            rateLimitMs ?? 60_000,
+            cd.rateLimitMs ?? 60_000,
             res.status,
             `status ${res.status}: ${errBody.slice(0, 200)}`,
           );
-        else
+        else {
           this.keyHealth.markRateLimited(
             provider.id,
             pick.keyHash,
-            rateLimitMs ?? 60_000,
+            cd.rateLimitMs ?? 60_000,
             res.status,
             `status ${res.status}: ${errBody.slice(0, 200)}`,
           );
+          // See forward()'s 429 branch: layer a separate Fable-only cooldown
+          // when a global rate limit also maxed 7d_oi, so base recovers first.
+          if (cd.fableCooldownMs !== undefined)
+            this.keyHealth.markModelCooldown(
+              provider.id,
+              pick.keyHash,
+              "fable",
+              cd.fableCooldownMs,
+              res.status,
+              "Fable 7d_oi exhausted (base recovers sooner)",
+            );
+        }
         this.keyHealth.recordFailure(
           provider.id,
           pick.keyHash,
           upstreamModel,
           res.status,
-          scope.scope,
+          // Preserve premium (Fable) class evidence whenever a Fable window
+          // drove this 429 (model-scoped, or global that also maxed 7d_oi).
+          scope.scope === "model" || cd.fableCooldownMs !== undefined
+            ? "model"
+            : "global",
         );
       }
       return {

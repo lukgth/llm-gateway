@@ -442,14 +442,14 @@ export class KeyHealthStore {
 
         const modelClass = modelClassOf(model);
         if (modelClass) {
-          const classProven = fresh.filter((i) =>
-            this.classAffinity
-              .get(this.hk(providerId, hashes[i]))
-              ?.has(modelClass),
-          );
-          if (classProven.length) return pick(classProven);
-          // A premium-proven key is valid overflow for base traffic, but a
-          // base-proven key is not evidence that the account has 7d_oi access.
+          // Starting a NEW base pair (no exact-model affinity above): prefer a
+          // premium (Fable-proven) key first. A Fable-proven account is a
+          // known-good, guaranteed-working subscription, so a fresh Opus/Sonnet/
+          // Haiku pairing lands on one of those before a base-only-proven key —
+          // even when the key's Fable 7d_oi window is exhausted, since that only
+          // cools the Fable class (isFresh already cleared it for base). Exact-
+          // model affinity still won above, so this never disrupts an
+          // established (key, base-model) pair — only seeds new ones.
           if (modelClass === "base") {
             const premiumProven = fresh.filter((i) =>
               this.classAffinity
@@ -458,6 +458,12 @@ export class KeyHealthStore {
             );
             if (premiumProven.length) return pick(premiumProven);
           }
+          const classProven = fresh.filter((i) =>
+            this.classAffinity
+              .get(this.hk(providerId, hashes[i]))
+              ?.has(modelClass),
+          );
+          if (classProven.length) return pick(classProven);
         }
       }
       // No exact/class affinity match (or no model): prefer keys PROVEN to hold

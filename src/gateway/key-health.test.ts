@@ -239,10 +239,52 @@ test("premium affinity is isolated but can overflow to base", () => {
       "a",
     );
 
-    // Premium success on a is valid overflow for a base model when no fresh
-    // base-proven key is available, but fresh base proof still ranks first.
+    // Premium success on a makes it valid for base traffic too; with b (base-
+    // proven) rate-limited, a is the only fresh key and serves the base model.
     store.recordSuccess(p.id, hashKey("a"), "claude-fable-5");
     store.markRateLimited(p.id, hashKey("b"), 60_000);
+    assert.equal(
+      store.select(p.id, p.keys, "claude-opus-4-8", new Set())!.key,
+      "a",
+    );
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test("a new base pair prefers a premium (Fable-proven) key over a base-only key", () => {
+  const db = openDatabase(":memory:");
+  try {
+    const p = provider(db, ["a", "b"]);
+    const store = new KeyHealthStore(db);
+    // a is premium (Fable-proven), b is base-only. Both fresh, neither has exact
+    // affinity for Opus. Starting a NEW base pair prefers the guaranteed-working
+    // premium key a.
+    store.recordSuccess(p.id, hashKey("a"), "claude-fable-5");
+    store.recordSuccess(p.id, hashKey("b"), "claude-sonnet-5");
+    // First Opus pick seeds the pair on the premium key…
+    assert.equal(
+      store.select(p.id, p.keys, "claude-opus-4-8", new Set())!.key,
+      "a",
+    );
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test("premium is preferred for a new base pair even when its Fable 7d_oi is maxed", () => {
+  const db = openDatabase(":memory:");
+  try {
+    const p = provider(db, ["a", "b"]);
+    const clk = clock();
+    const store = new KeyHealthStore(db, clk.now);
+    store.recordSuccess(p.id, hashKey("a"), "claude-fable-5");
+    store.recordSuccess(p.id, hashKey("b"), "claude-sonnet-5");
+    // a's Fable class is cooling down (7d_oi maxed) — but that must NOT block it
+    // for base traffic: Opus still prefers the premium key, since the model
+    // cooldown only affects the Fable class.
+    store.markModelCooldown(p.id, hashKey("a"), "fable", 3 * 86_400_000);
+    assert.equal(store.usableCount(p.id, p.keys, "claude-fable-5"), 1); // a is out for Fable
     assert.equal(
       store.select(p.id, p.keys, "claude-opus-4-8", new Set())!.key,
       "a",
