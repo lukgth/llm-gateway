@@ -1,34 +1,11 @@
-import {
-  OpenAICompatibleAdapter,
-  type BuildCtx,
-  type BuiltRequest,
-} from "../base";
+import { OpenAICompatibleAdapter } from "../base";
 import { WireKind } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
-import { inspect } from "node:util";
 
 // Generic OpenAI-compatible endpoint. The escape hatch for any provider that
 // speaks the OpenAI chat wire format but isn't in the catalog (vLLM, Ollama,
 // LM Studio, Together, Groq, Fireworks, self-hosted, …). Base URL is required.
-class OpenAICompatibleGenericAdapter extends OpenAICompatibleAdapter {
-  chatCompletions(ctx: BuildCtx): BuiltRequest {
-    const built = super.chatCompletions(ctx);
-    console.log(
-      "[openai-compatible] chatCompletions body:",
-      inspect(built.body, { depth: null, colors: true }),
-    );
-    return built;
-  }
-
-  responses(ctx: BuildCtx): BuiltRequest {
-    const built = super.responses(ctx);
-    console.log(
-      "[openai-compatible] responses body:",
-      inspect(built.body, { depth: null, colors: true }),
-    );
-    return built;
-  }
-}
+class OpenAICompatibleGenericAdapter extends OpenAICompatibleAdapter {}
 
 export const openaiCompatible = new OpenAICompatibleGenericAdapter({
   id: "openai-compatible",
