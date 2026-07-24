@@ -14,7 +14,7 @@ export const xai = new XaiAdapter({
   docsUrl: "https://docs.x.ai/",
   defaults: {
     baseUrl: "https://api.x.ai",
-    endpoints: [WireKind.Chat],
+    endpoints: [WireKind.Chat, WireKind.Responses],
     authScheme: "bearer",
     nativeConversion: false,
   },
