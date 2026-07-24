@@ -383,12 +383,20 @@ const tokenChartConfig = {
 // `{ label, tokens }`; `label` is the X-axis tick + tooltip title.
 //
 // Height: `minHeight` is passed as both `minHeight` and `height` (inline
-// style) instead of flex-1. `aspect-auto` cancels ChartContainer's default
+// style), NOT flex-1. `aspect-auto` cancels ChartContainer's default
 // `aspect-video` (16:9) which would inflate height as the card widens. The
 // explicit height is required because Recharts' ResponsiveContainer needs a
 // definite parent height on first render — without it, the inner Responsive
 // collapses to 0 and the chart renders blank (it doesn't measure up from a
 // flex-1 ancestor that itself only got its size from min-content).
+//
+// `grow` (flex-grow only, not flex-1 — that also zeroes flex-basis, which
+// would collapse this in an auto-height parent with nothing to grow into)
+// then lets that same height act as a *starting* point: it fills a
+// stretched grid row (dashboard's Token Usage card, matched against its
+// taller Top Models sibling) while simply staying at `minHeight` in a
+// self-start parent with no extra room to give (usage.tsx's 14-Day
+// History) — one component, both layouts, no separate prop needed.
 export function TokenChart({
   data,
   minHeight = 160,
@@ -399,13 +407,6 @@ export function TokenChart({
   return (
     <ChartContainer
       config={tokenChartConfig}
-      // grow (flex-grow only, NOT flex-1 — that also zeroes flex-basis,
-      // which would collapse this in an auto-height parent with nothing to
-      // grow into). Leaving flex-basis as `auto` means it starts from
-      // `style.height` below, then grows to fill a stretched parent
-      // (dashboard's grid row) or simply stays at that height in a
-      // self-start parent (usage.tsx's 14-Day History) — one component,
-      // both layouts.
       className="aspect-auto w-full grow"
       style={{ minHeight, height: minHeight }}
     >
