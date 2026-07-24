@@ -23,10 +23,10 @@ export function isModelPost45(model: unknown): boolean {
 }
 
 // --- sampling parameter support -------------------------------------------
-// Fable, Mythos, Opus 4.7+, and Sonnet 5+ reject temperature/top_p/top_k.
+// Fable, Mythos, Opus 4.7+/5+, and Sonnet 5+ reject temperature/top_p/top_k.
 // Opus 4.6, Sonnet 4.6, Haiku, and all older models accept them.
 const SAMPLING_STRIPPED_RE =
-  /claude-(?:fable|mythos)|claude-opus-4-([7-9]|\d{2,})|claude-sonnet-([5-9]|\d{2,})(?:-|$)/i;
+  /claude-(?:fable|mythos)|claude-opus-4-([7-9]|\d{2,})|claude-opus-([5-9]|\d{2,})(?:-|$)|claude-sonnet-([5-9]|\d{2,})(?:-|$)/i;
 
 export function isModelSamplingStripped(model: string): boolean {
   return SAMPLING_STRIPPED_RE.test(model);
@@ -54,7 +54,8 @@ export const MYTHOS_PREVIEW_RE = /claude-mythos.*preview/i;
  * "fable" for backwards compatibility, but use this predicate for routing. */
 export const FABLE_MYTHOS_RE = /claude-(?:fable|mythos)/i;
 export const BASE_MODEL_RE = /claude-(?:sonnet|opus|haiku)(?:-|$)/i;
-export const OPUS_47_PLUS_RE = /claude-opus-4-([7-9]|\d{2,})/i;
+export const OPUS_47_PLUS_RE =
+  /claude-opus-4-([7-9]|\d{2,})|claude-opus-([5-9]|\d{2,})(?:-|$)/i;
 export const OPUS_46_RE = /claude-opus-4-6/i;
 export const SONNET_5_PLUS_RE = /claude-sonnet-([5-9]|\d{2,})(?:-|$)/i;
 export const SONNET_46_RE = /claude-sonnet-4-6/i;

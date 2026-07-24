@@ -7,7 +7,7 @@
 //   ─────────────────────  ────────  ──────────────  ────────  ───────────────
 //   Fable 5, Mythos 5     always on  → adaptive      NO       omitted
 //   Mythos Preview         default    accepted        NO       omitted
-//   Opus 4.8 / 4.7         opt-in     → adaptive      OK       omitted
+//   Opus 5 / 4.8 / 4.7    opt-in     → adaptive      OK       omitted
 //   Sonnet 5               default    → adaptive      OK       omitted
 //   Opus 4.6 / Sonnet 4.6  opt-in     accepted(dep)   OK       summarized
 //   Haiku                   NO        required         OK       summarized
@@ -65,7 +65,7 @@ export function normalizeThinkingMode(
     return body;
   }
 
-  // Opus 4.7, 4.8+ — only adaptive works; enabled is rejected.
+  // Opus 4.7+ / 5+ — only adaptive works; enabled is rejected.
   // Display defaults to "omitted".
   if (OPUS_47_PLUS.test(model)) {
     enabledToAdaptive(body);
