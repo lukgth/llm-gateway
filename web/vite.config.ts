@@ -3,10 +3,42 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import fs from "node:fs";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig({
+// webBasePath from config.json so the dev server mirrors the gateway's
+// runtime prefix. Build keeps "./" so assets are relative and the gateway
+// can rewrite <base href> at serve time under any prefix.
+function gatewayConfig(): { port: number; webBasePath: string } {
+  let port = 8787;
+  let webBasePath = "/";
+  try {
+    let raw = fs.readFileSync(path.join(dirname, "..", "config.json"), "utf8");
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1); // BOM, same as src/config.ts
+    const cfg = JSON.parse(raw) as { port?: unknown; webBasePath?: unknown };
+    if (cfg && typeof cfg === "object") {
+      if (typeof cfg.port === "number" && Number.isFinite(cfg.port)) port = cfg.port;
+      const b = cfg.webBasePath;
+      if (typeof b === "string" && b.trim()) {
+        let v = b.trim();
+        if (v !== "/") {
+          if (!v.startsWith("/")) v = "/" + v;
+          if (!v.endsWith("/")) v += "/";
+        }
+        webBasePath = v;
+      }
+    }
+  } catch {
+    /* missing/unparseable config.json -> defaults */
+  }
+  return { port, webBasePath };
+}
+const gateway = gatewayConfig();
+const backendPort = gateway.port;
+
+export default defineConfig(({ command }) => ({
+  base: command === "build" ? "./" : gateway.webBasePath,
   plugins: [react(), tailwindcss()],
   css: {
     postcss: {},
@@ -17,10 +49,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://127.0.0.1:8787",
-      "/v1": "http://127.0.0.1:8787",
-      "/health": "http://127.0.0.1:8787",
-      "/ws": { target: "ws://127.0.0.1:8787", ws: true },
+      "/api": `http://127.0.0.1:${backendPort}`,
+      "/v1": `http://127.0.0.1:${backendPort}`,
+      "/health": `http://127.0.0.1:${backendPort}`,
+      "/ws": { target: `ws://127.0.0.1:${backendPort}`, ws: true },
     },
   },
   build: {
@@ -55,4 +87,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

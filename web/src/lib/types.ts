@@ -593,6 +593,7 @@ export interface Settings {
     dataDir: string;
     dbPath: string;
     webDistDir: string;
+    webBasePath: string;
     sessionTtlHours: number;
     corsOrigin: string | null;
     configPath: string | null;

@@ -191,3 +191,9 @@ export function relTime(iso: string | null | undefined): string {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 }
+
+// Base path the UI is served under. The gateway injects <base href> into
+// index.html from config.json webBasePath; in dev (no tag) this is "/".
+export function webBase(): string {
+  return new URL(".", document.baseURI).pathname;
+}

@@ -2,6 +2,8 @@
 // localStorage and attached as a Bearer header on every call. A 401 clears the
 // token and bounces to /login.
 
+import { webBase } from "./utils";
+
 import type {
   ApiKey,
   BatchModelLinkOps,
@@ -73,7 +75,8 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
 
   if (res.status === 401) {
     clearToken();
-    if (location.pathname !== "/login") location.href = "/login";
+    const login = webBase() + "login";
+    if (location.pathname !== login) location.href = login;
     throw new ApiError("Unauthorized", 401);
   }
   if (!res.ok) {
