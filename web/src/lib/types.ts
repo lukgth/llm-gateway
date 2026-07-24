@@ -460,6 +460,18 @@ export interface Model {
   } | null;
 }
 
+// Stock reference pricing for well-known models — GET /api/model-pricing/defaults(/:id).
+// Never authoritative; a picker in the model editor copies a match into the
+// model's own (operator-editable) `pricing` fields above.
+export interface DefaultModelPricing {
+  id: string;
+  label: string;
+  brand: string;
+  promptPer1m: number;
+  completionPer1m: number;
+  cachedPer1m?: number;
+}
+
 export interface User {
   id: string;
   name: string;

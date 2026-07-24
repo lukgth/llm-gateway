@@ -83,6 +83,7 @@ export default function ModelEditor() {
   const [promptPer1m, setPromptPer1m] = useState("");
   const [completionPer1m, setCompletionPer1m] = useState("");
   const [cachedPer1m, setCachedPer1m] = useState("");
+  const [loadingDefaultPricing, setLoadingDefaultPricing] = useState(false);
   const [chain, setChain] = useState<ChainRow[]>([]);
   const [saving, setSaving] = useState(false);
   // Extra upstream ids discovered via the per-row "fetch" button, keyed by row.
@@ -243,6 +244,35 @@ export default function ModelEditor() {
     [],
   );
 
+  // "Use default" — look up a stock reference rate for the current alias and
+  // fill the three pricing fields. Never overwrites silently: this only runs
+  // on an explicit click, and the operator still has to hit Save for it to
+  // take effect (matches the doc'd "picker copies into the editable form"
+  // contract, not an auto-apply).
+  const useDefaultPricing = useCallback(async () => {
+    const target = alias.trim();
+    if (!target) {
+      toast.error("enter an alias first");
+      return;
+    }
+    setLoadingDefaultPricing(true);
+    try {
+      const def = await api.defaultPricingFor(target);
+      setPromptPer1m(String(def.promptPer1m));
+      setCompletionPer1m(String(def.completionPer1m));
+      setCachedPer1m(def.cachedPer1m != null ? String(def.cachedPer1m) : "");
+      toast.success(`Filled from ${def.label}'s published rates`);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        toast.error(`No stock pricing found for "${target}"`);
+      } else {
+        toast.error(e instanceof ApiError ? e.message : (e as Error).message);
+      }
+    } finally {
+      setLoadingDefaultPricing(false);
+    }
+  }, [alias]);
+
   const addChainRow = () => {
     const first = enabledProviders[0];
     if (!first) {
@@ -391,8 +421,11 @@ export default function ModelEditor() {
                 onChange={(e) => setDisplayName(e.target.value)}
               />
             </Field>
-            <Field label="Active">
-              <label className="flex h-9 cursor-pointer items-center gap-2">
+            <Field
+              label="Active"
+              hint="Disabled models are skipped by every request."
+            >
+              <label className="flex h-8 cursor-pointer items-center gap-2">
                 <Switch checked={enabled} onCheckedChange={setEnabled} />
                 <span
                   className={cn(
@@ -403,9 +436,6 @@ export default function ModelEditor() {
                   {enabled ? "Enabled" : "Disabled"}
                 </span>
               </label>
-              <p className="text-[0.65rem] text-muted-foreground">
-                Disabled models are skipped by every request.
-              </p>
             </Field>
             <Field label="Type">
               <Select value={modelType} onValueChange={setModelType}>
@@ -434,10 +464,28 @@ export default function ModelEditor() {
             </Field>
           </div>
           <div className="rounded-md border border-dashed p-3">
-            <p className="mb-3 text-xs font-medium text-muted-foreground">
-              Pricing — USD per 1M tokens. Leave blank to skip — unconfigured
-              models render as `—` on dashboards.
-            </p>
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+              <p className="text-xs font-medium text-muted-foreground">
+                Pricing — USD per 1M tokens. Leave blank to skip — unconfigured
+                models render as `—` on dashboards.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={useDefaultPricing}
+                disabled={loadingDefaultPricing || !alias.trim()}
+                className="shrink-0"
+                title="Look up this alias's published rates and fill the fields below"
+              >
+                {loadingDefaultPricing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Use default
+              </Button>
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Field label="Prompt (input)">
                 <Input

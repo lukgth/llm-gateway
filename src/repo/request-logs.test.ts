@@ -156,6 +156,76 @@ test("dashboardStats excludes throttle 503s from errors, 5xx band, and error rat
   }
 });
 
+test("dashboardStats excludes cached tokens from realized totals (top-level, byModel, byProvider)", () => {
+  const db = openDatabase(":memory:");
+  try {
+    // Request 1: 1000 input (400 of which were cache hits), 200 output.
+    // Realized = (1000 - 400) + 200 = 800.
+    insertRequestLog(db, {
+      ...base,
+      model: "claude-opus",
+      providerId: "anthropic-prod",
+      providerName: "Anthropic",
+      inputTokens: 1000,
+      outputTokens: 200,
+      cachedTokens: 400,
+      upstreamKeyHash: null,
+      upstreamKeyMask: null,
+    });
+    // Request 2: no cache hits at all — realized = 100 + 50 = 150.
+    insertRequestLog(db, {
+      ...base,
+      model: "claude-opus",
+      providerId: "anthropic-prod",
+      providerName: "Anthropic",
+      inputTokens: 100,
+      outputTokens: 50,
+      cachedTokens: null,
+      upstreamKeyHash: null,
+      upstreamKeyMask: null,
+    });
+
+    const s = dashboardStats(db);
+    // Naive input+output would read 1350; the correct realized total is
+    // 800 + 150 = 950 — cached tokens must not inflate the count.
+    assert.equal(s.tokensToday, 950);
+
+    const model = s.byModel.find((m) => m.model === "claude-opus");
+    assert.ok(model, "expected claude-opus in byModel");
+    assert.equal(model!.tokens, 950);
+    assert.equal(model!.cached, 400); // reported separately, not folded in
+
+    const provider = s.byProvider.find(
+      (p) => p.providerId === "anthropic-prod",
+    );
+    assert.ok(provider, "expected anthropic-prod in byProvider");
+    assert.equal(provider!.tokens, 950);
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test("dashboardStats never goes negative when cached exceeds input (defensive floor)", () => {
+  const db = openDatabase(":memory:");
+  try {
+    // Malformed/unexpected upstream data: cached > input. Realized input
+    // must floor at 0, not go negative and understate the output-only cost.
+    insertRequestLog(db, {
+      ...base,
+      inputTokens: 50,
+      outputTokens: 30,
+      cachedTokens: 80,
+      upstreamKeyHash: null,
+      upstreamKeyMask: null,
+    });
+    const s = dashboardStats(db);
+    // realized input = max(0, 50 - 80) = 0; total = 0 + 30 = 30.
+    assert.equal(s.tokensToday, 30);
+  } finally {
+    closeDatabase(db);
+  }
+});
+
 test("a genuine upstream 503 (no marker) still counts as a server error", () => {
   const db = openDatabase(":memory:");
   try {

@@ -195,7 +195,7 @@ export default function Usage() {
             {sorted.length === 0 ? (
               <EmptyState msg="No keys yet — create one on the API Keys page" />
             ) : (
-              <Table className="table-fixed">
+              <Table className="min-w-[42rem] table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-8" />
@@ -203,9 +203,7 @@ export default function Usage() {
                     <TableHead className="w-28">Owner</TableHead>
                     <TableHead className="w-40">Quota / Day</TableHead>
                     <TableHead className="w-28 text-right">Used</TableHead>
-                    <TableHead className="w-32 text-right">
-                      Remaining
-                    </TableHead>
+                    <TableHead className="w-32 text-right">Remaining</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -343,7 +341,7 @@ export default function Usage() {
                   msg={`No requests for '${modelQuery}' resolved today`}
                 />
               ) : (
-                <Table className="table-fixed">
+                <Table className="min-w-[36rem] table-fixed">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[30%]">
@@ -355,9 +353,7 @@ export default function Usage() {
                       <TableHead className="w-[20%] text-right">
                         Tokens
                       </TableHead>
-                      <TableHead className="w-[20%] text-right">
-                        Cost
-                      </TableHead>
+                      <TableHead className="w-[20%] text-right">Cost</TableHead>
                       <TableHead className="w-[15%] text-right">
                         Share
                       </TableHead>
@@ -597,7 +593,7 @@ const KeyUsageRow = memo(function KeyUsageRow({
                 No requests from this key today.
               </p>
             ) : (
-              <Table className="table-fixed">
+              <Table className="min-w-[36rem] table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[28%] pl-12">Model</TableHead>
@@ -605,9 +601,7 @@ const KeyUsageRow = memo(function KeyUsageRow({
                     <TableHead className="w-[13%] text-right">
                       Requests
                     </TableHead>
-                    <TableHead className="w-[17%] text-right">
-                      Tokens
-                    </TableHead>
+                    <TableHead className="w-[17%] text-right">Tokens</TableHead>
                     <TableHead className="w-[10%] text-right">Cost</TableHead>
                     <TableHead className="w-[10%] text-right pr-4">
                       Share

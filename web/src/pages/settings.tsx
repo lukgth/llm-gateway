@@ -8,6 +8,7 @@ import {
   Field,
   FormSection,
   SettingRow,
+  SectionTabs,
 } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn, fmtNum } from "@/lib/utils";
+import { fmtNum } from "@/lib/utils";
 
 const SECTIONS = [
   { id: "models", label: "Models" },
@@ -187,26 +188,7 @@ export default function Settings() {
       </div>
 
       <div className="flex flex-col gap-6">
-        <div className="flex gap-1 border-b border-border/60">
-          {SECTIONS.map((sec) => (
-            <button
-              key={sec.id}
-              type="button"
-              onClick={() => setActive(sec.id)}
-              className={cn(
-                "relative cursor-pointer px-3 py-2 text-sm font-medium transition-colors",
-                active === sec.id
-                  ? "text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {sec.label}
-              {active === sec.id && (
-                <span className="absolute right-0 bottom-0 left-0 h-0.5 rounded-full bg-primary" />
-              )}
-            </button>
-          ))}
-        </div>
+        <SectionTabs sections={SECTIONS} active={active} onChange={setActive} />
 
         {active === "models" && (
           <div className="max-w-3xl">
@@ -344,7 +326,10 @@ export default function Settings() {
                     <SelectValue placeholder="Select a provider" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(s.webProviders ?? [s.webToolsProvider]).map((p) => (
+                    {(s.webProviders?.length
+                      ? s.webProviders
+                      : [s.webToolsProvider]
+                    ).map((p) => (
                       <SelectItem key={p} value={p} className="capitalize">
                         {p}
                       </SelectItem>

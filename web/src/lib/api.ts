@@ -10,6 +10,7 @@ import type {
   BatchModelLinkResult,
   BatchKeyOps,
   BatchKeyResult,
+  DefaultModelPricing,
   FullBreakdownRow,
   KeyImportRequest,
   KeyImportResult,
@@ -283,6 +284,15 @@ export const api = {
 
   // transform library (for the per-model transform editor)
   listTransforms: () => req<TransformDefInfo[]>("/api/transforms"),
+
+  // stock default pricing (reference table for the model editor's "Use
+  // default" affordance — never authoritative, see docs/wire-types.md)
+  listDefaultPricing: () =>
+    req<DefaultModelPricing[]>("/api/model-pricing/defaults"),
+  defaultPricingFor: (idOrAlias: string) =>
+    req<DefaultModelPricing>(
+      `/api/model-pricing/defaults/${encodeURIComponent(idOrAlias)}`,
+    ),
 
   // users
   listUsers: () => req<User[]>("/api/users"),

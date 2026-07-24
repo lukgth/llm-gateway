@@ -12,11 +12,21 @@ import type {
   WsClientMessage,
   WsServerMessage,
   WsPush,
+  WsBatchTestProgress,
+  WsBatchTestDone,
+  WsBatchTestError,
 } from "@/lib/ws-types";
+import type { ProviderTestResult } from "@/lib/types";
 
 type WsStatus = "connecting" | "connected" | "disconnected";
 type PushCallback = (data: unknown) => void;
 type InvalidateCallback = (topics: WsTopic[], source?: string) => void;
+export type BatchTestProgress = {
+  index: number;
+  keyId: string;
+  result: ProviderTestResult;
+};
+type BatchTestOnProgress = (progress: BatchTestProgress) => void;
 
 interface WsContextValue {
   status: WsStatus;
@@ -30,6 +40,11 @@ interface WsContextValue {
     params?: Record<string, string | number | boolean>,
   ) => Promise<T>;
   onInvalidate: (callback: InvalidateCallback) => () => void;
+  startBatchTest: (
+    providerId: string,
+    keyIds: string[],
+    onProgress: BatchTestOnProgress,
+  ) => Promise<{ total: number; ok: number }>;
 }
 
 const WsContext = createContext<WsContextValue | null>(null);
@@ -66,6 +81,19 @@ export function WsProvider({ children }: { children: ReactNode }) {
   );
   // invalidation callbacks
   const invalidateHandlers = useRef(new Set<InvalidateCallback>());
+  // batch-test id → { onProgress, resolve, reject } — symmetric to
+  // pendingRequests, but supports a stream of progress events before the
+  // terminal resolve/reject (done/error) instead of a single response.
+  const batchTestHandlers = useRef(
+    new Map<
+      string,
+      {
+        onProgress: BatchTestOnProgress;
+        resolve: (v: { total: number; ok: number }) => void;
+        reject: (e: Error) => void;
+      }
+    >(),
+  );
 
   const send = useCallback((msg: WsClientMessage) => {
     const ws = wsRef.current;
@@ -140,6 +168,34 @@ export function WsProvider({ children }: { children: ReactNode }) {
           }
           break;
 
+        case "batch-test-progress": {
+          const p = msg as WsBatchTestProgress;
+          batchTestHandlers.current
+            .get(p.id)
+            ?.onProgress({ index: p.index, keyId: p.keyId, result: p.result });
+          break;
+        }
+
+        case "batch-test-done": {
+          const d = msg as WsBatchTestDone;
+          const pending = batchTestHandlers.current.get(d.id);
+          if (pending) {
+            batchTestHandlers.current.delete(d.id);
+            pending.resolve({ total: d.total, ok: d.ok });
+          }
+          break;
+        }
+
+        case "batch-test-error": {
+          const e = msg as WsBatchTestError;
+          const pending = batchTestHandlers.current.get(e.id);
+          if (pending) {
+            batchTestHandlers.current.delete(e.id);
+            pending.reject(new Error(e.message));
+          }
+          break;
+        }
+
         case "error":
           console.warn("[ws] server error:", msg.message, msg.code);
           break;
@@ -156,6 +212,13 @@ export function WsProvider({ children }: { children: ReactNode }) {
         clearTimeout(pending.timer);
         pending.reject(new Error("WebSocket closed"));
         pendingRequests.current.delete(id);
+      }
+
+      // Reject all in-flight batch tests — the server-side job is gone too
+      // (the hub removes the client and its job set on disconnect).
+      for (const [id, pending] of batchTestHandlers.current) {
+        pending.reject(new Error("WebSocket closed"));
+        batchTestHandlers.current.delete(id);
       }
 
       // Schedule reconnect with exponential backoff
@@ -187,6 +250,11 @@ export function WsProvider({ children }: { children: ReactNode }) {
         pending.reject(new Error("WsProvider unmounted"));
       }
       pendingRequests.current.clear();
+
+      for (const [, pending] of batchTestHandlers.current) {
+        pending.reject(new Error("WsProvider unmounted"));
+      }
+      batchTestHandlers.current.clear();
     };
   }, [connect]);
 
@@ -255,11 +323,27 @@ export function WsProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const startBatchTest = useCallback(
+    (
+      providerId: string,
+      keyIds: string[],
+      onProgress: BatchTestOnProgress,
+    ): Promise<{ total: number; ok: number }> => {
+      return new Promise((resolve, reject) => {
+        const id = crypto.randomUUID();
+        batchTestHandlers.current.set(id, { onProgress, resolve, reject });
+        send({ type: "batch-test", id, providerId, keyIds });
+      });
+    },
+    [send],
+  );
+
   const value: WsContextValue = {
     status,
     subscribe: subscribeTopic,
     request,
     onInvalidate,
+    startBatchTest,
   };
 
   return <WsContext.Provider value={value}>{children}</WsContext.Provider>;
@@ -294,4 +378,9 @@ export function useWsStatus() {
 export function useWsRequest() {
   const { status, request } = useWsContext();
   return { request, status };
+}
+
+export function useWsBatchTest() {
+  const { status, startBatchTest } = useWsContext();
+  return { startBatchTest, status };
 }

@@ -17,6 +17,10 @@ import {
 } from "../../repo/provider-models";
 import { listTransformDefs } from "../../formats/transforms";
 import { hopStats } from "../../repo/request-logs";
+import {
+  listDefaultModelPricing,
+  defaultPricingFor,
+} from "../../repo/default-pricing";
 import type { Model } from "../../types";
 import type { UpstreamModel } from "../../providers";
 import type { RouteCtx } from "./types";
@@ -301,4 +305,25 @@ export function registerModelRoutes(ctx: RouteCtx): void {
   r.get("/transforms", requireAdmin, (_req, res) =>
     res.json(listTransformDefs()),
   );
+
+  // --- stock default pricing (reference table, never authoritative) ---
+  // Static list for a picker UI (e.g. a "Use default" affordance next to the
+  // model editor's Pricing fields). Registered before "/model-pricing/:id" so
+  // "defaults" isn't parsed as a model id/alias.
+  r.get("/model-pricing/defaults", requireAdmin, (_req, res) =>
+    res.json(listDefaultModelPricing()),
+  );
+
+  // Single-alias lookup — the "Use default" button's actual call, so it
+  // doesn't have to fetch and search the full list client-side. 404 when no
+  // stock entry matches (a real, expected outcome for a niche/self-hosted
+  // model — not an error condition).
+  r.get("/model-pricing/defaults/:id", requireAdmin, (req, res) => {
+    const match = defaultPricingFor(String(req.params.id));
+    if (!match)
+      return res
+        .status(404)
+        .json({ error: { message: "No default pricing for this model" } });
+    res.json(match);
+  });
 }

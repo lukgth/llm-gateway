@@ -9,6 +9,15 @@
 import type { Database as DB } from "better-sqlite3";
 import type { KeyUsage } from "../types";
 
+// Realized tokens = input (minus any cache-hit portion, which never touched
+// the model at full cost) + output. cached_tokens is a SUBSET of
+// input_tokens (see formats/tokens.ts readResponseUsage's doc comment), so it
+// must be subtracted here rather than summed on top — otherwise a cache hit
+// would inflate the quota-debited/reported total past what was actually
+// processed, causing billing-estimate errors.
+const REALIZED_TOKENS_SQL =
+  "MAX(0, COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) + COALESCE(output_tokens,0)";
+
 export function utcDay(d = new Date()): string {
   return d.toISOString().slice(0, 10);
 }
@@ -119,7 +128,7 @@ export function hourlyUsageHistory(
   const rows = db
     .prepare(
       `SELECT substr(ts, 1, 13) AS hour,
-              COALESCE(SUM(COALESCE(input_tokens,0)+COALESCE(output_tokens,0)),0) AS tokens
+              COALESCE(SUM(${REALIZED_TOKENS_SQL}),0) AS tokens
        FROM request_logs
        WHERE ts >= @since
        GROUP BY substr(ts, 1, 13)`,
@@ -309,7 +318,7 @@ export function rebuildUsageFromLogs(db: DB, day?: string): RebuildResult {
     const usageRows = db
       .prepare(
         `SELECT api_key_id AS apiKeyId, date(ts) AS day,
-                COALESCE(SUM(COALESCE(input_tokens,0)+COALESCE(output_tokens,0)),0) AS tokens
+                COALESCE(SUM(${REALIZED_TOKENS_SQL}),0) AS tokens
          FROM request_logs
          WHERE api_key_id IS NOT NULL AND status >= 200 AND status < 300 ${dayFilter}
          GROUP BY api_key_id, date(ts)
@@ -336,7 +345,7 @@ export function rebuildUsageFromLogs(db: DB, day?: string): RebuildResult {
       .prepare(
         `SELECT api_key_id AS apiKeyId, date(ts) AS day, model,
                 provider_id AS providerId,
-                COALESCE(SUM(COALESCE(input_tokens,0)+COALESCE(output_tokens,0)),0) AS tokens,
+                COALESCE(SUM(${REALIZED_TOKENS_SQL}),0) AS tokens,
                 COUNT(*) AS requests,
                 COALESCE(SUM(COALESCE(cost_usd,0)),0) AS costUsd
          FROM request_logs

@@ -383,13 +383,20 @@ export function dashboardStats(db: DB): DashboardStats {
   // transient, retryable condition, NOT a failure — exclude it from the error
   // rate and the 5xx band, and surface it in its own `throttledToday` count.
   const throttle = throttleSql();
+  // Realized tokens = input (minus any cache-hit portion, which never touched
+  // the model at full cost) + output. cached_tokens is a SUBSET of
+  // input_tokens (see readResponseUsage's doc comment), so it must be
+  // subtracted here rather than summed on top, or a cache hit would inflate
+  // the reported/quota-debited total past what was actually processed.
+  const realizedTokensSql =
+    "MAX(0, COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) + COALESCE(output_tokens,0)";
   const agg = db
     .prepare(
       `SELECT
          COUNT(*) AS requests,
          COALESCE(SUM(CASE WHEN (status IS NULL OR status >= 400) AND NOT ${throttle} THEN 1 ELSE 0 END), 0) AS errors,
          COALESCE(SUM(CASE WHEN ${throttle} THEN 1 ELSE 0 END), 0) AS throttled,
-        COALESCE(SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)), 0) AS tokens,
+        COALESCE(SUM(${realizedTokensSql}), 0) AS tokens,
         COALESCE(SUM(COALESCE(cost_usd, 0)), 0) AS cost,
          COALESCE(SUM(CASE WHEN status >= 200 AND status < 300 THEN 1 ELSE 0 END), 0) AS success,
          COALESCE(SUM(CASE WHEN status >= 400 AND status < 500 THEN 1 ELSE 0 END), 0) AS clientErr,
@@ -410,7 +417,7 @@ export function dashboardStats(db: DB): DashboardStats {
   const byModel = db
     .prepare(
       `SELECT model, COUNT(*) AS requests,
-         COALESCE(SUM(COALESCE(input_tokens,0)+COALESCE(output_tokens,0)),0) AS tokens,
+         COALESCE(SUM(${realizedTokensSql}),0) AS tokens,
          COALESCE(SUM(COALESCE(cached_tokens,0)),0) AS cached,
          COALESCE(SUM(COALESCE(cost_usd,0)),0) AS costUsd
        FROM request_logs WHERE date(ts) = @today AND model IS NOT NULL
@@ -433,7 +440,7 @@ export function dashboardStats(db: DB): DashboardStats {
          COALESCE(p.name, rl.provider_name) AS provider,
          p.catalog_id AS catalogId,
          COUNT(*) AS requests,
-        COALESCE(SUM(COALESCE(rl.input_tokens,0)+COALESCE(rl.output_tokens,0)),0) AS tokens,
+        COALESCE(SUM(MAX(0, COALESCE(rl.input_tokens,0) - COALESCE(rl.cached_tokens,0)) + COALESCE(rl.output_tokens,0)),0) AS tokens,
         COALESCE(SUM(COALESCE(rl.cost_usd,0)),0) AS costUsd
        FROM request_logs rl
        LEFT JOIN providers p ON p.id = rl.provider_id

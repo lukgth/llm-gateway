@@ -745,6 +745,69 @@ interface ModelCapabilities {
 }
 ```
 
+### `ModelPricing` / `DefaultModelPricing` (`src/repo/pricing.ts`, `src/repo/default-pricing.ts`)
+
+Two related shapes, both USD-per-1M-tokens, both nullable-cache-rate:
+
+`ModelPricing` is the **operator-entered, per-alias** rate a gateway model
+actually bills at (`GET /models/:id`'s `pricing` field, `model_pricing` table).
+`null` on any of the three rate fields means "not configured" — a model with
+`promptPer1m`/`completionPer1m` unset renders as `—` on dashboards and
+`computeCostUsd` returns `null` (no partial estimate) rather than guessing:
+
+```ts
+interface ModelPricing {
+  alias: string;
+  promptPer1m: number | null;
+  completionPer1m: number | null;
+  cachedPer1m: number | null; // null -> billed at promptPer1m (no discount)
+  updatedAt: string;
+}
+```
+
+`computeCostUsd`'s cache discount is a **cost-only** concept and must not be
+confused with the **realized token total** used for daily quota debiting and
+dashboard/log aggregates. A response with 1000 prompt tokens (600 of them a
+cache hit) bills the 600 at `cachedPer1m` and the remaining 400 at
+`promptPer1m` — but the quota counter and every `tokens` column in
+`dashboardStats`/`hourlyUsageHistory` only ever count
+`max(0, input - cached) + output`, i.e. 400 + output, never the full 1000.
+Cached tokens are discounted for cost purposes; they are excluded entirely
+from realized-usage purposes, on the theory that a cache hit didn't consume a
+fresh unit of upstream work and so shouldn't burn quota as if it had.
+
+`DefaultModelPricing` is a **static reference table** of well-known models'
+published rates — never authoritative, never read by the request/billing
+path, and not persisted. It exists purely to pre-fill `ModelPricing`'s three
+rate fields from the model editor's "Use default" affordance instead of an
+operator looking prices up by hand:
+
+```ts
+interface DefaultModelPricing {
+  id: string; // matched tolerantly against a gateway alias — see defaultPricingFor
+  label: string;
+  brand: string; // catalog brand id, for icon/grouping in the picker UI
+  promptPer1m: number;
+  completionPer1m: number;
+  cachedPer1m?: number; // omitted when the provider publishes no cache-hit rate
+}
+```
+
+Exposed via two admin routes (`src/admin/routes/models.ts`):
+
+- `GET /api/model-pricing/defaults` — the full list, for a picker.
+- `GET /api/model-pricing/defaults/:id` — a single tolerant lookup by alias
+  or upstream model id (same date-suffix tolerance as
+  `stockAnthropicModel` — see `formats/anthropic/stock-models.ts`); `404`
+  when no stock entry matches, which is an expected outcome for a
+  self-hosted/niche model, not an error condition.
+
+A "Use default" button in the model editor's Pricing section would call the
+single-lookup route with the model's alias and, on a match, populate the
+Prompt/Completion/Cached fields from the response — the operator still saves
+explicitly, so a stale/wrong default entry never silently overwrites a
+model's real configured rate.
+
 ### `Json` / `BodyXform` (`src/formats/pipeline.ts`)
 
 The **type-erased** shapes the pipeline actually runs on at the boundary —

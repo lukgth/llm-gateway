@@ -316,7 +316,7 @@ export function KeyManager({
       {allRows.length > 0 && (
         <div className="rounded-md border border-border">
           {/* Toolbar strip */}
-          <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-2 py-1.5">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/30 px-2 py-1.5">
             <Checkbox
               checked={allVisibleSelected}
               onCheckedChange={(checked) =>

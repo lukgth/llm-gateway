@@ -763,6 +763,7 @@ export class ForwardingEngine {
             this.settleUsage(ctx, entry.provider, {
               input: result.inputTokens ?? undefined,
               output: result.outputTokens ?? undefined,
+              cached: result.cachedTokens ?? undefined,
             });
             this.recordLog(
               ctx,
@@ -1966,9 +1967,20 @@ export class ForwardingEngine {
       // 1) Release the reservation so it can't linger on the daily counter.
       if (ctx.reservedTokens > 0)
         subtractUsage(this.db, ctx.apiKey.id, ctx.reservedTokens);
-      // 2) Apply the actual usage (input + output). Missing pieces already fell
-      //    back to estimates upstream (streaming observer / buffered read).
-      const total = (usage.input ?? 0) + (usage.output ?? 0);
+      // 2) Apply the actual usage (realized input + output). Missing pieces
+      //    already fell back to estimates upstream (streaming observer /
+      //    buffered read). `usage.input` is TOTAL input including cached
+      //    (see readResponseUsage's doc comment) — cached tokens are billed
+      //    at a discounted rate by computeCostUsd below, but they must NOT
+      //    count toward the daily quota debit or the dashboard token totals,
+      //    or a cache hit would burn quota as if it were a fresh token.
+      //    Subtract cached back out here so `total` reflects only tokens
+      //    actually processed at full cost.
+      const realizedInput = Math.max(
+        0,
+        (usage.input ?? 0) - (usage.cached ?? 0),
+      );
+      const total = realizedInput + (usage.output ?? 0);
       if (total > 0) {
         const costUsd = computeCostUsd(
           getPricingByAlias(this.db, ctx.alias),

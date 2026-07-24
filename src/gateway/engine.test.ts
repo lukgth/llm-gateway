@@ -12,7 +12,10 @@ import type { AddressInfo } from "net";
 import { openDatabase, closeDatabase } from "../db";
 import { createProvider } from "../repo/providers";
 import { createModel, getModel } from "../repo/models";
+import { createApiKey } from "../repo/api-keys";
 import { listRequestLogs, getRequestLogDetail } from "../repo/request-logs";
+import { getUsage } from "../repo/usage";
+import { upsertPricing } from "../repo/pricing";
 import { getUnifiedUsage } from "../repo/provider-key-usage";
 import { credHash, listProviderKeys } from "../repo/provider-keys";
 import { Logger } from "../logger";
@@ -241,6 +244,120 @@ test("forward() sends the adapter-built request to the wire (verbatim default)",
     // The builder path stamps the upstream model id onto the body it sends.
     assert.equal(captured.body?.model, "up-1");
     assert.equal(listRequestLogs(db)[0]?.upstreamKeyMask, "k-…");
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("settleUsage: cached tokens are billed at a discount but excluded from the quota-debited/logged token total", async () => {
+  // Upstream reports 1000 prompt tokens (600 of which were a cache hit) + 200
+  // completion tokens. The daily quota counter and request_logs.tokens-equiv
+  // total must reflect only the REALIZED (non-cached) work — 400 + 200 = 600
+  // — while the cost calculation still applies the cache discount to the
+  // full 600 cached tokens. A naive input+output sum would debit 1200,
+  // silently overcharging the key's daily quota for tokens it got a cache
+  // discount on.
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "x",
+          usage: {
+            prompt_tokens: 1000,
+            completion_tokens: 200,
+            prompt_tokens_details: { cached_tokens: 600 },
+          },
+        }),
+      );
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "up",
+      name: "up",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["k-secret"],
+      catalogId: "openai",
+      authScheme: "bearer",
+      retryAttempts: 1,
+    });
+    const m = createModel(db, {
+      alias: "test-model",
+      providers: [{ providerId: "up", upstreamModel: "up-1" }],
+    });
+    const model = getModel(db, m.id)!;
+    // Cache-aware pricing so cost differs meaningfully from a naive calc:
+    // $1/1M prompt, $0.10/1M cached, $2/1M completion.
+    upsertPricing(db, {
+      alias: "test-model",
+      promptPer1m: 1,
+      completionPer1m: 2,
+      cachedPer1m: 0.1,
+    });
+    const { id: apiKeyId } = createApiKey(db, {
+      name: "test-key",
+      tokensPerDay: null,
+    });
+    const apiKey = {
+      id: apiKeyId,
+      name: "test-key",
+      keyPrefix: "k-",
+      userId: null,
+      userName: null,
+      tokensPerDay: null,
+      enabled: true,
+      lastUsedAt: null,
+      createdAt: new Date().toISOString(),
+    };
+
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const { res, state } = mockRes();
+    const ctx = ctxFor(model, {
+      model: "test-model",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    ctx.apiKey = apiKey;
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctx,
+    );
+    assert.equal(state.statusCode || 200, 200);
+
+    // The daily quota counter reflects only realized tokens: 400 + 200 = 600,
+    // NOT the naive 1000 + 200 = 1200.
+    const usage = getUsage(db, apiKeyId);
+    assert.equal(usage.tokens, 600);
+
+    // The logged row still carries the full input/cached breakdown for
+    // billing transparency — those raw fields are untouched by this fix.
+    const log = listRequestLogs(db)[0];
+    assert.equal(log?.inputTokens, 1000);
+    assert.equal(log?.outputTokens, 200);
+    assert.equal(log?.cachedTokens, 600);
+
+    // Cost still applies the cache discount to the full cached amount:
+    // uncached input billable = 1000 - 600 = 400 @ $1/1M
+    // cached = 600 @ $0.10/1M
+    // output = 200 @ $2/1M
+    // cost = (400*1 + 600*0.1 + 200*2) / 1e6 = (400+60+400)/1e6 = 0.00086
+    assert.ok(log?.costUsd != null);
+    assert.ok(
+      Math.abs((log!.costUsd as number) - 0.00086) < 1e-9,
+      `expected cost ~0.00086, got ${log?.costUsd}`,
+    );
   } finally {
     closeDatabase(db);
     await new Promise<void>((r) => server.close(() => r()));

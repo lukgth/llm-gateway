@@ -6,14 +6,16 @@ import type { WebSocket } from "ws";
 import type { Database as DB } from "better-sqlite3";
 import type { Logger } from "../logger";
 import { type WsTopic, PUSH_INTERVALS, WS_TOPICS } from "./schema";
-import type { WsServerMessage, WsRequest } from "./schema";
+import type { WsServerMessage, WsRequest, WsBatchTest } from "./schema";
 import { fetchTopic } from "./topics";
+import { runBatchTest } from "./batch-test";
 
 interface WsClient {
   ws: WebSocket;
   subs: Set<WsTopic>;
   alive: boolean;
   params: Map<WsTopic, Record<string, string | number | boolean>>;
+  activeBatchTests: Set<string>;
 }
 
 const HEARTBEAT_INTERVAL = 30_000;
@@ -34,6 +36,7 @@ export class WsHub {
       subs: new Set(),
       alive: true,
       params: new Map(),
+      activeBatchTests: new Set(),
     };
     this.clients.add(client);
     this.logger.info("ws_connect", { clients: this.clients.size });
@@ -94,6 +97,56 @@ export class WsHub {
         error: { message: (err as Error).message },
       });
     }
+  }
+
+  handleBatchTest(client: WsClient, msg: WsBatchTest): void {
+    if (client.activeBatchTests.has(msg.id)) {
+      this.send(client, {
+        type: "batch-test-error",
+        id: msg.id,
+        message: `batch "${msg.id}" is already running`,
+      });
+      return;
+    }
+    client.activeBatchTests.add(msg.id);
+
+    runBatchTest(
+      this.db,
+      { providerId: msg.providerId, keyIds: msg.keyIds },
+      {
+        onProgress: (progress) =>
+          this.send(client, {
+            type: "batch-test-progress",
+            id: msg.id,
+            ...progress,
+          }),
+        onDone: (done) =>
+          this.send(client, { type: "batch-test-done", id: msg.id, ...done }),
+        isCancelled: () => client.ws.readyState !== client.ws.OPEN,
+      },
+    )
+      .then((error) => {
+        if (error) {
+          this.send(client, {
+            type: "batch-test-error",
+            id: msg.id,
+            message: error,
+          });
+        }
+      })
+      .catch((err) => {
+        this.logger.warn("ws_batch_test_error", {
+          err: (err as Error).message,
+        });
+        this.send(client, {
+          type: "batch-test-error",
+          id: msg.id,
+          message: (err as Error).message,
+        });
+      })
+      .finally(() => {
+        client.activeBatchTests.delete(msg.id);
+      });
   }
 
   broadcast(topics: WsTopic[], source: string): void {

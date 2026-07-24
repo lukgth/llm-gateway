@@ -121,7 +121,7 @@ export default function RequestLogs() {
           ) : items.length === 0 && page === 0 ? (
             <EmptyState msg="No matching requests" />
           ) : (
-            <Table className="table-fixed">
+            <Table className="min-w-[56rem] table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[11%] whitespace-nowrap">

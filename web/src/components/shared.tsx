@@ -135,17 +135,19 @@ export const Stat = memo(function Stat({
   accent?: boolean;
 }) {
   return (
-    <Card className="gap-0.5 p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
+    <Card className="min-w-0 gap-0.5 p-3">
+      <div className="truncate text-xs text-muted-foreground">{label}</div>
       <div
         className={cn(
-          "text-xl font-bold tabular-nums leading-none",
+          "truncate text-xl font-bold tabular-nums leading-none",
           accent ? "text-primary" : "text-foreground",
         )}
       >
         {value}
       </div>
-      {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
+      {hint && (
+        <div className="truncate text-xs text-muted-foreground">{hint}</div>
+      )}
     </Card>
   );
 });
@@ -469,20 +471,28 @@ export function Field({
   label,
   children,
   hint,
+  className,
 }: {
   label: ReactNode;
   children: ReactNode;
-  hint?: string;
+  hint?: ReactNode;
+  className?: string;
 }) {
   return (
-    <div>
+    <div className={cn("flex h-full flex-col", className)}>
       <label className="text-xs font-medium text-foreground mb-1 block">
         {label}
       </label>
       {children}
-      {hint && (
-        <p className="mt-1 text-[0.65rem] text-muted-foreground">{hint}</p>
-      )}
+      {/* Always rendered (even with no hint) so every Field in a shared grid
+          row has the same DOM shape — a sibling with a one-line hint and one
+          with none then occupy the same footprint instead of the row's
+          bottom edge zig-zagging between columns. A field-specific hint
+          longer than one line still wraps and grows normally; this only
+          reserves the common single-line case. */}
+      <p className="mt-1 min-h-[calc(0.65rem*1.4)] text-[0.65rem] text-muted-foreground">
+        {hint}
+      </p>
     </div>
   );
 }
@@ -563,14 +573,24 @@ export function SectionTabs<T extends string>({
   className?: string;
 }) {
   return (
-    <div className={cn("flex gap-1 border-b border-border/60", className)}>
+    // no-scrollbar + overflow-x-auto: on a narrow viewport a section bar with
+    // several tabs (some carrying a badge) can exceed the available width —
+    // scroll horizontally instead of wrapping (which would break the shared
+    // border-b baseline every tab's active-underline is drawn against) or
+    // silently clipping the trailing tabs.
+    <div
+      className={cn(
+        "no-scrollbar flex gap-1 overflow-x-auto border-b border-border/60",
+        className,
+      )}
+    >
       {sections.map((s) => (
         <button
           key={s.id}
           type="button"
           onClick={() => onChange(s.id)}
           className={cn(
-            "relative flex cursor-pointer items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors",
+            "relative flex shrink-0 cursor-pointer items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors",
             active === s.id
               ? "text-foreground"
               : "text-muted-foreground hover:text-foreground",

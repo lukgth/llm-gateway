@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import type { KeyStat, ProviderKey, ProviderTestResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useWsBatchTest } from "@/hooks/use-ws";
 import { EmptyState, Field, TableSearch } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -143,6 +144,7 @@ export function ProviderKeyManager({
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<ProviderKey | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
+  const { startBatchTest, status: wsStatus } = useWsBatchTest();
 
   const load = useCallback(async () => {
     try {
@@ -257,6 +259,46 @@ export function ProviderKeyManager({
     const queue = keys.filter((key) => key.enabled);
     if (!queue.length) return;
     setTestingAll(true);
+
+    // Prefer the WS batch endpoint — one connection, server-streamed
+    // per-key results (index-tagged) instead of N individual HTTP round-
+    // trips. Falls back to the old client-side worker pool when the socket
+    // isn't up yet (first paint, reconnecting, or an upgrade-blocking proxy).
+    if (wsStatus === "connected") {
+      setTesting((current) => {
+        const next = new Set(current);
+        for (const key of queue) next.add(key.id);
+        return next;
+      });
+      try {
+        const { total, ok } = await startBatchTest(
+          providerId,
+          queue.map((key) => key.id),
+          ({ keyId, result }) => {
+            setResults((current) => new Map(current).set(keyId, result));
+            setTesting((current) => {
+              const next = new Set(current);
+              next.delete(keyId);
+              return next;
+            });
+          },
+        );
+        toast[ok === total ? "success" : "error"](
+          `${ok}/${total} active key(s) reachable`,
+        );
+      } catch (error) {
+        toast.error((error as Error).message);
+      } finally {
+        setTesting((current) => {
+          const next = new Set(current);
+          for (const key of queue) next.delete(key.id);
+          return next;
+        });
+        setTestingAll(false);
+      }
+      return;
+    }
+
     let passed = 0;
     const workers = Array.from(
       { length: Math.min(5, queue.length) },
@@ -487,8 +529,16 @@ export function ProviderKeyManager({
                 width, shifting every column after the flexible Key/Tags
                 track — Status, Active, Success, Errors, Actions — out of
                 alignment with the header above it. Sticky positioning keeps
-                the header pinned to the top of this scroll container. */}
-            <div ref={parentRef} className="max-h-[28rem] overflow-y-auto">
+                the header pinned to the top of this scroll container.
+                overflow-x-auto on this same element (not a separate wrapper)
+                for the same reason: the grid's fixed-width columns
+                (~500px minimum on mobile) don't fit a narrow viewport, and
+                scrolling header + body together here keeps them in lockstep
+                horizontally too, not just vertically. */}
+            <div
+              ref={parentRef}
+              className="no-scrollbar max-h-[28rem] overflow-x-auto overflow-y-auto"
+            >
               <div role="rowgroup">
                 <div
                   role="row"

@@ -172,19 +172,15 @@ export default function Dashboard() {
             {s.byModel.length === 0 ? (
               <EmptyState msg="No requests today" />
             ) : (
-              <Table className="table-fixed">
+              <Table className="min-w-[32rem] table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[26%]">Model</TableHead>
                     <TableHead className="w-[18%] text-right">
                       Requests
                     </TableHead>
-                    <TableHead className="w-[19%] text-right">
-                      Tokens
-                    </TableHead>
-                    <TableHead className="w-[19%] text-right">
-                      Cached
-                    </TableHead>
+                    <TableHead className="w-[19%] text-right">Tokens</TableHead>
+                    <TableHead className="w-[19%] text-right">Cached</TableHead>
                     <TableHead className="w-[18%] text-right">Cost</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -244,7 +240,7 @@ export default function Dashboard() {
           {s.byProvider.length === 0 ? (
             <EmptyState msg="No upstream activity today" />
           ) : (
-            <Table className="table-fixed">
+            <Table className="min-w-[30rem] table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[34%]">Provider</TableHead>

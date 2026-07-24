@@ -202,7 +202,7 @@ export default function ImportedModels() {
         ) : filtered.length === 0 ? (
           <EmptyState msg="No imported models match the search" />
         ) : (
-          <Table className="table-fixed">
+          <Table className="min-w-[52rem] table-fixed">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">

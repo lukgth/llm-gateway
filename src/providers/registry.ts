@@ -47,7 +47,6 @@ import { glm } from "./catalog/glm";
 import { gemini } from "./catalog/gemini";
 import { openaiCompatible } from "./catalog/openai-compatible";
 import { anthropicCompatible } from "./catalog/anthropic-compatible";
-import { exampleCustom } from "./catalog/example-custom";
 import { proxy } from "./catalog/proxy";
 import { newapi } from "./catalog/newapi";
 import { ollama, ollamaCloud } from "./catalog/ollama";
@@ -78,7 +77,6 @@ const ADAPTERS: ProviderAdapter[] = [
   ollama,
   ollamaCloud,
   newapi,
-  exampleCustom,
   proxy,
 ];
 

@@ -128,6 +128,16 @@ All arrays are optional. Duplicates in `add` are silently skipped.
 }
 ```
 
+### Batch Testing (WebSocket)
+
+Testing many keys' connectivity is a WebSocket job, not a REST call — one
+`batch-test` message queues up to 200 keys at concurrency 5, and results
+stream back per-key (tagged with their request index) instead of waiting on
+N individual `POST /providers/:id/test` round-trips. This is what the Keys
+tab's "Test active" button uses whenever the admin UI's socket is connected.
+See [`docs/websocket-api.md#batch-key-testing`](./websocket-api.md#batch-key-testing)
+for the full message protocol.
+
 ### Other Batch Endpoints
 
 The same atomic-transaction pattern applies to these entities:

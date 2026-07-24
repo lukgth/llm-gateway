@@ -64,6 +64,9 @@ export function createWsServer(
         case "request":
           hub.handleRequest(client, msg);
           break;
+        case "batch-test":
+          hub.handleBatchTest(client, msg);
+          break;
         case "pong":
           hub.markAlive(client);
           break;
