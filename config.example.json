@@ -7,6 +7,8 @@
 
   "_webDistDir_comment": "Where the built frontend lives. Defaults to ./web/dist (set by the build). Override only if you relocated it.",
   "webDistDir": "./web/dist",
+  "_webBasePath_comment": "URL prefix the dashboard UI is served under (e.g. \"/admin/\" to reach it at http://host:port/admin/). The API surfaces (/api, /v1, /health, /ws) always stay at the root. Defaults to \"/\". Restart required.",
+  "webBasePath": "/",
 
   "_adminPassword_comment": "Admin dashboard password. If null, a random one-time password is generated and printed to the console on first boot. Changeable later from the dashboard Settings page.",
   "adminPassword": null,

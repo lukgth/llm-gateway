@@ -18,6 +18,9 @@ export interface BootstrapConfig {
   dataDir: string;
   dbPath: string;
   webDistDir: string;
+  // URL prefix the dashboard UI is served under ("/" or "/x/…/"). From
+  // config.json webBasePath; boot-time only.
+  webBasePath: string;
   sessionTtlMs: number;
   // If set, the SHA-256 hash of the admin password is written to settings on
   // boot (overriding whatever is stored). Plaintext is never kept in the DB.
@@ -35,6 +38,7 @@ export interface ConfigJson {
   dataDir?: string;
   dbPath?: string;
   webDistDir?: string;
+  webBasePath?: string;
   adminPassword?: string | null;
   corsOrigin?: string | null;
   sessionTtlHours?: number;
@@ -88,6 +92,15 @@ export function readConfigJson(file = CONFIG_FILE): ConfigJson {
   }
 }
 
+// "/" or "/seg/…/" with both slashes. Anything non-string/blank → "/".
+function normalizeBasePath(raw: unknown): string {
+  if (typeof raw !== "string") return "/";
+  let p = raw.trim();
+  if (!p || p === "/") return "/";
+  if (!p.startsWith("/")) p = "/" + p;
+  if (!p.endsWith("/")) p += "/";
+  return p;
+}
 export function loadBootstrap(): BootstrapConfig {
   const cfg = readConfigJson();
 
@@ -97,6 +110,14 @@ export function loadBootstrap(): BootstrapConfig {
   const webDistDir = path.resolve(
     cfg.webDistDir || path.join(__dirname, "..", "web", "dist"),
   );
+  let webBasePath = normalizeBasePath(cfg.webBasePath);
+  // A base under an API surface would shadow it (express matches in registration
+  // order, but the SPA fallback would then swallow unknown API paths).
+  if (webBasePath !== "/" && /^\/(api|v1|health)(\/|$)/.test(webBasePath)) {
+    // eslint-disable-next-line no-console
+    console.warn(`[gateway] webBasePath "${webBasePath}" collides with an API surface; using "/"`);
+    webBasePath = "/";
+  }
   const sessionTtlMs = (cfg.sessionTtlHours ?? 24 * 7) * 60 * 60 * 1000;
   const adminPassword = cfg.adminPassword || null;
   const corsOrigin = cfg.corsOrigin || null;
@@ -106,6 +127,7 @@ export function loadBootstrap(): BootstrapConfig {
     dataDir,
     dbPath,
     webDistDir,
+    webBasePath,
     sessionTtlMs,
     adminPassword,
     configPath: fs.existsSync(CONFIG_FILE) ? CONFIG_FILE : null,

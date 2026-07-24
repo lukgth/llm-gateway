@@ -543,6 +543,7 @@ export default function Settings() {
                   ["Data directory", s.bootstrap.dataDir],
                   ["Database path", s.bootstrap.dbPath],
                   ["Web build directory", s.bootstrap.webDistDir],
+                  ["Web base path", s.bootstrap.webBasePath],
                   ["Admin session TTL", `${s.bootstrap.sessionTtlHours} hours`],
                   ["CORS origin", s.bootstrap.corsOrigin || "\u2014"],
                   ["Config file", s.bootstrap.configPath || "\u2014"],

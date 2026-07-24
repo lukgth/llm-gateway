@@ -67,6 +67,7 @@ export function registerSettingsRoutes(ctx: RouteCtx, auth: AdminAuth): void {
         dataDir: bootstrap.dataDir,
         dbPath: bootstrap.dbPath,
         webDistDir: bootstrap.webDistDir,
+        webBasePath: bootstrap.webBasePath,
         sessionTtlHours: bootstrap.sessionTtlMs / 3_600_000,
         corsOrigin: bootstrap.corsOrigin,
         configPath: bootstrap.configPath,

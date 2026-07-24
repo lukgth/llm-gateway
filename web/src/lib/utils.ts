@@ -9,6 +9,11 @@ export function fmtNum(n: number | null | undefined): string {
   if (n == null) return "—";
   return new Intl.NumberFormat("en-US").format(n);
 }
+// Format a dollar amount: < $0.01 → 4 decimals, otherwise 2.
+export function fmtUsd(n: number): string {
+  if (Math.abs(n) < 0.01) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
+}
 
 // Display label for a wire-format / model-type value. CSS `text-transform:
 // capitalize` mangles "openai" into "Openai"; this preserves the correct casing
@@ -190,4 +195,10 @@ export function relTime(iso: string | null | undefined): string {
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
+}
+
+// Base path the UI is served under. The gateway injects <base href> into
+// index.html from config.json webBasePath; in dev (no tag) this is "/".
+export function webBase(): string {
+  return new URL(".", document.baseURI).pathname;
 }

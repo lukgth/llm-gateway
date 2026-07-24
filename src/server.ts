@@ -70,16 +70,37 @@ export function createServerApp(
   // Health.
   app.get("/health", (_req, res) => res.json({ ok: true }));
 
-  // Static frontend (production build). SPA fallback so client-side routing
-  // works on refresh. Only mounted if the build exists.
+  // Static frontend (production build), served under opts.webBasePath
+  // ("/" by default). index.html is rewritten once at boot to carry
+  // <base href> so the relative-base build works under any prefix without a
+  // rebuild; the SPA reads the prefix from document.baseURI.
   if (fs.existsSync(opts.webDistDir)) {
-    app.use(express.static(opts.webDistDir));
-    app.get("*", (req, res, next) => {
-      // Don't hijack API/gateway routes that already 404'd.
-      if (req.path.startsWith("/api") || req.path.startsWith("/v1"))
-        return next();
-      res.sendFile(path.join(opts.webDistDir, "index.html"));
-    });
+    const base = opts.webBasePath; // "/" or "/admin/"
+    const mount = base.slice(0, -1) || "/"; // "/admin" or "/"
+
+    let indexHtml = fs.readFileSync(
+      path.join(opts.webDistDir, "index.html"),
+      "utf8",
+    );
+    if (base !== "/") {
+      indexHtml = indexHtml.replace("<head>", `<head><base href="${base}">`);
+    }
+    const sendIndex = (_req: express.Request, res: express.Response) =>
+      res.type("html").send(indexHtml);
+
+    // index:false so directory requests fall through to sendIndex (with the
+    // injected <base>) instead of serving the raw index.html.
+    app.use(mount, express.static(opts.webDistDir, { index: false }));
+    if (base === "/") {
+      app.get("*", (req, res, next) => {
+        // Don't hijack API/gateway routes that already 404'd.
+        if (req.path.startsWith("/api") || req.path.startsWith("/v1"))
+          return next();
+        sendIndex(req, res);
+      });
+    } else {
+      app.get([mount, `${base}*`], sendIndex);
+    }
   }
 
   // 404 for unmatched API/gateway paths.
