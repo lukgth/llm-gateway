@@ -158,9 +158,11 @@ export function hourlyUsageHistory(
   return out;
 }
 
-export function usageSummaryToday(
-  db: DB,
-): { total: number; input: number; cached: number } {
+export function usageSummaryToday(db: DB): {
+  total: number;
+  input: number;
+  cached: number;
+} {
   const day = utcDay();
   return db
     .prepare(

@@ -52,6 +52,7 @@ import {
   KeyHealthStore,
   parseRateLimitHint,
   AUTH_FAIL_STATUS,
+  NO_CREDIT_STATUS,
   hashKey,
   type KeyPick,
 } from "./key-health";
@@ -1350,6 +1351,21 @@ export class ForwardingEngine {
 
     captureClaudeUsage();
 
+    // Out of credits (402): NOT a key fault — this key/account just can't
+    // serve this model right now (free models still work fine). Skip it
+    // silently, same handling as the premium-model usage-credits 429 below:
+    // no health penalty, no disable, no cooldown — just rotate to another
+    // key so this one isn't picked again for this model this request.
+    if (NO_CREDIT_STATUS.has(status)) {
+      const errBody = await readErrorBody(upRes, MAX_BUFFER_BYTES);
+      return {
+        committed: false,
+        status,
+        reason: `Key lacks usage credits for ${upstreamModel} (status ${status}: ${errBody.slice(0, 200)})`,
+        modelCreditsRequired: true,
+      };
+    }
+
     // Auth failure (bad/revoked key): don't commit this to the client — the
     // key is dead, not the request. Read the body (for logging/reason only,
     // never forwarded) and fail this attempt over so forward()'s retry loop
@@ -2404,6 +2420,18 @@ export class ForwardingEngine {
 
     captureClaudeUsage();
     if (res.status < 200 || res.status >= 300) {
+      // Out of credits (402): same silent skip + rotate as the buffered path
+      // and as the premium-model usage-credits 429 above — no health
+      // penalty, the key still works fine for free models.
+      if (NO_CREDIT_STATUS.has(res.status)) {
+        return {
+          ok: false,
+          status: res.status,
+          reason: `Key lacks usage credits for ${upstreamModel} (status ${res.status}: ${res.text.slice(0, 200)})`,
+          retryable: true,
+          modelCreditsRequired: true,
+        };
+      }
       const authFailed = AUTH_FAIL_STATUS.has(res.status);
       logUpstreamNon2xx(this.logger, {
         status: res.status,

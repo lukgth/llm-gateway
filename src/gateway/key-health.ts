@@ -32,6 +32,9 @@ import { modelClassOf } from "../formats/model-version";
 // live in the engine; these two sets drive key health specifically.)
 export const RATE_LIMIT_STATUS = 429;
 export const AUTH_FAIL_STATUS = new Set([401, 403]);
+// 402 means the key/account is out of credits — not an auth failure, but
+// the key is just as dead: disable it and skip it the same way.
+export const NO_CREDIT_STATUS = new Set([402]);
 
 // Default failures-on-a-proven-pair before we evict the (key,model) affinity.
 const DEFAULT_AFFINITY_FAIL_THRESHOLD = 3;
