@@ -3,7 +3,7 @@
 import {
   listUsageToday,
   totalUsageHistory,
-  totalUsageToday,
+  usageSummaryToday,
   fullBreakdownToday,
   breakdownForKey,
   modelResolution,
@@ -23,15 +23,13 @@ export function registerUsageRoutes(ctx: RouteCtx): void {
   const { db, logger, router, r, requireAdmin, broadcast } = ctx;
 
   // --- usage ---
-  r.get("/usage", requireAdmin, (_req, res) =>
+  r.get("/usage", requireAdmin, (_req, res) => {
+    const summary = usageSummaryToday(db);
     res.json({
-      today: {
-        total: totalUsageToday(db),
-        keys: listUsageToday(db),
-      },
+      today: { ...summary, keys: listUsageToday(db) },
       history: totalUsageHistory(db, 14),
-    }),
-  );
+    });
+  });
 
   // Per-(key, model, provider) breakdown for today — answers "this key using
   // gpt-5.5 resolved to which provider and how many tokens".

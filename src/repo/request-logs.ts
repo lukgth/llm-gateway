@@ -356,6 +356,8 @@ export interface DashboardStats {
    *  transient, excluded from requestsErrorToday and the error rate. */
   throttledToday: number;
   tokensToday: number;
+  inputTokensToday: number;
+  cachedTokensToday: number;
   errorRateToday: number;
   costUsdToday: number;
   byModel: Array<{
@@ -371,6 +373,7 @@ export interface DashboardStats {
     provider: string;
     requests: number;
     tokens: number;
+    cached: number;
     costUsd: number;
   }>;
   statusBands: { success: number; clientError: number; serverError: number };
@@ -397,6 +400,8 @@ export function dashboardStats(db: DB): DashboardStats {
          COALESCE(SUM(CASE WHEN (status IS NULL OR status >= 400) AND NOT ${throttle} THEN 1 ELSE 0 END), 0) AS errors,
          COALESCE(SUM(CASE WHEN ${throttle} THEN 1 ELSE 0 END), 0) AS throttled,
         COALESCE(SUM(${realizedTokensSql}), 0) AS tokens,
+        COALESCE(SUM(COALESCE(input_tokens, 0)), 0) AS inputTokens,
+        COALESCE(SUM(COALESCE(cached_tokens, 0)), 0) AS cachedTokens,
         COALESCE(SUM(COALESCE(cost_usd, 0)), 0) AS cost,
          COALESCE(SUM(CASE WHEN status >= 200 AND status < 300 THEN 1 ELSE 0 END), 0) AS success,
          COALESCE(SUM(CASE WHEN status >= 400 AND status < 500 THEN 1 ELSE 0 END), 0) AS clientErr,
@@ -408,6 +413,8 @@ export function dashboardStats(db: DB): DashboardStats {
     errors: number;
     throttled: number;
     tokens: number;
+    inputTokens: number;
+    cachedTokens: number;
     cost: number;
     success: number;
     clientErr: number;
@@ -441,6 +448,7 @@ export function dashboardStats(db: DB): DashboardStats {
          p.catalog_id AS catalogId,
          COUNT(*) AS requests,
         COALESCE(SUM(MAX(0, COALESCE(rl.input_tokens,0) - COALESCE(rl.cached_tokens,0)) + COALESCE(rl.output_tokens,0)),0) AS tokens,
+        COALESCE(SUM(COALESCE(rl.cached_tokens, 0)), 0) AS cached,
         COALESCE(SUM(COALESCE(rl.cost_usd,0)),0) AS costUsd
        FROM request_logs rl
        LEFT JOIN providers p ON p.id = rl.provider_id
@@ -453,6 +461,7 @@ export function dashboardStats(db: DB): DashboardStats {
     provider: string;
     requests: number;
     tokens: number;
+    cached: number;
     costUsd: number;
   }>;
 
@@ -480,6 +489,8 @@ export function dashboardStats(db: DB): DashboardStats {
     requestsErrorToday: agg.errors || 0,
     throttledToday: agg.throttled || 0,
     tokensToday: agg.tokens || 0,
+    inputTokensToday: agg.inputTokens || 0,
+    cachedTokensToday: agg.cachedTokens || 0,
     errorRateToday: rateDenom > 0 ? (agg.errors / rateDenom) * 100 : 0,
     costUsdToday: agg.cost || 0,
     byModel,

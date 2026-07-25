@@ -80,6 +80,14 @@ export function fmtTokens(n: number | null | undefined): string {
   return `${trimDecimals(n / 1_000_000, abs < 10_000_000 ? 2 : 1)}M`;
 }
 
+export function fmtCacheHint(cached: number, input: number): string {
+  const hit =
+    input > 0
+      ? `${Math.min(100, Math.max(0, (cached / input) * 100)).toFixed(1)}%`
+      : "—";
+  return `${fmtTokens(cached)} cached · ${hit} hit`;
+}
+
 // Round to `places` decimals, dropping only *fractional* trailing zeros so
 // whole numbers keep their value (200 -> "200", 1.50 -> "1.5", 1.0 -> "1").
 function trimDecimals(n: number, places: number): string {

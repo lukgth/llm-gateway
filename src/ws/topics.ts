@@ -7,7 +7,7 @@ import { dashboardStats } from "../repo/request-logs";
 import {
   totalUsageHistory,
   hourlyUsageHistory,
-  totalUsageToday,
+  usageSummaryToday,
   listUsageToday,
   fullBreakdownToday,
 } from "../repo/usage";
@@ -34,14 +34,13 @@ export function fetchTopic(
         keys: listApiKeys(db).filter((k) => k.enabled).length,
       };
 
-    case "usage":
+    case "usage": {
+      const summary = usageSummaryToday(db);
       return {
-        today: {
-          total: totalUsageToday(db),
-          keys: listUsageToday(db),
-        },
+        today: { ...summary, keys: listUsageToday(db) },
         history: totalUsageHistory(db, 14),
       };
+    }
 
     case "usage:breakdown":
       return { rows: fullBreakdownToday(db) };

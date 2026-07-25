@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import type { OverviewResponse } from "@/lib/types";
 import { useWsSubscription } from "@/hooks/use-ws";
-import { fmtNum, fmtTokens, fmtUsd } from "@/lib/utils";
+import { fmtCacheHint, fmtNum, fmtTokens, fmtUsd } from "@/lib/utils";
 import {
   PageHeader,
   Stat,
@@ -101,7 +101,7 @@ export default function Dashboard() {
         <Stat
           label="Tokens today"
           value={fmtNum(s.tokensToday)}
-          hint="input + output"
+          hint={fmtCacheHint(s.cachedTokensToday, s.inputTokensToday)}
         />
         <Stat
           label="Error rate"
@@ -240,14 +240,15 @@ export default function Dashboard() {
           {s.byProvider.length === 0 ? (
             <EmptyState msg="No upstream activity today" />
           ) : (
-            <Table className="min-w-[30rem] table-fixed">
+            <Table className="min-w-[40rem] table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[34%]">Provider</TableHead>
-                  <TableHead className="w-[14%] text-right">Requests</TableHead>
-                  <TableHead className="w-[18%] text-right">Tokens</TableHead>
-                  <TableHead className="w-[17%] text-right">Cost</TableHead>
-                  <TableHead className="w-[17%] text-right">Share</TableHead>
+                  <TableHead className="w-[28%]">Provider</TableHead>
+                  <TableHead className="w-[13%] text-right">Requests</TableHead>
+                  <TableHead className="w-[16%] text-right">Tokens</TableHead>
+                  <TableHead className="w-[15%] text-right">Cached</TableHead>
+                  <TableHead className="w-[14%] text-right">Cost</TableHead>
+                  <TableHead className="w-[14%] text-right">Share</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -279,6 +280,12 @@ export default function Dashboard() {
                         title={fmtNum(p.tokens)}
                       >
                         {fmtTokens(p.tokens)}
+                      </TableCell>
+                      <TableCell
+                        className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
+                        title={p.cached > 0 ? fmtNum(p.cached) : undefined}
+                      >
+                        {p.cached > 0 ? fmtTokens(p.cached) : "—"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
                         {p.costUsd > 0 ? fmtUsd(p.costUsd) : "—"}

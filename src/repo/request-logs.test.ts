@@ -189,6 +189,8 @@ test("dashboardStats excludes cached tokens from realized totals (top-level, byM
     // Naive input+output would read 1350; the correct realized total is
     // 800 + 150 = 950 — cached tokens must not inflate the count.
     assert.equal(s.tokensToday, 950);
+    assert.equal(s.inputTokensToday, 1100);
+    assert.equal(s.cachedTokensToday, 400);
 
     const model = s.byModel.find((m) => m.model === "claude-opus");
     assert.ok(model, "expected claude-opus in byModel");
@@ -200,6 +202,7 @@ test("dashboardStats excludes cached tokens from realized totals (top-level, byM
     );
     assert.ok(provider, "expected anthropic-prod in byProvider");
     assert.equal(provider!.tokens, 950);
+    assert.equal(provider!.cached, 400);
   } finally {
     closeDatabase(db);
   }

@@ -553,6 +553,8 @@ export interface DashboardStats {
    *  transient, excluded from requestsErrorToday and the error rate. */
   throttledToday: number;
   tokensToday: number;
+  inputTokensToday: number;
+  cachedTokensToday: number;
   errorRateToday: number;
   costUsdToday: number;
   byModel: Array<{
@@ -568,6 +570,7 @@ export interface DashboardStats {
     catalogId: string | null;
     requests: number;
     tokens: number;
+    cached: number;
     costUsd: number;
   }>;
   statusBands: { success: number; clientError: number; serverError: number };
@@ -590,11 +593,12 @@ export interface UsageRow {
   userName: string | null;
   limit: number | null;
   used: number;
+  cached: number;
   day: string;
 }
 
 export interface UsageResponse {
-  today: { total: number; keys: UsageRow[] };
+  today: { total: number; input: number; cached: number; keys: UsageRow[] };
   history: Array<{ day: string; tokens: number }>;
 }
 
@@ -736,6 +740,7 @@ export interface UsageBreakdownRow {
   providerId: string | null;
   providerName: string | null;
   tokens: number;
+  cached: number;
   requests: number;
   costUsd: number;
 }

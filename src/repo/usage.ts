@@ -63,6 +63,7 @@ export interface UsageRow {
   userName: string | null;
   limit: number | null;
   used: number;
+  cached: number;
   day: string;
 }
 
@@ -72,10 +73,18 @@ export function listUsageToday(db: DB): UsageRow[] {
     .prepare(
       `SELECT k.id AS apiKeyId, k.name AS keyName, k.key_prefix AS keyPrefix,
               u.name AS userName, k.tokens_per_day AS \`limit\`,
-              COALESCE(usg.tokens, 0) AS used, @day AS day
+              COALESCE(usg.tokens, 0) AS used,
+              COALESCE(cache.cached, 0) AS cached, @day AS day
        FROM api_keys k
        LEFT JOIN users u ON u.id = k.user_id
        LEFT JOIN usage usg ON usg.api_key_id = k.id AND usg.day = @day
+       LEFT JOIN (
+         SELECT api_key_id, COALESCE(SUM(cached_tokens), 0) AS cached
+         FROM request_logs
+         WHERE date(ts) = @day
+           AND status >= 200 AND status < 300
+         GROUP BY api_key_id
+       ) cache ON cache.api_key_id = k.id
        ORDER BY used DESC, k.created_at DESC`,
     )
     .all({ day }) as UsageRow[];
@@ -149,12 +158,22 @@ export function hourlyUsageHistory(
   return out;
 }
 
-export function totalUsageToday(db: DB): number {
+export function usageSummaryToday(
+  db: DB,
+): { total: number; input: number; cached: number } {
   const day = utcDay();
-  const row = db
-    .prepare("SELECT COALESCE(SUM(tokens), 0) AS t FROM usage WHERE day = ?")
-    .get(day) as { t: number };
-  return row.t;
+  return db
+    .prepare(
+      `SELECT
+         (SELECT COALESCE(SUM(tokens), 0) FROM usage WHERE day = @day) AS total,
+         COALESCE(SUM(COALESCE(input_tokens, 0)), 0) AS input,
+         COALESCE(SUM(COALESCE(cached_tokens, 0)), 0) AS cached
+       FROM request_logs
+       WHERE date(ts) = @day
+         AND api_key_id IS NOT NULL
+         AND status >= 200 AND status < 300`,
+    )
+    .get({ day }) as { total: number; input: number; cached: number };
 }
 
 // --- Per (key, model, provider) breakdown ---------------------------------
@@ -170,6 +189,7 @@ export interface UsageBreakdownRow {
   providerId: string | null;
   providerName: string | null;
   tokens: number;
+  cached: number;
   requests: number;
   costUsd: number;
 }
@@ -207,8 +227,21 @@ export function breakdownForKey(
       `SELECT b.api_key_id AS apiKeyId, b.model AS model,
               b.provider_id AS providerId, p.name AS providerName,
               SUM(b.tokens) AS tokens, SUM(b.requests) AS requests,
-              COALESCE(SUM(b.cost_usd), 0) AS costUsd
-       FROM usage_breakdown b LEFT JOIN providers p ON p.id = b.provider_id
+              COALESCE(SUM(b.cost_usd), 0) AS costUsd,
+              COALESCE(cache.cached, 0) AS cached
+       FROM usage_breakdown b
+       LEFT JOIN providers p ON p.id = b.provider_id
+       LEFT JOIN (
+         SELECT api_key_id, model, provider_id,
+                COALESCE(SUM(cached_tokens), 0) AS cached
+         FROM request_logs
+         WHERE api_key_id = @id
+           AND date(ts) = @day
+           AND status >= 200 AND status < 300
+         GROUP BY api_key_id, model, provider_id
+       ) cache ON cache.api_key_id = b.api_key_id
+              AND cache.model = b.model
+              AND cache.provider_id IS b.provider_id
        WHERE b.api_key_id = @id AND b.day = @day
        GROUP BY b.model, b.provider_id
        ORDER BY tokens DESC`,
@@ -234,11 +267,22 @@ export function fullBreakdownToday(
               u.name AS userName, b.model AS model,
               b.provider_id AS providerId, p.name AS providerName,
               SUM(b.tokens) AS tokens, SUM(b.requests) AS requests,
-              COALESCE(SUM(b.cost_usd), 0) AS costUsd
+              COALESCE(SUM(b.cost_usd), 0) AS costUsd,
+              COALESCE(cache.cached, 0) AS cached
        FROM usage_breakdown b
        LEFT JOIN api_keys k ON k.id = b.api_key_id
        LEFT JOIN users u ON u.id = k.user_id
        LEFT JOIN providers p ON p.id = b.provider_id
+       LEFT JOIN (
+         SELECT api_key_id, model, provider_id,
+                COALESCE(SUM(cached_tokens), 0) AS cached
+         FROM request_logs
+         WHERE date(ts) = @day
+           AND status >= 200 AND status < 300
+         GROUP BY api_key_id, model, provider_id
+       ) cache ON cache.api_key_id = b.api_key_id
+              AND cache.model = b.model
+              AND cache.provider_id IS b.provider_id
        WHERE b.day = @day
        GROUP BY b.api_key_id, b.model, b.provider_id
        ORDER BY tokens DESC`,

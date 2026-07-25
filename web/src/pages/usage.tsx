@@ -38,7 +38,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fmtNum, fmtTokens, fmtUsd } from "@/lib/utils";
+import { fmtCacheHint, fmtNum, fmtTokens, fmtUsd } from "@/lib/utils";
 import {
   ModelIcon,
   ProviderIcon,
@@ -100,8 +100,8 @@ export default function Usage() {
             <CardContent className="p-0">
               <TableSkeleton
                 rows={6}
-                cols={6}
-                widths={["10%", "50%", "40%", "60%", "30%", "30%"]}
+                cols={7}
+                widths={["10%", "50%", "40%", "60%", "30%", "30%", "30%"]}
               />
             </CardContent>
           </Card>
@@ -113,8 +113,18 @@ export default function Usage() {
           <CardContent className="p-0">
             <TableSkeleton
               rows={6}
-              cols={7}
-              widths={["50%", "40%", "60%", "60%", "30%", "30%", "30%"]}
+              cols={9}
+              widths={[
+                "50%",
+                "40%",
+                "60%",
+                "60%",
+                "30%",
+                "30%",
+                "30%",
+                "30%",
+                "30%",
+              ]}
             />
           </CardContent>
         </Card>
@@ -148,7 +158,12 @@ export default function Usage() {
         desc="Per-key token consumption, quotas and provider resolution — resets at UTC midnight"
       />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-        <Stat label="Tokens today" value={fmtNum(data.today.total)} accent />
+        <Stat
+          label="Tokens today"
+          value={fmtNum(data.today.total)}
+          hint={fmtCacheHint(data.today.cached, data.today.input)}
+          accent
+        />
         <Stat label="Tracked keys" value={fmtNum(data.today.keys.length)} />
         <Stat
           label="Keys over quota"
@@ -195,7 +210,7 @@ export default function Usage() {
             {sorted.length === 0 ? (
               <EmptyState msg="No keys yet — create one on the API Keys page" />
             ) : (
-              <Table className="min-w-[42rem] table-fixed">
+              <Table className="min-w-[52rem] table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-8" />
@@ -203,6 +218,7 @@ export default function Usage() {
                     <TableHead className="w-28">Owner</TableHead>
                     <TableHead className="w-40">Quota / Day</TableHead>
                     <TableHead className="w-28 text-right">Used</TableHead>
+                    <TableHead className="w-28 text-right">Cached</TableHead>
                     <TableHead className="w-32 text-right">Remaining</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -251,6 +267,7 @@ export default function Usage() {
                   <TableHead>Resolved Provider</TableHead>
                   <TableHead className="text-right">Requests</TableHead>
                   <TableHead className="text-right">Tokens</TableHead>
+                  <TableHead className="text-right">Cached</TableHead>
                   <TableHead className="text-right">Cost</TableHead>
                   <TableHead className="text-right">Share</TableHead>
                 </TableRow>
@@ -293,6 +310,12 @@ export default function Usage() {
                       title={fmtNum(r.tokens)}
                     >
                       {fmtTokens(r.tokens)}
+                    </TableCell>
+                    <TableCell
+                      className="text-right tabular-nums text-muted-foreground"
+                      title={r.cached > 0 ? fmtNum(r.cached) : undefined}
+                    >
+                      {r.cached > 0 ? fmtTokens(r.cached) : "—"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {r.costUsd > 0 ? fmtUsd(r.costUsd) : "—"}
@@ -567,6 +590,12 @@ const KeyUsageRow = memo(function KeyUsageRow({
         <TableCell className="text-right tabular-nums whitespace-nowrap">
           {fmtNum(k.used)}
         </TableCell>
+        <TableCell
+          className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
+          title={k.cached > 0 ? fmtNum(k.cached) : undefined}
+        >
+          {k.cached > 0 ? fmtTokens(k.cached) : "—"}
+        </TableCell>
         <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
           {k.limit ? (
             over ? (
@@ -581,29 +610,30 @@ const KeyUsageRow = memo(function KeyUsageRow({
       </TableRow>
       {open && (
         <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={6} className="bg-muted/30 p-0">
+          <TableCell colSpan={7} className="bg-muted/30 p-0">
             {detail === null ? (
               <TableSkeleton
                 rows={3}
-                cols={5}
-                widths={["70%", "40%", "30%", "30%", "20%"]}
+                cols={7}
+                widths={["70%", "40%", "30%", "30%", "30%", "20%", "20%"]}
               />
             ) : detail.length === 0 ? (
               <p className="p-3 text-xs text-muted-foreground">
                 No requests from this key today.
               </p>
             ) : (
-              <Table className="min-w-[36rem] table-fixed">
+              <Table className="min-w-[44rem] table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[28%] pl-12">Model</TableHead>
-                    <TableHead className="w-[22%]">Provider</TableHead>
-                    <TableHead className="w-[13%] text-right">
+                    <TableHead className="w-[24%] pl-12">Model</TableHead>
+                    <TableHead className="w-[20%]">Provider</TableHead>
+                    <TableHead className="w-[12%] text-right">
                       Requests
                     </TableHead>
-                    <TableHead className="w-[17%] text-right">Tokens</TableHead>
+                    <TableHead className="w-[13%] text-right">Tokens</TableHead>
+                    <TableHead className="w-[13%] text-right">Cached</TableHead>
                     <TableHead className="w-[10%] text-right">Cost</TableHead>
-                    <TableHead className="w-[10%] text-right pr-4">
+                    <TableHead className="w-[8%] text-right pr-4">
                       Share
                     </TableHead>
                   </TableRow>
@@ -642,6 +672,12 @@ const KeyUsageRow = memo(function KeyUsageRow({
                           title={fmtNum(d.tokens)}
                         >
                           {fmtTokens(d.tokens)}
+                        </TableCell>
+                        <TableCell
+                          className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
+                          title={d.cached > 0 ? fmtNum(d.cached) : undefined}
+                        >
+                          {d.cached > 0 ? fmtTokens(d.cached) : "—"}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
                           {d.costUsd > 0 ? fmtUsd(d.costUsd) : "—"}
