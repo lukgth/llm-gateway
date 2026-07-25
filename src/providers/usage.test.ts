@@ -9,6 +9,7 @@ import { adapterForProvider } from ".";
 import type { Provider } from "../types";
 import type { UsageCtx, AdapterHttpResponse } from "./base";
 import { newapi } from "./catalog/newapi";
+import { openrouter } from "./catalog/openrouter";
 import { glm } from "./catalog/glm";
 import { claudeCode } from "./catalog/claude-code";
 
@@ -385,6 +386,271 @@ test("newapi.keyUsage: malformed JSON -> unavailable, no throw", async () => {
     })),
   );
   assert.equal(res.unavailable, true);
+});
+
+// --- OpenRouter: real GET /v1/key keyUsage() --------------------------------
+
+function openrouterCtx(
+  p: Provider,
+  request: UsageCtx["request"],
+  fields?: Partial<Pick<UsageCtx, "enabled" | "seed">>,
+): UsageCtx {
+  return {
+    provider: p,
+    apiKey: "sk-or-secret",
+    keyMetadata: {},
+    mask: "sk-or…cret",
+    enabled: true,
+    seed: 1,
+    baseUrl: p.baseUrl,
+    basePath: p.basePath || "",
+    resolve: (target) => p.baseUrl + (typeof target === "string" ? target : ""),
+    request,
+    ...fields,
+  };
+}
+
+test("openrouter.supportsKeyUsage is true (opts into the dashboard)", () => {
+  const p = prov({
+    catalogId: "openrouter",
+    baseUrl: "https://openrouter.ai/api",
+  });
+  assert.equal(
+    openrouter.supportsKeyUsage(
+      openrouterCtx(p, async () => {
+        throw new Error("unused");
+      }),
+    ),
+    true,
+  );
+});
+
+test("openrouter.keyUsage: disabled key -> unavailable without a network call", async () => {
+  const p = prov({
+    catalogId: "openrouter",
+    baseUrl: "https://openrouter.ai/api",
+  });
+  const res = await openrouter.keyUsage(
+    openrouterCtx(
+      p,
+      async () => {
+        throw new Error("must not be called");
+      },
+      { enabled: false },
+    ),
+  );
+  assert.equal(res.unavailable, true);
+  assert.equal(res.windows.length, 0);
+});
+
+test("openrouter.keyUsage: GET /api/v1/key with Bearer auth, capped monthly usage", async () => {
+  const p = prov({
+    catalogId: "openrouter",
+    baseUrl: "https://openrouter.ai/api",
+  });
+  let seenUrl = "";
+  let seenHeaders: Record<string, string> = {};
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async (url, init) => {
+      seenUrl = url;
+      seenHeaders = init.headers;
+      return jsonResponse(200, {
+        data: {
+          limit: 100,
+          limit_remaining: 74.5,
+          limit_reset: "monthly",
+          usage: 250,
+          usage_monthly: 999,
+          byok_usage_monthly: 50,
+          include_byok_in_limit: false,
+          is_free_tier: false,
+        },
+      });
+    }),
+  );
+  assert.equal(seenUrl, "https://openrouter.ai/api/v1/key");
+  assert.equal(seenHeaders.authorization, "Bearer sk-or-secret");
+  assert.equal(seenHeaders.accept, "application/json");
+  assert.equal(res.unavailable, undefined);
+  assert.equal(res.windows.length, 1);
+  const w = res.windows[0];
+  // Remaining credit is authoritative for a resetting key. All-time and period
+  // counters above are deliberately different so this catches the wrong source.
+  assert.equal(w.used, 25.5);
+  assert.equal(w.limit, 100);
+  assert.equal(w.unit, "dollars");
+  assert.equal(w.label, "Usage (monthly)");
+  // `limit_reset` is a cadence string, not an absolute ISO timestamp.
+  assert.equal(w.resetsAt, undefined);
+});
+
+test("openrouter.keyUsage: missing remaining falls back to reset counter and included BYOK usage", async () => {
+  const p = prov({ catalogId: "openrouter" });
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async () =>
+      jsonResponse(200, {
+        data: {
+          limit: 50,
+          limit_remaining: null,
+          limit_reset: "weekly",
+          usage: 40,
+          usage_weekly: 7.25,
+          byok_usage_weekly: 1.75,
+          include_byok_in_limit: true,
+        },
+      }),
+    ),
+  );
+  const w = res.windows[0];
+  assert.equal(w.used, 9);
+  assert.equal(w.limit, 50);
+  assert.equal(w.label, "Usage (weekly)");
+});
+
+test("openrouter.keyUsage: excluded BYOK usage is not added to fallback usage", async () => {
+  const p = prov({ catalogId: "openrouter" });
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async () =>
+      jsonResponse(200, {
+        data: {
+          limit: 20,
+          limit_reset: "daily",
+          usage_daily: 3,
+          byok_usage_daily: 8,
+          include_byok_in_limit: false,
+        },
+      }),
+    ),
+  );
+  assert.equal(res.windows[0].used, 3);
+});
+
+test("openrouter.keyUsage: missing included BYOK counter defaults to zero", async () => {
+  const p = prov({ catalogId: "openrouter" });
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async () =>
+      jsonResponse(200, {
+        data: {
+          limit: 20,
+          limit_reset: "daily",
+          usage_daily: 3,
+          include_byok_in_limit: true,
+        },
+      }),
+    ),
+  );
+  assert.equal(res.unavailable, undefined);
+  assert.equal(res.windows[0].used, 3);
+});
+
+test("openrouter.keyUsage: null limit -> all-time usage message without an invented limit", async () => {
+  const p = prov({ catalogId: "openrouter" });
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async () =>
+      jsonResponse(200, {
+        data: {
+          limit: null,
+          limit_remaining: null,
+          limit_reset: null,
+          usage: 39.850865837,
+          byok_usage: 12,
+          include_byok_in_limit: false,
+          is_free_tier: true,
+        },
+      }),
+    ),
+  );
+  assert.equal(res.unavailable, undefined);
+  assert.deepEqual(res.windows, []);
+  assert.equal(
+    res.message,
+    "Free tier · $39.85 used all time · No key spending limit",
+  );
+});
+
+test("openrouter.keyUsage: reports key expiry and free tier metadata", async () => {
+  const p = prov({ catalogId: "openrouter" });
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async () =>
+      jsonResponse(200, {
+        data: {
+          limit: 10,
+          limit_remaining: 10,
+          usage: 0,
+          is_free_tier: true,
+          expires_at: "2027-12-31T23:59:59Z",
+        },
+      }),
+    ),
+  );
+  assert.equal(res.expiresAt, "2027-12-31T23:59:59.000Z");
+  assert.equal(res.message, "Free tier");
+});
+
+test("openrouter.keyUsage: out-of-range expiry is ignored without throwing", async () => {
+  const p = prov({ catalogId: "openrouter" });
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async () =>
+      jsonResponse(200, {
+        data: {
+          limit: 10,
+          limit_remaining: 10,
+          usage: 0,
+          expires_at: "999999999999999999999",
+        },
+      }),
+    ),
+  );
+  assert.equal(res.unavailable, undefined);
+  assert.equal(res.expiresAt, undefined);
+});
+
+test("openrouter.keyUsage: non-2xx status -> unavailable with status in message", async () => {
+  const p = prov({ catalogId: "openrouter" });
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async () =>
+      jsonResponse(401, { error: { message: "bad key" } }),
+    ),
+  );
+  assert.equal(res.unavailable, true);
+  assert.match(res.message ?? "", /401/);
+});
+
+test("openrouter.keyUsage: network error -> unavailable, error surfaced in message", async () => {
+  const p = prov({ catalogId: "openrouter" });
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async () => {
+      throw new Error("ECONNREFUSED");
+    }),
+  );
+  assert.equal(res.unavailable, true);
+  assert.match(res.message ?? "", /ECONNREFUSED/);
+});
+
+test("openrouter.keyUsage: malformed JSON -> unavailable, no throw", async () => {
+  const p = prov({ catalogId: "openrouter" });
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async () => ({
+      status: 200,
+      ok: true,
+      ms: 1,
+      text: "not json",
+      json: () => {
+        throw new SyntaxError("Unexpected token");
+      },
+    })),
+  );
+  assert.equal(res.unavailable, true);
+});
+
+test("openrouter.keyUsage: missing data envelope -> unavailable", async () => {
+  const p = prov({ catalogId: "openrouter" });
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async () => jsonResponse(200, { data: null })),
+  );
+  assert.equal(res.unavailable, true);
+  assert.equal(res.windows.length, 0);
+  assert.match(res.message ?? "", /unexpected response/i);
 });
 
 // --- claude-code passive unified usage --------------------------------------
