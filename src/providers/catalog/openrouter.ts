@@ -206,7 +206,7 @@ class OpenRouterAdapter extends OpenAICompatibleAdapter {
         }
         used = periodUsage;
       }
-      label = reset ? `Usage (${reset})` : "Usage";
+      label = reset ? `Spending limit (${reset})` : "Spending limit";
     }
 
     if (!Number.isFinite(limit)) {

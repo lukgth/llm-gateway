@@ -479,7 +479,7 @@ test("openrouter.keyUsage: GET /api/v1/key with Bearer auth, capped monthly usag
   assert.equal(w.used, 25.5);
   assert.equal(w.limit, 100);
   assert.equal(w.unit, "dollars");
-  assert.equal(w.label, "Usage (monthly)");
+  assert.equal(w.label, "Spending limit (monthly)");
   // `limit_reset` is a cadence string, not an absolute ISO timestamp.
   assert.equal(w.resetsAt, undefined);
 });
@@ -504,7 +504,7 @@ test("openrouter.keyUsage: missing remaining falls back to reset counter and inc
   const w = res.windows[0];
   assert.equal(w.used, 9);
   assert.equal(w.limit, 50);
-  assert.equal(w.label, "Usage (weekly)");
+  assert.equal(w.label, "Spending limit (weekly)");
 });
 
 test("openrouter.keyUsage: excluded BYOK usage is not added to fallback usage", async () => {
