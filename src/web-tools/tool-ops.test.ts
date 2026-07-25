@@ -49,18 +49,21 @@ test("detectWebTools finds hosted web_search in messages-shaped tools", () => {
   assert.deepEqual(detectWebTools(body), { search: true, fetch: false });
 });
 
-test("detectWebTools finds hosted web_search in chat-shaped tools", () => {
-  // Chat tool defs nest the name under function.name.
+test("detectWebTools does NOT detect chat-shaped tools as hosted", () => {
+  // Chat tool defs use type:"function" — they are never Anthropic hosted tools.
+  // A hosted web tool has type:"web_search_20250305" or type:"web_search", which
+  // is stripped by anthropicToolsToChat() during Messages→Chat conversion.
   const body = {
     tools: [{ type: "function", function: { name: "web_search" } }],
   };
-  assert.deepEqual(detectWebTools(body), { search: true, fetch: false });
+  assert.deepEqual(detectWebTools(body), { search: false, fetch: false });
 });
 
-test("chat web-tool request normalizes to Messages shape with detection intact", () => {
-  // The engine converts a Chat-client web-tool request to Messages shape before
-  // the loop runs (a Claude model served via /v1/chat/completions). After the
-  // conversion the hosted tool is still detectable + the messages carry over.
+test("custom web_search tool in Chat format is NOT detected as hosted", () => {
+  // A Chat-format tool {type:"function", function:{name:"web_search"}} is a
+  // custom tool, not an Anthropic-hosted one. Hosted tools are identified by
+  // their type field ("web_search_20250305" / "web_search"), which never
+  // survives the Messages→Chat conversion (anthropicToolsToChat strips it).
   const chatBody = {
     model: "claude-via-openai",
     messages: [{ role: "user", content: "search the web for cats" }],
@@ -68,13 +71,14 @@ test("chat web-tool request normalizes to Messages shape with detection intact",
       { type: "function", function: { name: "web_search", parameters: {} } },
     ],
   };
-  // Detection works on the raw chat body (trigger side).
-  assert.deepEqual(detectWebTools(chatBody), { search: true, fetch: false });
-  // After normalization the body is Messages-shaped and still detectable.
+  // Not detected on the raw Chat body.
+  assert.deepEqual(detectWebTools(chatBody), { search: false, fetch: false });
+  // After normalization the body is Messages-shaped and still not detected —
+  // the tool has no type field, so it's a custom tool, not a hosted one.
   const messagesBody = chatRequestToMessages(chatBody);
   assert.ok(Array.isArray(messagesBody.messages));
   assert.deepEqual(detectWebTools(messagesBody as Record<string, unknown>), {
-    search: true,
+    search: false,
     fetch: false,
   });
 });
@@ -97,7 +101,7 @@ test("rewriteRequest injects messages-shaped defs by default", () => {
 
 test("rewriteRequest injects chat-shaped defs when fmt=chat", () => {
   const body = {
-    tools: [{ type: "function", function: { name: "web_search" } }],
+    tools: [{ type: "web_search_20250305", name: "web_search" }],
     messages: [],
   };
   const out = rewriteRequest(body, { search: true, fetch: false }, "chat");
