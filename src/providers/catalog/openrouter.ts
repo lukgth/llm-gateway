@@ -245,9 +245,9 @@ export const openrouter = new OpenRouterAdapter({
   docsUrl: "https://openrouter.ai/docs",
   defaults: {
     baseUrl: "https://openrouter.ai/api",
-    endpoints: [WireKind.Chat],
+    endpoints: [WireKind.Chat, WireKind.Responses, WireKind.Messages],
     authScheme: "bearer",
-    nativeConversion: false,
+    nativeConversion: true,
   },
   fields: [
     { key: "name", label: "Name", placeholder: "openrouter", required: true },
