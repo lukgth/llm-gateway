@@ -37,23 +37,18 @@ export interface WebToolsPresent {
 }
 
 // True when a tool definition is Anthropic's hosted web_search / web_fetch.
-// Matches by the versioned `type` prefix ("web_search_20250305") or bare name.
+//
+// Hosted tools are identified by their `type` field (e.g. "web_search_20250305"
+// or "web_search"). A custom tool named "web_search" has no `type` field
+// (Messages) or type:"function"/"custom" (Chat/Responses) — the type prefix is
+// the only reliable indicator. Matching on name alone would false-positive on
+// any third-party tool also named "web_search" (omp.sh, etc.).
 function isHostedWebTool(
   t: Record<string, unknown>,
 ): "search" | "fetch" | null {
   const type = typeof t.type === "string" ? t.type : "";
-  // Name may sit at the top level (messages/responses tool defs) or nested under
-  // `function.name` (chat tool defs) — check both so detection is format-agnostic
-  // (a Claude model behind an OpenAI-type provider sends chat-shaped tool defs).
-  const fn = t.function as { name?: unknown } | undefined;
-  const name =
-    typeof t.name === "string"
-      ? t.name
-      : fn && typeof fn.name === "string"
-        ? fn.name
-        : "";
-  if (type.startsWith("web_search") || name === WEB_SEARCH) return "search";
-  if (type.startsWith("web_fetch") || name === WEB_FETCH) return "fetch";
+  if (type.startsWith("web_search")) return "search";
+  if (type.startsWith("web_fetch")) return "fetch";
   return null;
 }
 

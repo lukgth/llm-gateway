@@ -2,8 +2,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Database as DB } from "better-sqlite3";
 import { openDatabase, closeDatabase } from "../db";
+import { createApiKey } from "./api-keys";
 import { insertRequestLog } from "./request-logs";
-import { hourlyUsageHistory, rebuildUsageFromLogs, addUsage } from "./usage";
+import {
+  hourlyUsageHistory,
+  rebuildUsageFromLogs,
+  addUsage,
+  usageSummaryToday,
+  listUsageToday,
+  breakdownForKey,
+  fullBreakdownToday,
+} from "./usage";
 
 // Insert a log row with an explicit ts (insertRequestLog stamps ts=now, which
 // can't distinguish rows within a test) and cached-token control.
@@ -96,6 +105,7 @@ test("rebuildUsageFromLogs recomputes usage + usage_breakdown excluding cached t
   const db = openDatabase(":memory:");
   try {
     const today = new Date().toISOString().slice(0, 10);
+    createApiKey(db, { id: "key1", name: "Key 1" }, "gw-test-secret");
     // Two successful requests for the same key/model/provider, one with a
     // large cache hit. Naive input+output would total 1000+200+100+50=1350;
     // realized (cache-excluded) totals to (1000-600+200)+(100+50)=600+150=750.
@@ -123,7 +133,7 @@ test("rebuildUsageFromLogs recomputes usage + usage_breakdown excluding cached t
       status: 500,
       inputTokens: 9999,
       outputTokens: 9999,
-      cachedTokens: 0,
+      cachedTokens: 7000,
     });
 
     // Seed the live counters with a wrong value to prove the rebuild
@@ -150,6 +160,32 @@ test("rebuildUsageFromLogs recomputes usage + usage_breakdown excluding cached t
     };
     assert.equal(bdRow.tokens, 750);
     assert.equal(bdRow.requests, 2); // only the two 2xx rows
+
+    assert.deepEqual(usageSummaryToday(db), {
+      total: 750,
+      input: 1100,
+      cached: 600,
+    });
+    assert.equal(
+      listUsageToday(db).find((row) => row.apiKeyId === "key1")?.cached,
+      600,
+    );
+    assert.equal(
+      breakdownForKey(db, "key1", today).find(
+        (row) =>
+          row.model === "claude-opus" && row.providerId === "anthropic-prod",
+      )?.cached,
+      600,
+    );
+    assert.equal(
+      fullBreakdownToday(db, today).find(
+        (row) =>
+          row.apiKeyId === "key1" &&
+          row.model === "claude-opus" &&
+          row.providerId === "anthropic-prod",
+      )?.cached,
+      600,
+    );
   } finally {
     closeDatabase(db);
   }
