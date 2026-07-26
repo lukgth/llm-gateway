@@ -142,9 +142,31 @@ async function main() {
   }
 
   console.log(`\n=== HTTP GET (as the gateway sends it) ===`);
+  // A v4-only lookup — what the gateway now installs on every direct agent.
+  const v4OnlyLookup = (host, opts, cb) => {
+    const callback = typeof opts === "function" ? opts : cb;
+    const o = typeof opts === "function" ? {} : (opts || {});
+    dns.lookup(host, { ...o, all: true }, (err, list) => {
+      if (err) return callback(err);
+      const v4 = list.filter((a) => a.family === 4);
+      const chosen = v4.length ? v4 : list;
+      if (o.all) return callback(null, chosen);
+      callback(null, chosen[0].address, chosen[0].family);
+    });
+  };
+
   const variants = [
     ["default", {}],
     ["autoSelectFamily:true", { autoSelectFamily: true }],
+    [
+      "GATEWAY FIX (v4-only lookup)",
+      {
+        agent: new (isHttps ? https : http).Agent({
+          autoSelectFamily: true,
+          lookup: v4OnlyLookup,
+        }),
+      },
+    ],
     ["forced IPv4", { family: 4 }],
     ["forced IPv6", { family: 6 }],
   ];
@@ -189,9 +211,16 @@ async function main() {
   404                       -> wrong path. This provider's model list is at
                                {baseUrl}{basePath}{modelsPath}, e.g.
                                /compatible-mode/v1/models — NOT /v1/models.
-  IPv6 timeout + IPv4 ok    -> dead AAAA route. The gateway now resolves IPv4
-                               first on every direct connection, so this no
-                               longer stalls it (v6 is kept as a fallback).
+  IPv6 ENETUNREACH/timeout  -> dead AAAA route. Note that "default" and
+    but "GATEWAY FIX" ok       "autoSelectFamily:true" can BOTH fail here with
+                               an empty-message ETIMEDOUT while forced IPv4
+                               works: with a mixed v4-first list, node's Happy
+                               Eyeballs abandons the in-flight v4 at its 250ms
+                               attempt timeout, takes an instant ENETUNREACH on
+                               the v6, and reports a timeout. The gateway now
+                               drops v6 from the list entirely when v4 exists,
+                               which is what "GATEWAY FIX" exercises.
+                               Override with GATEWAY_DNS_FAMILY=6 or =auto.
   a proxy var is set        -> curl uses it, the gateway does not. Copy it into
                                the provider's \`proxy\` field.
   TLS handshake timeout     -> filtered upstream; a proxy is required.

@@ -96,13 +96,16 @@ function describeTransportError(err: unknown): string {
   return parts.length ? parts.join(" ") : "transport error with no detail";
 }
 
-// Default per-hop probe timeout when the provider doesn't specify one. A probe
-// is an interactive admin action, so this stays well under the gateway's own
-// request timeout — but slow-to-connect hosts (some regional endpoints take
-// 10s+ just to complete the TCP+TLS handshake) need more than a snap judgement.
-const DEFAULT_PROBE_TIMEOUT_MS = 15_000;
-const MIN_PROBE_TIMEOUT_MS = 5_000;
-const MAX_PROBE_TIMEOUT_MS = 60_000;
+// Per-hop timeout for every admin probe: connectivity test, model discovery,
+// and per-model test. A flat 30s, NOT the provider's requestTimeoutMs.
+//
+// Deliberately fixed rather than inherited: a probe is an interactive admin
+// action with its own latency budget, and inheriting made the wait unpredictable
+// (a provider configured with a 600s request timeout would hang the Test button
+// for ten minutes). Distant regional endpoints regularly need 10s+ just for the
+// TCP+TLS handshake, so 30s is the headroom that covers them without leaving an
+// operator staring at a spinner.
+const PROBE_TIMEOUT_MS = 30_000;
 
 // One HTTP round-trip with the provider's outbound proxy + TLS-verify + a
 // bounded timeout. Returns the raw status/body (never throws — a transport
@@ -214,13 +217,7 @@ function rawRequestOnce(
         error: describeTransportError(err),
       }),
     );
-    const timeoutMs = Math.min(
-      MAX_PROBE_TIMEOUT_MS,
-      Math.max(
-        MIN_PROBE_TIMEOUT_MS,
-        opts.timeoutMs || DEFAULT_PROBE_TIMEOUT_MS,
-      ),
-    );
+    const timeoutMs = opts.timeoutMs || PROBE_TIMEOUT_MS;
     req.setTimeout(timeoutMs, () =>
       req.destroy(new Error(`probe timeout after ${timeoutMs}ms`)),
     );
@@ -248,10 +245,13 @@ const RETRYABLE_TRANSPORT = [
   "EHOSTUNREACH",
   "ENETUNREACH",
   "socket hang up",
-  "probe timeout",
   "response stream error",
   "before sending a status line",
 ];
+// Deliberately NOT retried: "probe timeout". These failures are all fast, so a
+// second attempt is nearly free — but the timeout is 30s, and retrying it would
+// mean a 60s wait behind an interactive Test button. If 30s wasn't enough, the
+// answer is a real diagnosis, not doubling the spinner.
 
 function isRetryableTransportError(error: string | undefined): boolean {
   if (!error) return false;
@@ -424,7 +424,8 @@ function modelsTransport(
       headers: init.headers,
       tlsVerify: p.tlsVerify,
       proxy: p.proxy,
-      timeoutMs: p.requestTimeoutMs,
+      // Flat PROBE_TIMEOUT_MS (see rawRequestOnce) — deliberately NOT the
+      // provider's requestTimeoutMs, which can be minutes long.
       log,
     });
     if (res.error) throw new Error(res.error);
@@ -472,7 +473,7 @@ function probeModels(
     },
     tlsVerify: p.tlsVerify,
     proxy: p.proxy,
-    timeoutMs: p.requestTimeoutMs,
+    // Flat PROBE_TIMEOUT_MS — see rawRequestOnce.
     log,
   });
 }
@@ -547,7 +548,7 @@ function adapterRequestTransport(
       body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
       tlsVerify: p.tlsVerify,
       proxy: p.proxy,
-      timeoutMs: p.requestTimeoutMs,
+      // Flat PROBE_TIMEOUT_MS — see rawRequestOnce.
       log: log ?? { providerId: p.id },
     });
     if (res.error) throw new Error(res.error);

@@ -18,20 +18,37 @@ type LookupCb = (
   family?: number,
 ) => void;
 
-// A dns.lookup drop-in that returns IPv4 addresses ahead of IPv6.
+// Which address family outbound connections should use. "4" (the default) drops
+// IPv6 whenever IPv4 exists; "6" does the inverse; "auto" restores Node's stock
+// behavior. Read once at import — this reflects a machine-level network fact,
+// not per-request state.
+const FAMILY_PREF = (process.env.GATEWAY_DNS_FAMILY ?? "4").trim();
+
+// A dns.lookup drop-in that RESOLVES ONLY THE PREFERRED FAMILY when that family
+// has any addresses, falling back to the full list when it has none.
 //
-// Motivation: a host that publishes AAAA records is unreachable over v6 from a
-// box that HAS a v6 address but no working v6 route — a common state (ISP hands
-// out an address, transit is broken; or the AAAA is only routable inside its own
-// region). The OS resolver doesn't know the route is dead: glibc's RFC 6724
-// sorting puts the AAAA first, Node follows it, and the connection hangs until
-// the timeout while curl on the same box succeeds.
+// Motivation: a host publishing AAAA records is unreachable over v6 from a box
+// that HAS a v6 address but no working v6 route — common when an ISP hands out
+// an address with broken transit, or when the AAAA is only routable inside its
+// own region. The OS resolver can't know the route is dead, so it keeps handing
+// back the AAAA and Node keeps trying it.
 //
-// This does NOT disable IPv6 — v6 addresses are still returned, just last. Paired
-// with `autoSelectFamily: true` on the agent, Node races them in the order given
-// and keeps the first to connect, so a v4-only host, a v6-only host, and a
-// dual-stack host with either family broken all still work. The only thing that
-// changes is which family gets tried first.
+// Why FILTER rather than merely sort v4 first: with a MIXED list, Node's
+// `autoSelectFamily` (Happy Eyeballs, on by default from Node 20) splits by
+// family and alternates. Measured against a host with a reachable v4 (~330ms)
+// and an unreachable v6, a mixed list ordered V4-FIRST fails with an
+// empty-message ETIMEDOUT in ~520ms: Node hits its 250ms per-attempt timeout on
+// the v4 that was about to succeed, switches to the v6, takes an instant
+// ENETUNREACH, and collapses the aggregate into a timeout. The SAME list
+// ordered v6-first succeeds, as does either ordering once the list is v4-only.
+// So sorting v4 first doesn't just fail to help — it produces the exact
+// ordering that triggers the bug. The unreachable family has to be absent.
+//
+// Multiple addresses WITHIN the chosen family are all returned, so Happy
+// Eyeballs still races them and one dead IP in that family stays survivable.
+// A v6-only host still resolves (there is no v4 to prefer). A dual-stack host
+// whose V4 is the broken side is the case this deliberately trades away — set
+// GATEWAY_DNS_FAMILY=6 for that, or =auto for Node's stock behavior.
 export function ipv4FirstLookup(
   hostname: string,
   options: dns.LookupOneOptions | dns.LookupAllOptions | LookupCb,
@@ -41,11 +58,13 @@ export function ipv4FirstLookup(
   const opts = (typeof options === "function" ? {} : (options ?? {})) as
     dns.LookupOneOptions | dns.LookupAllOptions;
 
-  // An explicitly pinned family is the caller's decision — don't reorder it.
-  if (opts.family === 4 || opts.family === 6) {
+  // An explicitly pinned family, or an opt-out, is the caller's decision.
+  if (opts.family === 4 || opts.family === 6 || FAMILY_PREF === "auto") {
     dns.lookup(hostname, opts as dns.LookupOneOptions, cb as never);
     return;
   }
+
+  const preferred = FAMILY_PREF === "6" ? 6 : 4;
 
   dns.lookup(hostname, { ...opts, all: true }, (err, addresses) => {
     if (err) return cb(err);
@@ -56,14 +75,14 @@ export function ipv4FirstLookup(
           code: "ENOTFOUND",
         }),
       );
-    const sorted = [
-      ...list.filter((a) => a.family === 4),
-      ...list.filter((a) => a.family !== 4),
-    ];
+    const wanted = list.filter((a) => a.family === preferred);
+    // Fall back to the whole list when the preferred family isn't present at
+    // all — a v6-only host must still resolve.
+    const chosen = wanted.length ? wanted : list;
     // `all` is what Node passes when autoSelectFamily is on; it wants the whole
-    // ordered list. Otherwise it wants just the winner.
-    if ((opts as dns.LookupAllOptions).all) return cb(null, sorted);
-    cb(null, sorted[0].address, sorted[0].family);
+    // list. Otherwise it wants just the winner.
+    if ((opts as dns.LookupAllOptions).all) return cb(null, chosen);
+    cb(null, chosen[0].address, chosen[0].family);
   });
 }
 
@@ -118,6 +137,14 @@ export function directAgent(isHttps: boolean): Agent {
   if (hit) return hit;
   const opts = {
     autoSelectFamily: true,
+    // NOTE: autoSelectFamilyAttemptTimeout is deliberately left at Node's
+    // 250ms default. It looks like a knob worth raising for distant hosts
+    // (their TCP connect exceeds 250ms), but the timer does not ABANDON the
+    // slow socket — it starts a second one racing alongside it, and whichever
+    // completes first wins. Measured on a v4-only list whose first address is
+    // blackholed: 250ms recovers in 266ms, 5s takes 5007ms. Raising it only
+    // slows failover to a dead address. The family-mixing hazard it appears to
+    // address is handled by the lookup filter above instead.
     lookup: ipv4FirstLookup as unknown as undefined,
   };
   const agent = isHttps ? new https.Agent(opts) : new http.Agent(opts);

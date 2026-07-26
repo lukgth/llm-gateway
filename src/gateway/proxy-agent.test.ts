@@ -56,9 +56,7 @@ async function withStubbedDns<T>(
   }
 }
 
-function lookup(
-  opts: object,
-): Promise<{
+function lookup(opts: object): Promise<{
   addresses?: Addr[];
   address?: string;
   family?: number;
@@ -79,25 +77,27 @@ function lookup(
   );
 }
 
-test("ipv4FirstLookup: every IPv4 address precedes every IPv6 one", async () => {
+test("ipv4FirstLookup: IPv6 is REMOVED from a dual-stack result, not just sorted", async () => {
   await withStubbedDns(MIXED, async () => {
     const { addresses } = await lookup({ all: true });
     assert.ok(addresses);
-    const families = addresses.map((a) => a.family);
+    // Sorting v4-first is NOT enough, and is in fact the ordering that trips
+    // Node's autoSelectFamily into an empty-message ETIMEDOUT when the v6 side
+    // is unroutable (measured: mixed v4-first fails, v4-only succeeds). The v6
+    // entries must be absent, not merely last.
     assert.ok(
-      families.lastIndexOf(4) < families.indexOf(6),
-      `expected all v4 before all v6, got ${JSON.stringify(families)}`,
+      addresses.every((a) => a.family === 4),
+      `expected v4 only, got ${JSON.stringify(addresses)}`,
     );
   });
 });
 
-test("ipv4FirstLookup: IPv6 addresses are retained, not dropped", async () => {
+test("ipv4FirstLookup: all IPv4 addresses are kept so Happy Eyeballs can race them", async () => {
   await withStubbedDns(MIXED, async () => {
     const { addresses } = await lookup({ all: true });
-    assert.equal(addresses?.length, MIXED.length);
-    // The v6 entries must survive as fallback — paired with autoSelectFamily,
-    // Node races them, so a v4-blackholed host still connects.
-    assert.equal(addresses?.filter((a) => a.family === 6).length, 2);
+    // Filtering the family must not collapse to a single address — one dead IP
+    // within the chosen family still has to be survivable.
+    assert.equal(addresses?.length, 2);
   });
 });
 
@@ -120,10 +120,11 @@ test("ipv4FirstLookup: an explicit family pin is honored, not reordered", async 
   });
 });
 
-test("ipv4FirstLookup: a v6-only host still resolves", async () => {
+test("ipv4FirstLookup: a v6-only host still resolves (nothing to prefer)", async () => {
   const v6only = MIXED.filter((a) => a.family === 6);
   await withStubbedDns(v6only, async () => {
     const { addresses } = await lookup({ all: true });
+    // The preference filters; it must never make a v6-only host unreachable.
     assert.equal(addresses?.length, 2);
     assert.ok(addresses?.every((a) => a.family === 6));
   });
