@@ -30,5 +30,5 @@ export const nvidiaNim = new NvidiaNimAdapter({
       editable: true,
       hint: "Change for a self-hosted NIM container (e.g. http://localhost:8000).",
     },
-  ]
+  ],
 });

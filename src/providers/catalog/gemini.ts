@@ -31,5 +31,5 @@ export const gemini = new GeminiAdapter({
       required: true,
       hint: "One per line - rotated round-robin.",
     },
-  ]
+  ],
 });
