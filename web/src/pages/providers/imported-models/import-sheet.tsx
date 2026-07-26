@@ -77,23 +77,28 @@ export function ImportSheet({
   const run = async () => {
     setBusy(true);
     try {
-      let created = 0;
       const byId = new Map(upstream.map((m) => [m.id, m]));
-      for (const upstreamId of selected) {
-        if (existing.has(upstreamId)) continue;
-        // Import WITH the discovered metadata so context/max-out/capabilities
-        // land on the row instead of coming in blank.
-        const m = byId.get(upstreamId);
-        await api.createProviderModel(provider.id, {
-          upstreamId,
-          displayName: m?.displayName ?? null,
-          contextWindow: m?.contextWindow ?? null,
-          maxOutputTokens: m?.maxOutputTokens ?? null,
-          capabilities: m?.capabilities ?? null,
+      // Import WITH the discovered metadata so context/max-out/capabilities
+      // land on the row instead of coming in blank. One batched request.
+      const create = [...selected]
+        .filter((upstreamId) => !existing.has(upstreamId))
+        .map((upstreamId) => {
+          const m = byId.get(upstreamId);
+          return {
+            upstreamId,
+            displayName: m?.displayName ?? null,
+            contextWindow: m?.contextWindow ?? null,
+            maxOutputTokens: m?.maxOutputTokens ?? null,
+            capabilities: m?.capabilities ?? null,
+          };
         });
-        created++;
-      }
-      toast.success(plural(created, "model") + " imported");
+      const res =
+        create.length > 0
+          ? await api.batchProviderModels(provider.id, { create })
+          : { created: 0, updated: 0, deleted: 0, errors: [] };
+      toast.success(plural(res.created + res.updated, "model") + " imported");
+      if (res.errors.length > 0)
+        toast.error(`${plural(res.errors.length, "model")} failed to import`);
       onImported();
     } catch (e) {
       toast.error((e as Error).message);

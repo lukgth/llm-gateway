@@ -113,14 +113,17 @@ export default function ImportedModels() {
       .map((s) => s.trim())
       .filter(Boolean);
     if (ids.length === 0) return;
-    let added = 0;
     try {
-      for (const upstreamId of ids) {
-        if (existing.has(upstreamId)) continue;
-        await api.createProviderModel(id, { upstreamId });
-        added++;
-      }
-      toast.success(`${plural(added, "model")} added`);
+      const create = ids
+        .filter((upstreamId) => !existing.has(upstreamId))
+        .map((upstreamId) => ({ upstreamId }));
+      const res =
+        create.length > 0
+          ? await api.batchProviderModels(id, { create })
+          : { created: 0, updated: 0, deleted: 0, errors: [] };
+      toast.success(`${plural(res.created + res.updated, "model")} added`);
+      if (res.errors.length > 0)
+        toast.error(`${plural(res.errors.length, "model")} failed`);
       setAdding(false);
       load();
     } catch (e) {
@@ -132,8 +135,12 @@ export default function ImportedModels() {
     if (selected.size === 0) return;
     if (!confirm(`Remove ${plural(selected.size, "imported model")}?`)) return;
     try {
-      for (const mid of selected) await api.deleteProviderModel(id, mid);
-      toast.success(`${plural(selected.size, "model")} removed`);
+      const res = await api.batchProviderModels(id, {
+        delete: [...selected],
+      });
+      toast.success(`${plural(res.deleted, "model")} removed`);
+      if (res.errors.length > 0)
+        toast.error(`${plural(res.errors.length, "model")} failed to remove`);
       setSelected(new Set());
       load();
     } catch (e) {

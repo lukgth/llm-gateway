@@ -35,7 +35,7 @@ export const qwencloud = new QwenCloudAdapter({
     baseUrl: "https://token-plan.ap-southeast-1.maas.aliyuncs.com",
     basePath: "/compatible-mode/v1",
     modelsPath: "/models",
-    endpoints: [WireKind.Chat, WireKind.Messages],
+    endpoints: [WireKind.Chat, WireKind.Responses, WireKind.Messages],
     authScheme: "bearer",
     nativeConversion: false,
   },
@@ -57,6 +57,51 @@ export const qwencloud = new QwenCloudAdapter({
       label: "Base URL",
       editable: true,
       hint: "Default: https://token-plan.ap-southeast-1.maas.aliyuncs.com",
+    },
+  ],
+  quirks: {
+    defaultTransforms: OPENAI_DEFAULT_TRANSFORMS,
+  },
+});
+
+// Same product, mainland China region. Identical path layout (including the
+// /apps/anthropic sibling), so it reuses QwenCloudAdapter — only the host differs.
+//
+// Inference base URL: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+// Anthropic-format endpoint: https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic
+export const qwencloudCn = new QwenCloudAdapter({
+  id: "qwencloud-cn",
+  label: "QwenCloud Token Plan (CN)",
+  blurb:
+    "Alibaba QwenCloud Token Plan subscription, mainland China region — OpenAI-compatible and Anthropic-compatible endpoints.",
+  brand: "qwen",
+  docsUrl: "https://help.aliyun.com/zh/model-studio/token-plan-overview",
+  defaults: {
+    baseUrl: "https://token-plan.cn-beijing.maas.aliyuncs.com",
+    basePath: "/compatible-mode/v1",
+    modelsPath: "/models",
+    endpoints: [WireKind.Chat, WireKind.Responses, WireKind.Messages],
+    authScheme: "bearer",
+    nativeConversion: false,
+  },
+  fields: [
+    {
+      key: "name",
+      label: "Name",
+      placeholder: "qwencloud-cn",
+      required: true,
+    },
+    {
+      key: "apiKeys",
+      label: "API key",
+      required: true,
+      hint: "One per line — rotated round-robin.",
+    },
+    {
+      key: "baseUrl",
+      label: "Base URL",
+      editable: true,
+      hint: "Default: https://token-plan.cn-beijing.maas.aliyuncs.com",
     },
   ],
   quirks: {

@@ -106,6 +106,7 @@ const PROVIDER_BRANDS: Record<string, { svg: string; label: string }> = {
   cline: { svg: clineSvg, label: "Cline" },
   minimax: { svg: minimaxSvg, label: "MiniMax" },
   xai: { svg: grokSvg, label: "xAI" },
+  kimi: { svg: kimiSvg, label: "Kimi" },
   // Catalog-ID aliases — pages that call ProviderIcon with brand={provider.catalogId}
   // need entries for IDs that differ from the template's brand field.
   "opencode-go": { svg: opencodeSvg, label: "OpenCode" },
@@ -117,6 +118,8 @@ const PROVIDER_BRANDS: Record<string, { svg: string; label: string }> = {
   "xiaomi-mimo": { svg: mimoSvg, label: "MiMo" },
   clinepass: { svg: clineSvg, label: "Cline" },
   qwencloud: { svg: qwenSvg, label: "Qwen" },
+  "qwencloud-cn": { svg: qwenSvg, label: "Qwen" },
+  moonshot: { svg: kimiSvg, label: "Kimi" },
   // Generic-adapter catalog ids — ProviderCard passes provider.catalogId
   // straight through as `brand`, so these need entries too (a custom-named
   // "openai-compatible"/"anthropic-compatible" provider must still show its

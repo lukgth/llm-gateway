@@ -365,6 +365,99 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
     }
   });
 
+  // Bulk import/remove. Importing a provider's full catalog used to be one HTTP
+  // POST (and one implicit SQLite commit) per model; this collapses it into a
+  // single request wrapped in one transaction. Per-item failures are collected
+  // rather than aborting the batch, matching POST /providers/batch.
+  //
+  // Registered before "/providers/:id/models/:mid" so "batch" isn't parsed as an id.
+  r.post("/providers/:id/models/batch", requireAdmin, (req, res) => {
+    try {
+      const providerId = String(req.params.id);
+      if (!getProvider(db, providerId))
+        return res
+          .status(404)
+          .json({ error: { message: "provider not found" } });
+
+      const b = (req.body || {}) as Record<string, unknown>;
+      const createRaw = Array.isArray(b.create) ? b.create : [];
+      const deleteRaw = Array.isArray(b.delete) ? b.delete : [];
+
+      const result = {
+        created: 0,
+        updated: 0,
+        deleted: 0,
+        errors: [] as Array<{
+          upstreamId?: string;
+          id?: number;
+          detail: string;
+        }>,
+      };
+
+      const tx = db.transaction(() => {
+        for (const raw of createRaw) {
+          const m = (raw || {}) as Record<string, unknown>;
+          const upstreamId = str(m.upstreamId);
+          if (!upstreamId) {
+            result.errors.push({ detail: "upstreamId is required" });
+            continue;
+          }
+          try {
+            // Existing row => update, new row => create. Checked up front so the
+            // response can distinguish the two (upsert alone can't tell us).
+            const had = !!getProviderModel(db, providerId, upstreamId);
+            // Store ONLY the caller's own transforms — family/adapter defaults
+            // are applied live at request time, not baked into the row. See the
+            // single-model POST above and docs/transforms-api.md.
+            upsertProviderModel(db, {
+              providerId,
+              upstreamId,
+              displayName: m.displayName == null ? null : str(m.displayName),
+              contextWindow:
+                m.contextWindow == null ? null : num(m.contextWindow),
+              maxOutputTokens:
+                m.maxOutputTokens == null ? null : num(m.maxOutputTokens),
+              capabilities:
+                m.capabilities == null
+                  ? null
+                  : parseCapabilities(m.capabilities),
+              transforms: parseTransformConfig(m.transforms),
+              notes: m.notes == null ? null : str(m.notes),
+            });
+            if (had) result.updated++;
+            else result.created++;
+          } catch (e) {
+            result.errors.push({ upstreamId, detail: (e as Error).message });
+          }
+        }
+
+        for (const raw of deleteRaw) {
+          const mid = Number(raw);
+          const existing = getProviderModelById(db, mid);
+          if (!existing || existing.providerId !== providerId) {
+            result.errors.push({ id: mid, detail: "not found" });
+            continue;
+          }
+          try {
+            deleteProviderModel(db, mid);
+            result.deleted++;
+          } catch (e) {
+            result.errors.push({ id: mid, detail: (e as Error).message });
+          }
+        }
+      });
+      tx();
+
+      if (result.created || result.updated || result.deleted) {
+        router.reload();
+        broadcast(["providers", "models"], "provider-model:batch");
+      }
+      res.json(result);
+    } catch (e) {
+      bad(res, e);
+    }
+  });
+
   r.put("/providers/:id/models/:mid", requireAdmin, (req, res) => {
     try {
       const mid = Number(req.params.mid);

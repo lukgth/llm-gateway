@@ -264,6 +264,18 @@ export const api = {
       `/api/providers/${providerId}/models`,
       json("POST", input),
     ),
+  // Bulk import/remove in one request + one transaction. Preferred over looping
+  // createProviderModel/deleteProviderModel, which spams a round-trip per model.
+  batchProviderModels: (
+    providerId: string,
+    ops: { create?: ProviderModelInput[]; delete?: number[] },
+  ) =>
+    req<{
+      created: number;
+      updated: number;
+      deleted: number;
+      errors: Array<{ upstreamId?: string; id?: number; detail: string }>;
+    }>(`/api/providers/${providerId}/models/batch`, json("POST", ops)),
   updateProviderModel: (
     providerId: string,
     mid: number,

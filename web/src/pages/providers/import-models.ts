@@ -26,23 +26,21 @@ export async function importModelsForProvider(
   const existing = await api.listProviderModels(providerId);
   const have = new Set(existing.map((m) => m.upstreamId));
 
-  for (const m of list) {
-    if (have.has(m.id)) {
-      result.skipped++;
-      continue;
-    }
-    try {
-      await api.createProviderModel(providerId, {
-        upstreamId: m.id,
-        displayName: m.displayName ?? null,
-        contextWindow: m.contextWindow ?? null,
-        maxOutputTokens: m.maxOutputTokens ?? null,
-        capabilities: m.capabilities ?? null,
-      });
-      result.created++;
-    } catch {
-      result.skipped++;
-    }
-  }
+  const fresh = list.filter((m) => !have.has(m.id));
+  result.skipped = list.length - fresh.length;
+  if (fresh.length === 0) return result;
+
+  // One request, one transaction — not one round-trip per model.
+  const res = await api.batchProviderModels(providerId, {
+    create: fresh.map((m) => ({
+      upstreamId: m.id,
+      displayName: m.displayName ?? null,
+      contextWindow: m.contextWindow ?? null,
+      maxOutputTokens: m.maxOutputTokens ?? null,
+      capabilities: m.capabilities ?? null,
+    })),
+  });
+  result.created = res.created + res.updated;
+  result.skipped += res.errors.length;
   return result;
 }
