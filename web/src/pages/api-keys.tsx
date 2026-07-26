@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useState } from "react";
 import { Plus, Trash2, Check, X, Copy, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
-import type { ApiKey, User } from "@/lib/types";
+import type { ApiKey, Model, User } from "@/lib/types";
 import {
   PageHeader,
   TableSkeleton,
@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -45,6 +46,7 @@ const PAGE_SIZE = 15;
 export default function ApiKeys() {
   const [items, setItems] = useState<ApiKey[] | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [models, setModels] = useState<Model[]>([]);
   const [creating, setCreating] = useState(false);
   const [newKey, setNewKey] = useState<ApiKey | null>(null);
   const [editing, setEditing] = useState<ApiKey | null>(null);
@@ -59,6 +61,10 @@ export default function ApiKeys() {
     api
       .listUsers()
       .then(setUsers)
+      .catch(() => {});
+    api
+      .listModels()
+      .then(setModels)
       .catch(() => {});
   }, [load]);
 
@@ -122,6 +128,7 @@ export default function ApiKeys() {
       {creating && (
         <KeyCreateDialog
           users={users}
+          models={models}
           onClose={() => setCreating(false)}
           onCreated={(k) => {
             setCreating(false);
@@ -139,6 +146,7 @@ export default function ApiKeys() {
         <KeyEditDialog
           apiKey={editing}
           users={users}
+          models={models}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -214,16 +222,20 @@ const KeyRow = memo(function KeyRow({
 
 function KeyCreateDialog({
   users,
+  models,
   onClose,
   onCreated,
 }: {
   users: User[];
+  models: Model[];
   onClose: () => void;
   onCreated: (k: ApiKey) => void;
 }) {
   const [name, setName] = useState("");
   const [userId, setUserId] = useState<string>("none");
   const [quota, setQuota] = useState("");
+  const [accessAllModels, setAccessAllModels] = useState(true);
+  const [modelIds, setModelIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -233,6 +245,8 @@ function KeyCreateDialog({
         name: name.trim() || null,
         userId: userId === "none" ? null : userId,
         tokensPerDay: quota.trim() ? Number(quota) : null,
+        accessAllModels,
+        modelIds: accessAllModels ? [] : [...modelIds],
       });
       onCreated(k);
     } catch (e) {
@@ -286,6 +300,13 @@ function KeyCreateDialog({
               placeholder="1000000"
             />
           </Field>
+          <ModelAccessControl
+            models={models}
+            accessAllModels={accessAllModels}
+            onAccessAllModelsChange={setAccessAllModels}
+            modelIds={modelIds}
+            onModelIdsChange={setModelIds}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -344,14 +365,96 @@ function KeyRevealDialog({
   );
 }
 
+function ModelAccessControl({
+  models,
+  accessAllModels,
+  onAccessAllModelsChange,
+  modelIds,
+  onModelIdsChange,
+}: {
+  models: Model[];
+  accessAllModels: boolean;
+  onAccessAllModelsChange: (checked: boolean) => void;
+  modelIds: Set<string>;
+  onModelIdsChange: (ids: Set<string>) => void;
+}) {
+  const toggleModel = (id: string, checked: boolean) => {
+    const next = new Set(modelIds);
+    if (checked) next.add(id);
+    else next.delete(id);
+    onModelIdsChange(next);
+  };
+
+  return (
+    <div className="grid gap-2">
+      <label className="flex items-center gap-2">
+        <Switch
+          checked={accessAllModels}
+          onCheckedChange={onAccessAllModelsChange}
+        />
+        <span className="text-xs font-medium">Access all models</span>
+      </label>
+      {!accessAllModels && (
+        <div className="grid gap-2">
+          <div className="max-h-48 overflow-y-auto rounded-md border border-border p-2">
+            {models.length === 0 ? (
+              <p className="px-1 py-2 text-xs text-muted-foreground">
+                No exposed models are available.
+              </p>
+            ) : (
+              <div className="grid gap-1">
+                {models.map((model) => (
+                  <label
+                    key={model.id}
+                    className="flex cursor-pointer items-center gap-2 rounded px-1 py-1.5 hover:bg-muted/50"
+                  >
+                    <Checkbox
+                      checked={modelIds.has(model.id)}
+                      onCheckedChange={(checked) =>
+                        toggleModel(model.id, checked)
+                      }
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-medium">
+                        {model.alias}
+                      </span>
+                      {model.displayName && model.displayName !== model.alias && (
+                        <span className="block truncate text-[11px] text-muted-foreground">
+                          {model.displayName}
+                        </span>
+                      )}
+                    </span>
+                    {!model.enabled && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        Disabled
+                      </Badge>
+                    )}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+          {modelIds.size === 0 && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              This key will not be able to access any model.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function KeyEditDialog({
   apiKey,
   users,
+  models,
   onClose,
   onSaved,
 }: {
   apiKey: ApiKey;
   users: User[];
+  models: Model[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -359,6 +462,12 @@ function KeyEditDialog({
   const [userId, setUserId] = useState(apiKey.userId ?? "none");
   const [quota, setQuota] = useState(apiKey.tokensPerDay?.toString() ?? "");
   const [enabled, setEnabled] = useState(apiKey.enabled);
+  const [accessAllModels, setAccessAllModels] = useState(
+    apiKey.accessAllModels,
+  );
+  const [modelIds, setModelIds] = useState<Set<string>>(
+    new Set(apiKey.modelIds),
+  );
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -369,6 +478,8 @@ function KeyEditDialog({
         userId: userId === "none" ? null : userId,
         tokensPerDay: quota.trim() ? Number(quota) : null,
         enabled,
+        accessAllModels,
+        modelIds: accessAllModels ? [] : [...modelIds],
       });
       toast.success("Key updated");
       onSaved();
@@ -422,6 +533,13 @@ function KeyEditDialog({
               onChange={(e) => setQuota(e.target.value)}
             />
           </Field>
+          <ModelAccessControl
+            models={models}
+            accessAllModels={accessAllModels}
+            onAccessAllModelsChange={setAccessAllModels}
+            modelIds={modelIds}
+            onModelIdsChange={setModelIds}
+          />
           <label className="flex items-center gap-2">
             <Switch checked={enabled} onCheckedChange={setEnabled} />
             <span className="text-xs font-medium text-muted-foreground normal-case">

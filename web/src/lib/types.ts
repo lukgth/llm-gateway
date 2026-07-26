@@ -491,6 +491,8 @@ export interface ApiKey {
   userName: string | null;
   tokensPerDay: number | null;
   enabled: boolean;
+  accessAllModels: boolean;
+  modelIds: string[];
   lastUsedAt: string | null;
   createdAt: string;
 }

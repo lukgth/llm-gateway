@@ -19,6 +19,8 @@ export interface ApiKey {
   userName: string | null;
   tokensPerDay: number | null; // null = unlimited
   enabled: boolean;
+  accessAllModels: boolean;
+  modelIds: string[];
   lastUsedAt: string | null;
   createdAt: string;
 }

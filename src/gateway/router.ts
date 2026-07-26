@@ -156,15 +156,17 @@ export class GatewayRouter {
     app.get("/v1/models", (req, res) => {
       const isAnthropic =
         !!req.header("anthropic-version") || !!req.header("x-api-key");
+      const apiKey = (req as GatewayRequest).__apiKey ?? null;
       res.json(
         isAnthropic
-          ? this.registry.listAnthropic()
-          : this.registry.listOpenAI(),
+          ? this.registry.listAnthropic(apiKey)
+          : this.registry.listOpenAI(apiKey),
       );
     });
 
     app.get("/v1/models/:id", (req, res) => {
-      const r = this.registry.resolveModel(req.params.id);
+      const apiKey = (req as GatewayRequest).__apiKey ?? null;
+      const r = this.registry.resolveModel(req.params.id, apiKey);
       if (!r.model) {
         return res.status(404).json({
           error: {
@@ -181,8 +183,8 @@ export class GatewayRouter {
       const body = req.body as { model?: unknown } | undefined;
       const model = body && body.model;
       if (typeof model !== "string") return next();
-      const r = this.registry.resolveModel(model);
       const gw = req as GatewayRequest;
+      const r = this.registry.resolveModel(model, gw.__apiKey ?? null);
       gw.__resolved = r.model ?? null;
       gw.__alias = r.model ? r.model.alias : undefined;
       if (r.error === 404) {

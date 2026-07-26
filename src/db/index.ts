@@ -104,18 +104,26 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS api_keys (
-  id             TEXT PRIMARY KEY,
-  name           TEXT,
-  key_prefix     TEXT NOT NULL,
-  key_hash       TEXT NOT NULL UNIQUE,
-  user_id        TEXT REFERENCES users(id) ON DELETE SET NULL,
-  tokens_per_day INTEGER,
-  enabled        INTEGER NOT NULL DEFAULT 1,
-  last_used_at   TEXT,
-  created_at     TEXT NOT NULL
+  id                TEXT PRIMARY KEY,
+  name              TEXT,
+  key_prefix        TEXT NOT NULL,
+  key_hash          TEXT NOT NULL UNIQUE,
+  user_id           TEXT REFERENCES users(id) ON DELETE SET NULL,
+  tokens_per_day    INTEGER,
+  enabled           INTEGER NOT NULL DEFAULT 1,
+  access_all_models INTEGER NOT NULL DEFAULT 1,
+  last_used_at      TEXT,
+  created_at        TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash  ON api_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_api_keys_user  ON api_keys(user_id);
+
+CREATE TABLE IF NOT EXISTS api_key_models (
+  api_key_id TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+  model_id   TEXT NOT NULL REFERENCES models(id) ON DELETE CASCADE,
+  PRIMARY KEY (api_key_id, model_id)
+);
+CREATE INDEX IF NOT EXISTS idx_api_key_models_model ON api_key_models(model_id);
 
 CREATE TABLE IF NOT EXISTS usage (
   api_key_id TEXT NOT NULL,
@@ -453,6 +461,18 @@ function migrate(db: DB): void {
   migrateProvidersFormatNullable(db);
   addColumnIfMissing(db, "providers", "provider_config", "TEXT");
   addColumnIfMissing(db, "models", "type", "TEXT NOT NULL DEFAULT 'openai'");
+  addColumnIfMissing(
+    db,
+    "api_keys",
+    "access_all_models",
+    "INTEGER NOT NULL DEFAULT 1",
+  );
+  db.exec(`CREATE TABLE IF NOT EXISTS api_key_models (
+    api_key_id TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+    model_id TEXT NOT NULL REFERENCES models(id) ON DELETE CASCADE,
+    PRIMARY KEY (api_key_id, model_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_api_key_models_model ON api_key_models(model_id);`);
   addColumnIfMissing(db, "request_logs", "client", "TEXT");
   addColumnIfMissing(db, "request_logs", "cached_tokens", "INTEGER");
   addColumnIfMissing(db, "request_logs", "debug_request", "TEXT");
@@ -800,14 +820,17 @@ function migrateApiKeysDropFull(db: DB): void {
         key_prefix     TEXT NOT NULL,
         key_hash       TEXT NOT NULL UNIQUE,
         user_id        TEXT REFERENCES users(id) ON DELETE SET NULL,
-        tokens_per_day INTEGER,
-        enabled        INTEGER NOT NULL DEFAULT 1,
-        last_used_at   TEXT,
-        created_at     TEXT NOT NULL
+        tokens_per_day    INTEGER,
+        enabled           INTEGER NOT NULL DEFAULT 1,
+        access_all_models INTEGER NOT NULL DEFAULT 1,
+        last_used_at      TEXT,
+        created_at        TEXT NOT NULL
       );
       INSERT INTO api_keys_new
-        (id, name, key_prefix, key_hash, user_id, tokens_per_day, enabled, last_used_at, created_at)
-        SELECT id, name, key_prefix, key_hash, user_id, tokens_per_day, enabled, last_used_at, created_at
+        (id, name, key_prefix, key_hash, user_id, tokens_per_day, enabled, access_all_models, last_used_at, created_at)
+        SELECT id, name, key_prefix, key_hash, user_id, tokens_per_day, enabled,
+          ${hasColumn(db, "api_keys", "access_all_models") ? "access_all_models" : "1"},
+          last_used_at, created_at
         FROM api_keys;
       DROP TABLE api_keys;
       ALTER TABLE api_keys_new RENAME TO api_keys;

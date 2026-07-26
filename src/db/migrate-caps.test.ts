@@ -10,6 +10,51 @@ import os from "os";
 import path from "path";
 import { openDatabase, closeDatabase } from ".";
 
+test("legacy API keys default to unrestricted model access", () => {
+  const file = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), "llmgw-key-scope-")),
+    "old.db",
+  );
+  try {
+    const raw = new Database(file);
+    raw.exec(`
+      CREATE TABLE api_keys (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        key_prefix TEXT NOT NULL,
+        key_hash TEXT NOT NULL UNIQUE,
+        user_id TEXT,
+        tokens_per_day INTEGER,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        last_used_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      INSERT INTO api_keys
+        (id, name, key_prefix, key_hash, enabled, created_at)
+      VALUES ('legacy', 'Legacy', 'sk-old', 'hash', 1, '2020-01-01');
+    `);
+    raw.close();
+
+    const db = openDatabase(file);
+    const key = db
+      .prepare("SELECT access_all_models FROM api_keys WHERE id = 'legacy'")
+      .get() as { access_all_models: number };
+    assert.equal(key.access_all_models, 1);
+    const table = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'api_key_models'",
+      )
+      .get();
+    assert.ok(table);
+    closeDatabase(db);
+
+    const db2 = openDatabase(file);
+    closeDatabase(db2);
+  } finally {
+    fs.rmSync(path.dirname(file), { recursive: true, force: true });
+  }
+});
+
 test("capabilities column is added to a pre-existing provider_models table", () => {
   const file = path.join(
     fs.mkdtempSync(path.join(os.tmpdir(), "llmgw-mig-")),

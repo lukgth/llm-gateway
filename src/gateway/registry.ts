@@ -18,6 +18,7 @@ import { listModels } from "../repo/models";
 import { getSettings } from "../repo/settings";
 import {
   DEFAULT_CAPABILITIES,
+  type ApiKey,
   type Model,
   type ModelCapabilities,
   type Settings,
@@ -122,17 +123,28 @@ export class ModelRegistry {
     return s;
   }
 
+  private canAccess(apiKey: ApiKey | null, model: Model): boolean {
+    return (
+      !apiKey || apiKey.accessAllModels || apiKey.modelIds.includes(model.id)
+    );
+  }
+
+  private accessibleModels(apiKey: ApiKey | null): Model[] {
+    return this.models.filter((model) => this.canAccess(apiKey, model));
+  }
+
   // Resolve a client-supplied model id to the full Model (with its fallback
-  // chain). Returns { error: 404 } when unknown/disabled, unless allowUnknown
-  // is set, in which case an anonymous pass-through model is synthesized.
-  resolveModel(clientModel: string): Resolved {
+  // chain). Returns { error: 404 } when unknown, disabled, or inaccessible.
+  // Unknown pass-through is never available to a restricted key because it has
+  // no stable exposed-model id that can be granted.
+  resolveModel(clientModel: string, apiKey: ApiKey | null = null): Resolved {
     if (typeof clientModel !== "string" || clientModel === "") {
       return { error: 404 };
     }
     const alias = this.aliasFromExposed(clientModel);
     const model = this.models.find((m) => m.alias === alias);
-    if (model) return { model };
-    if (this.settings.allowUnknown) {
+    if (model) return this.canAccess(apiKey, model) ? { model } : { error: 404 };
+    if (this.settings.allowUnknown && (!apiKey || apiKey.accessAllModels)) {
       // Forward verbatim to a single-link chain (no provider known yet - the
       // engine will treat the raw name as the upstream model for every enabled
       // provider that has no opinion).
@@ -230,15 +242,15 @@ export class ModelRegistry {
     return entry;
   }
 
-  listOpenAI(): OpenAIListModelResponse {
+  listOpenAI(apiKey: ApiKey | null = null): OpenAIListModelResponse {
     return {
       object: "list",
-      data: this.models.map((m) => this.openAIEntry(m)),
+      data: this.accessibleModels(apiKey).map((m) => this.openAIEntry(m)),
     };
   }
 
-  listAnthropic(): AnthropicListModelResponse {
-    const data = this.models.map((m) => {
+  listAnthropic(apiKey: ApiKey | null = null): AnthropicListModelResponse {
+    const data = this.accessibleModels(apiKey).map((m) => {
       // Claude models get the stock Anthropic listing entry (real display
       // name, release date, limits, capabilities) so Anthropic clients see
       // exactly what the upstream API would return.
