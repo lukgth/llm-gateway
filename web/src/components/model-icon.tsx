@@ -119,6 +119,7 @@ const PROVIDER_BRANDS: Record<string, { svg: string; label: string }> = {
   clinepass: { svg: clineSvg, label: "Cline" },
   qwencloud: { svg: qwenSvg, label: "Qwen" },
   "qwencloud-cn": { svg: qwenSvg, label: "Qwen" },
+  "dashscope-coding": { svg: qwenSvg, label: "Qwen" },
   moonshot: { svg: kimiSvg, label: "Kimi" },
   // Generic-adapter catalog ids — ProviderCard passes provider.catalogId
   // straight through as `brand`, so these need entries too (a custom-named

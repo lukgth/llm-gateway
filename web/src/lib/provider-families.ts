@@ -31,7 +31,11 @@ export const PROVIDER_FAMILIES: readonly ProviderFamily[] = [
   { label: "NewAPI", brand: "newapi", ids: ["newapi"] },
   { label: "OpenCode", brand: "opencode", ids: ["opencode", "opencode-go"] },
   { label: "Xiaomi", brand: "mimo", ids: ["xiaomi-mimo"] },
-  { label: "Qwen", brand: "qwen", ids: ["qwencloud", "qwencloud-cn"] },
+  {
+    label: "Qwen",
+    brand: "qwen",
+    ids: ["qwencloud", "qwencloud-cn", "dashscope-coding"],
+  },
   { label: "Moonshot", brand: "kimi", ids: ["moonshot"] },
   { label: "Cline", brand: "cline", ids: ["clinepass"] },
   { label: "MiniMax", brand: "minimax", ids: ["minimax"] },

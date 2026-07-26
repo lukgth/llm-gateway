@@ -19,7 +19,7 @@
 // It appears in the wizard immediately (via .toTemplate()) and routes through
 // its adapter — no engine changes needed.
 //
-// `./catalog/` holds only the 23 stock provider entries themselves; this file
+// `./catalog/` holds only the 24 stock provider entries themselves; this file
 // (registry.ts), base/, quirks.ts, and types.ts are infrastructure and stay
 // at the top level of providers/ — kept apart so "add a provider" always
 // means "add one file to catalog/", never touching the machinery around it.
@@ -53,6 +53,7 @@ import { ollama, ollamaCloud } from "./catalog/ollama";
 import { opencodeGo } from "./catalog/opencode-go";
 import { qwencloud, qwencloudCn } from "./catalog/qwencloud";
 import { moonshot } from "./catalog/moonshot";
+import { dashscopeCoding } from "./catalog/dashscope-coding";
 import { clinepass } from "./catalog/clinepass";
 import { minimax } from "./catalog/minimax";
 import { xai } from "./catalog/xai";
@@ -72,6 +73,7 @@ const ADAPTERS: ProviderAdapter[] = [
   glm,
   qwencloud,
   qwencloudCn,
+  dashscopeCoding,
   moonshot,
   clinepass,
   minimax,
