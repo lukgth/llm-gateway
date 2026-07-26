@@ -229,6 +229,31 @@ export function parseUserInput(
 
 export function parseApiKeyInput(body: unknown): ApiKeyInput {
   const b = (body || {}) as Record<string, unknown>;
+  if (
+    b.accessAllModels !== undefined &&
+    typeof b.accessAllModels !== "boolean"
+  ) {
+    throw new Error("accessAllModels must be a boolean");
+  }
+  if (b.modelIds !== undefined && !Array.isArray(b.modelIds)) {
+    throw new Error("modelIds must be an array");
+  }
+  const modelIds = Array.isArray(b.modelIds)
+    ? b.modelIds.map((id) => {
+        if (typeof id !== "string" || !id.trim())
+          throw new Error("modelIds must contain non-empty strings");
+        return id.trim();
+      })
+    : undefined;
+  if (modelIds !== undefined && b.accessAllModels === undefined) {
+    throw new Error("accessAllModels is required with modelIds");
+  }
+  if (b.accessAllModels === false && modelIds === undefined) {
+    throw new Error("modelIds is required when accessAllModels is false");
+  }
+  if (b.accessAllModels === true && modelIds && modelIds.length > 0) {
+    throw new Error("modelIds must be empty when accessAllModels is true");
+  }
   return {
     name:
       b.name === undefined ? undefined : b.name == null ? null : str(b.name),
@@ -245,6 +270,8 @@ export function parseApiKeyInput(body: unknown): ApiKeyInput {
           ? null
           : (num(b.tokensPerDay) ?? null),
     enabled: b.enabled === undefined ? undefined : !!b.enabled,
+    accessAllModels: b.accessAllModels as boolean | undefined,
+    modelIds,
   };
 }
 

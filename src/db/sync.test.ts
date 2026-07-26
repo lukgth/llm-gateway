@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { openDatabase, closeDatabase } from ".";
 import { syncFromConfig } from "./sync";
 import { getProvider } from "../repo/providers";
+import { listApiKeys } from "../repo/api-keys";
 import type { ConfigJson } from "../config";
 
 function cfg(over: Partial<ConfigJson> = {}): ConfigJson {
@@ -35,6 +36,19 @@ test("config-synced upstream is seeded as the proxy provider type", () => {
     assert.equal(p.baseUrl, "https://bridge.example.com"); // trailing slash trimmed
     assert.equal(p.keyCount.total, 1);
     assert.equal(p.keyCount.enabled, 1);
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test("config-synced gateway keys default to unrestricted model access", () => {
+  const db = openDatabase(":memory:");
+  try {
+    syncFromConfig(db, cfg({ gatewayApiKeys: ["sk-client"] }));
+    const keys = listApiKeys(db);
+    assert.equal(keys.length, 1);
+    assert.equal(keys[0].accessAllModels, true);
+    assert.deepEqual(keys[0].modelIds, []);
   } finally {
     closeDatabase(db);
   }

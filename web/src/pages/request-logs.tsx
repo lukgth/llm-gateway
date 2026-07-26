@@ -52,6 +52,15 @@ function retryHint(retryAtMs: number): string {
   return `retry in ${Math.floor(s / 3600)}h`;
 }
 
+function fmtTokensPerSecond(
+  outputTokens: number | null,
+  latencyMs: number | null,
+): string {
+  if (outputTokens == null || latencyMs == null || latencyMs <= 0) return "-";
+  const throughput = (outputTokens * 1000) / latencyMs;
+  return `${throughput.toLocaleString(undefined, { maximumFractionDigits: 1 })} tok/s`;
+}
+
 export default function RequestLogs() {
   const [model, setModel] = useState("");
   const [errorsOnly, setErrorsOnly] = useState(false);
@@ -105,7 +114,7 @@ export default function RequestLogs() {
           {!items ? (
             <TableSkeleton
               rows={8}
-              cols={9}
+              cols={11}
               widths={[
                 "60%",
                 "40%",
@@ -114,6 +123,8 @@ export default function RequestLogs() {
                 "60%",
                 "30%",
                 "35%",
+                "35%",
+                "30%",
                 "30%",
                 "50%",
               ]}
@@ -121,23 +132,26 @@ export default function RequestLogs() {
           ) : items.length === 0 && page === 0 ? (
             <EmptyState msg="No matching requests" />
           ) : (
-            <Table className="min-w-[56rem] table-fixed">
+            <Table className="min-w-[62rem] table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[11%] whitespace-nowrap">
+                  <TableHead className="w-[10%] whitespace-nowrap">
                     Time
                   </TableHead>
-                  <TableHead className="w-[9%]">Key</TableHead>
+                  <TableHead className="w-[8%]">Key</TableHead>
                   <TableHead className="w-[7%]">Client</TableHead>
-                  <TableHead className="w-[16%]">Model</TableHead>
-                  <TableHead className="w-[16%]">Provider</TableHead>
+                  <TableHead className="w-[14%]">Model</TableHead>
+                  <TableHead className="w-[14%]">Provider</TableHead>
                   <TableHead className="w-[7%] text-right">Status</TableHead>
                   <TableHead className="w-[10%] text-right whitespace-nowrap">
                     Tok In/Out
                   </TableHead>
+                  <TableHead className="w-[8%] text-right whitespace-nowrap">
+                    Tok/s
+                  </TableHead>
                   <TableHead className="w-[7%] text-right">Cost</TableHead>
                   <TableHead className="w-[7%] text-right">Latency</TableHead>
-                  <TableHead className="w-[10%]">Note</TableHead>
+                  <TableHead className="w-[8%]">Note</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -355,6 +369,9 @@ const LogRow = memo(function LogRow({
             </span>
           )}
         </TableCell>
+        <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
+          {fmtTokensPerSecond(l.outputTokens, l.latencyMs)}
+        </TableCell>
         <TableCell className="text-right tabular-nums text-muted-foreground">
           {l.costUsd != null ? fmtUsd(l.costUsd) : "-"}
         </TableCell>
@@ -370,7 +387,7 @@ const LogRow = memo(function LogRow({
       </TableRow>
       {open && (
         <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={10} className="bg-muted/30 p-0">
+          <TableCell colSpan={11} className="bg-muted/30 p-0">
             <div className="grid gap-3 p-3 md:grid-cols-2">
               <DebugPanel
                 title="Request"

@@ -321,6 +321,8 @@ export const api = {
     name?: string | null;
     userId?: string | null;
     tokensPerDay?: number | null;
+    accessAllModels?: boolean;
+    modelIds?: string[];
   }) => req<ApiKey>("/api/api-keys", json("POST", input)),
   updateApiKey: (
     id: string,
@@ -329,6 +331,8 @@ export const api = {
       userId?: string | null;
       tokensPerDay?: number | null;
       enabled?: boolean;
+      accessAllModels?: boolean;
+      modelIds?: string[];
     },
   ) => req<ApiKey>(`/api/api-keys/${id}`, json("PUT", input)),
   deleteApiKey: (id: string) =>
@@ -338,6 +342,8 @@ export const api = {
       name?: string | null;
       userId?: string | null;
       tokensPerDay?: number | null;
+      accessAllModels?: boolean;
+      modelIds?: string[];
     }>;
     update?: Array<{
       id: string;
@@ -345,6 +351,8 @@ export const api = {
       userId?: string | null;
       tokensPerDay?: number | null;
       enabled?: boolean;
+      accessAllModels?: boolean;
+      modelIds?: string[];
     }>;
     delete?: string[];
     enable?: string[];

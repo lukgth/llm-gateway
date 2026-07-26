@@ -313,6 +313,8 @@ test("settleUsage: cached tokens are billed at a discount but excluded from the 
       userName: null,
       tokensPerDay: null,
       enabled: true,
+      accessAllModels: true,
+      modelIds: [],
       lastUsedAt: null,
       createdAt: new Date().toISOString(),
     };
