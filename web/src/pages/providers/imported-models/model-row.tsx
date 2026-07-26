@@ -192,7 +192,7 @@ export function ModelRow({
                   to={`/models/${m.id}`}
                   className={cn(
                     buttonVariants({ variant: "secondary", size: "sm" }),
-                    "max-w-40 truncate",
+                    "truncate",
                   )}
                   title={`Edit ${m.alias}`}
                 >
