@@ -1,5 +1,5 @@
 // shadcn's canonical sonner wrapper, adapted to this app's own useTheme hook
-// (@/hooks/use-theme) instead of next-themes — the project has no next-themes
+// (@/hooks/use-theme) instead of next-themes - the project has no next-themes
 // dependency, and useTheme already drives the .dark class + <meta
 // name="color-scheme"> everywhere else in the app, so this reuses that same
 // source of truth rather than adding a second theme provider.
@@ -10,7 +10,7 @@
 // on a theme toggle. `font-mono` on the toaster's own className cascades to
 // every toast (title, description, action/cancel buttons) as a real Tailwind
 // utility resolving to --font-mono, replacing the old inline
-// `fontFamily: "JetBrains Mono, monospace"` — which named the NON-variable
+// `fontFamily: "JetBrains Mono, monospace"` - which named the NON-variable
 // family even though only "JetBrains Mono Variable" is loaded
 // (@fontsource-variable/jetbrains-mono), so it silently fell back to the
 // browser's generic monospace font on every toast.

@@ -2,7 +2,7 @@
 //
 // Anthropic returns a 429 rate_limit_error when a Claude Code subscription key's
 // plan lacks the usage credits to serve a LONG-CONTEXT request. It is NOT a
-// normal rate limit and NOT a key fault — the key is healthy, its plan just
+// normal rate limit and NOT a key fault - the key is healthy, its plan just
 // can't take this particular request. The engine treats it as a per-key "skip"
 // signal: rotate to another key (no health penalty, no cooldown, no error log),
 // and only fail the provider over once EVERY key is credit-less. See forward()'s
@@ -23,7 +23,7 @@ const LONG_CONTEXT_CREDIT_SUBSTRINGS = [
 ];
 
 // Detect the long-context credits 429. Gated to Claude Code (only its
-// subscription billing path produces this signal) but NOT to any model — any
+// subscription billing path produces this signal) but NOT to any model - any
 // model on a Claude Code key can hit its plan's long-context credit ceiling.
 export function isClaudeCodeUsageCreditsError(input: {
   status: number;
@@ -49,7 +49,7 @@ export function isClaudeCodeUsageCreditsError(input: {
 }
 
 // The canonical message Anthropic returns when a Claude Code key's plan can't
-// serve a PREMIUM model (Fable/Mythos) for lack of usage credits — the sibling
+// serve a PREMIUM model (Fable/Mythos) for lack of usage credits - the sibling
 // of the long-context signal above, but scoped to the MODEL rather than the
 // request size. Exported for reason strings + tests.
 export const MODEL_USAGE_CREDITS_MESSAGE =
@@ -59,10 +59,10 @@ export const MODEL_USAGE_CREDITS_MESSAGE =
 const MODEL_CREDIT_SUBSTRINGS = ["credits are required for this model"];
 
 // Detect the premium-model usage-credits 429. Like the long-context signal it is
-// NOT a key fault and NOT a rate limit — a plain Claude Code key simply has no
+// NOT a key fault and NOT a rate limit - a plain Claude Code key simply has no
 // Fable/Mythos access; it can still serve base models. The engine treats it as a
 // per-key "skip" (rotate to another key, no health penalty, no cooldown, no
-// error log), and only fails the provider over once EVERY key lacks it — same as
+// error log), and only fails the provider over once EVERY key lacks it - same as
 // the long-context path, but WITHOUT touching long-context credit-proof
 // bookkeeping (a premium-less key may still hold long-context credits).
 // Recognised by the stable message phrasing OR the structured

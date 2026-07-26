@@ -1,4 +1,4 @@
-// The ProviderAdapter builder scheme — a provider adapter owns BOTH a
+// The ProviderAdapter builder scheme - a provider adapter owns BOTH a
 // provider's catalog metadata (the data the Add-Provider wizard renders) AND
 // its per-endpoint routing behavior. See ../base's former header comment
 // (preserved in this folder's index.ts) for the two-phase route/build model.
@@ -81,12 +81,12 @@ export abstract class ProviderAdapter {
   }
 
   // BASE_URL for internal reference (the catalog default origin, "" when the
-  // template ships none — e.g. the generic openai-compatible escape hatch).
+  // template ships none - e.g. the generic openai-compatible escape hatch).
   get baseUrl(): string {
     return this.meta.defaults.baseUrl ?? "";
   }
 
-  // The provider's native wire kind. Subclasses set this ONCE — it's the single
+  // The provider's native wire kind. Subclasses set this ONCE - it's the single
   // source of the adapter's identity: the fallback kind when no endpoint pins
   // another, the base of `formats`, and (via nativeFormat) the generic-adapter
   // identity. A generic adapter never needs a stored `format` field.
@@ -115,7 +115,7 @@ export abstract class ProviderAdapter {
   // Model-aware endpoint preference: given the upstream model and the kinds the
   // provider accepts, return the kind this adapter would PREFER (or undefined for
   // "no preference"). A per-link endpoint pin still overrides this; it only steers
-  // the default. Generic seam — e.g. OpenAI prefers /v1/responses for its newer
+  // the default. Generic seam - e.g. OpenAI prefers /v1/responses for its newer
   // model families. Default: no preference.
   preferredEndpoint(
     _model: string,
@@ -157,7 +157,7 @@ export abstract class ProviderAdapter {
   // to `ctx.providerFmt`. Override the one(s) your provider needs; the default
   // forwards the composed request verbatim. Full flexibility: rewrite ctx.url
   // (signed/custom host), ctx.headers (custom auth from ctx.apiKey), and ctx.body
-  // (envelopes, extra fields) — return the final { url, headers, body }.
+  // (envelopes, extra fields) - return the final { url, headers, body }.
   chatCompletions(ctx: BuildCtx): BuiltRequest {
     return this.defaultBuild(ctx);
   }
@@ -184,7 +184,7 @@ export abstract class ProviderAdapter {
   // --- custom transform hooks ------------------------------------------------
   // Override any of these in a provider file to inject extra pipeline stages.
   // Return format-tagged transforms authored with onRequest/onResponse/
-  // onStreamEvent (typed to the wire format) — the engine places each by tag
+  // onStreamEvent (typed to the wire format) - the engine places each by tag
   // relative to the wire conversion (see formats/pipeline buildTransformPlan).
   // Untagged transforms are also accepted (placed post-conversion, historical).
   // Default: no extra stages.
@@ -215,8 +215,8 @@ export abstract class ProviderAdapter {
   // --- usage reporting -------------------------------------------------------
   // Upstream key-usage windows (token AND request quotas, over any time windows)
   // for the dashboard. Same seam philosophy as the build methods: the adapter is
-  // handed everything it needs on a UsageCtx — the provider, the SELECTED KEY
-  // (raw, for an upstream query), plus a masked form and a deterministic seed —
+  // handed everything it needs on a UsageCtx - the provider, the SELECTED KEY
+  // (raw, for an upstream query), plus a masked form and a deterministic seed -
   // and returns the windows. It is ASYNC: an adapter with a real usage endpoint
   // does the HTTP request itself and the caller awaits it.
   //
@@ -225,7 +225,7 @@ export abstract class ProviderAdapter {
   // adapter with a real endpoint overrides this and returns windows; one that only
   // wants demo bars can return `{ windows: dummyUsageWindows(ctx.seed), dummy: true }`.
   //
-  // The raw key never leaves the backend — the route masks before responding.
+  // The raw key never leaves the backend - the route masks before responding.
   async keyUsage(_ctx: UsageCtx): Promise<KeyUsageResult> {
     return {
       windows: [],
@@ -234,7 +234,7 @@ export abstract class ProviderAdapter {
     };
   }
 
-  // Whether this adapter reports upstream key usage AT ALL — the visibility gate
+  // Whether this adapter reports upstream key usage AT ALL - the visibility gate
   // for the usage dashboard. Same UsageCtx as keyUsage() (an adapter can decide
   // from provider config), but SYNC: it's a capability declaration, not a query,
   // so it must not touch the network.
@@ -256,11 +256,11 @@ export abstract class ProviderAdapter {
   // Fetch the provider's model catalog (GET /models). Same seam philosophy as
   // keyUsage(): ASYNC and it does the HTTP request ITSELF (unlike the build
   // methods, which only shape a request the engine sends). The caller composes
-  // the endpoint from provider config and hands it in on `ctx.url` — nothing here
-  // hardcodes a path — so a bespoke provider overrides this to hit a different
+  // the endpoint from provider config and hands it in on `ctx.url` - nothing here
+  // hardcodes a path - so a bespoke provider overrides this to hit a different
   // URL, sign the request, or return a fully hand-built list.
   //
-  // The return is the UNIVERSAL `UpstreamModel[]` — one dialect-agnostic shape
+  // The return is the UNIVERSAL `UpstreamModel[]` - one dialect-agnostic shape
   // (id + optional displayName / contextWindow / maxOutputTokens / capabilities).
   // Callers never branch on openai-vs-anthropic. The DEFAULT fetches in the ctx's
   // dialect (fetchModelList auto-sets anthropic-version for Anthropic) and
@@ -280,10 +280,10 @@ export abstract class ProviderAdapter {
 
   // --- model testing ----------------------------------------------------------
   // Probe ONE imported model (ctx.model) to confirm it's actually reachable and
-  // answers — the Imported Models table's per-row test action. Same seam
+  // answers - the Imported Models table's per-row test action. Same seam
   // philosophy as fetchModels()/keyUsage(): ASYNC, and a real implementation
   // does the HTTP request itself. WHICH endpoint to test (chat/messages/
-  // responses) is entirely this adapter's call — nothing generic decides it.
+  // responses) is entirely this adapter's call - nothing generic decides it.
   // The easy path for almost every override is one line via `probeEndpoint()`:
   //
   //   async testModel(ctx: TestModelCtx) {
@@ -291,16 +291,16 @@ export abstract class ProviderAdapter {
   //   }
   //
   // `probeEndpoint()` resolves that kind's URL (ctx.resolve(kind)), builds a
-  // minimal one-token request body for it (minimalProbeBody — override with a
+  // minimal one-token request body for it (minimalProbeBody - override with a
   // `body` option for a provider that needs a different shape), sends it via
   // `ctx.request()` (proxy/TLS-aware, same transport fetchModels() uses), and
-  // wraps the response into TestModelResult — success/failure, status, timing,
+  // wraps the response into TestModelResult - success/failure, status, timing,
   // and either a distilled reply or the upstream's own error body all handled.
   // A provider with genuinely bespoke needs (custom auth, a non-standard success
   // check, streaming) can skip probeEndpoint() and use ctx.request()/ctx.resolve()
-  // directly instead — see example-custom.ts.
+  // directly instead - see example-custom.ts.
   //
-  // DEFAULT is a dummy stub — no network call. It always reports success with
+  // DEFAULT is a dummy stub - no network call. It always reports success with
   // a placeholder body so the UI/wiring can be exercised end-to-end before any
   // adapter implements a real probe.
   async testModel(ctx: TestModelCtx): Promise<TestModelResult> {
@@ -309,41 +309,41 @@ export abstract class ProviderAdapter {
       status: 200,
       data: {
         dummy: true,
-        message: `No live test wired for this provider yet — ${ctx.model} was not actually queried.`,
+        message: `No live test wired for this provider yet - ${ctx.model} was not actually queried.`,
       },
       ms: 0,
     };
   }
 
   // The one-line path almost every testModel() override wants: pick `kind`
-  // (chat/messages/responses — YOUR call, nothing generic infers it), hand it a
-  // BODY TYPED TO THAT KIND's own request schema (WireRequest<K> — a
+  // (chat/messages/responses - YOUR call, nothing generic infers it), hand it a
+  // BODY TYPED TO THAT KIND's own request schema (WireRequest<K> - a
   // ChatCompletionRequest/AnthropicMessagesRequest/ResponsesRequest; default
   // `minimalProbeBody(kind, ctx.model)`, a real one-token request), and this:
   //
   //   1. runs the body through the FULL stack a live request to `kind` would
-  //      apply — builtin all-provider defaults (Anthropic hooks, thinking),
+  //      apply - builtin all-provider defaults (Anthropic hooks, thinking),
   //      then this provider's FAMILY defaults (quirks.defaultTransforms,
   //      minus anything ctx.ownTransforms overrides), then THIS adapter's own
-  //      requestTransforms(ctx.provider), then ctx.ownTransforms itself —
+  //      requestTransforms(ctx.provider), then ctx.ownTransforms itself -
   //      same order, same buildTransformPlan/applyBodyTransforms machinery,
   //      that engine.ts's buildRoute composes for real traffic (see its own
   //      header comment). A provider with no family defaults and no adapter
   //      override (most OpenAI-family catalog entries) still gets the
   //      builtin layer, so its probe isn't silently empty,
   //   2. hands the transformed body to THIS adapter's own build method for `kind`
-  //      (buildFor -> chatCompletions/messages/responses) — so bespoke auth,
+  //      (buildFor -> chatCompletions/messages/responses) - so bespoke auth,
   //      envelopes, or signed URLs are exercised for real, not bypassed,
   //   3. sends the built request via ctx.request() (proxy/TLS-aware),
   //   4. on success, runs the reply through the same full stack's response
   //      side, then `opts.summarize` (if given) distills it down to just what
   //      the operator needs (default: the raw parsed JSON). On failure, the
   //      upstream's own error body is returned untouched (transforms don't
-  //      run on an error, same as a real request — see engine.ts's non-2xx
+  //      run on an error, same as a real request - see engine.ts's non-2xx
   //      path).
   //
   // The build methods (chatCompletions/messages/responses) never send anything
-  // themselves — they only shape a request, exactly like a real hop. This
+  // themselves - they only shape a request, exactly like a real hop. This
   // method is the one place that actually calls ctx.request().
   protected async probeEndpoint<K extends WireFmt>(
     ctx: TestModelCtx,
@@ -355,14 +355,14 @@ export abstract class ProviderAdapter {
   ): Promise<TestModelResult> {
     const rawBody = opts?.body ?? minimalProbeBody(kind, ctx.model);
 
-    // Step 1: compose the FULL stack a live request to `kind` would run —
+    // Step 1: compose the FULL stack a live request to `kind` would run -
     // same layering + order as engine.ts's buildRoute (builtin -> family ->
     // adapter -> model's own), same buildTransformPlan/applyBodyTransforms
     // machinery, so a custom transform (at any layer) is exercised here
     // exactly like it would be for live traffic. No client<->provider
     // conversion (kind IS the provider format here), just placement +
     // application. `ctx.logStage` (set by the route only when debug logging
-    // is on) gets the declared plan AND each stage's actual application —
+    // is on) gets the declared plan AND each stage's actual application -
     // the same XFORM trace a real request produces.
     const defaults = collectDefaults({
       thinking: new ThinkingConverter(),
@@ -396,12 +396,12 @@ export abstract class ProviderAdapter {
         : undefined,
     );
     // `headers` is a FRESH copy of ctx.headers (already carrying this
-    // probe's auth header, applied by the route from the same ctx.apiKey —
+    // probe's auth header, applied by the route from the same ctx.apiKey -
     // see provider-probe.ts's makeTestModelCtx/modelsRequestHeaders) so a
     // request transform gets the exact same full-header-table control here
     // as it does on a live request (see TransformCtx.headers's doc comment):
-    // it edits xctx.headers in place, and that — not the original ctx.headers
-    // — is what reaches the build phase below. `apiKey` gives a transform the
+    // it edits xctx.headers in place, and that - not the original ctx.headers
+    // - is what reaches the build phase below. `apiKey` gives a transform the
     // raw key itself, matching what the build phase separately receives.
     const xctx: TransformCtx = {
       provider: ctx.provider,
@@ -422,7 +422,7 @@ export abstract class ProviderAdapter {
         : undefined,
     );
 
-    // Step 2: this adapter's own build method for `kind` — never sends
+    // Step 2: this adapter's own build method for `kind` - never sends
     // anything itself, only shapes { url, headers, body }. Headers are
     // whatever the request transforms left in xctx.headers (edits included).
     const built = this.buildFor(kind, {
@@ -456,7 +456,7 @@ export abstract class ProviderAdapter {
       parsed = res.text;
     }
 
-    // Step 4: the full stack's response side (same layers as step 1) —
+    // Step 4: the full stack's response side (same layers as step 1) -
     // success only.
     if (res.ok) {
       const respTransformed = applyBodyTransforms(
@@ -479,25 +479,25 @@ export abstract class ProviderAdapter {
 
   // --- provider-level connectivity test --------------------------------------
   // "Test connection" (provider Overview tab) and the per-key Test button
-  // (Keys tab) both call this — a PROVIDER/key-pair reachability check, as
+  // (Keys tab) both call this - a PROVIDER/key-pair reachability check, as
   // opposed to testModel()'s one-specific-upstream-model check. Same seam
   // philosophy as testModel()/keyUsage()/fetchModels(): ASYNC, and a real
   // implementation does the HTTP request itself.
   //
-  // Unlike testModel() (whose generic default is an inert dummy stub — there's
+  // Unlike testModel() (whose generic default is an inert dummy stub - there's
   // no sane provider-agnostic guess at "can this reach a chat completion"),
   // EVERY provider in this catalog serves a model-list endpoint, so there IS a
   // universally sane default here: GET `ctx.url` (= the provider's
   // baseUrl+basePath+modelsPath) with the selected key's auth already applied,
   // and report reachable on any 2xx/3xx status. Override this only when
   // "reachable" means something other than "the model-list endpoint answers"
-  // — a dedicated health endpoint, a signed probe, or (see example-custom.ts)
+  // - a dedicated health endpoint, a signed probe, or (see example-custom.ts)
   // a provider with no real network dependency to check at all, where a
   // deterministic success is the correct and honest answer.
   //
-  // `ctx.apiKey` is resolved by the CALLER before this runs — the live
+  // `ctx.apiKey` is resolved by the CALLER before this runs - the live
   // rotation/health pick for the plain "Test connection" button, or an
-  // operator-pinned specific key for the per-key Test button — this method
+  // operator-pinned specific key for the per-key Test button - this method
   // never chooses which key to test with, only whether/how to use the one
   // it's handed.
   async testProvider(ctx: TestProviderCtx): Promise<TestProviderResult> {
@@ -519,14 +519,14 @@ export abstract class ProviderAdapter {
   }
 
   // Collected usage stages for one provider key, consumed by the admin route.
-  // Kept alongside transforms()/buildFor() so all per-request behavior — how a
-  // hop is built, how its body is transformed, AND how its usage is reported —
+  // Kept alongside transforms()/buildFor() so all per-request behavior - how a
+  // hop is built, how its body is transformed, AND how its usage is reported -
   // lives together on the adapter class.
 }
 
 // Deterministic pseudo-usage windows from a numeric seed, so the same key always
 // renders the same bars across reloads (no Math.random flicker). Placeholder
-// only — replaced when an adapter wires a real upstream usage query. Shows BOTH
+// only - replaced when an adapter wires a real upstream usage query. Shows BOTH
 // a token-limit window and a request-limit window so the UI exercises both units.
 export function dummyUsageWindows(seed: number): ProviderKeyUsageWindow[] {
   // Small LCG so each window pulls a distinct-but-stable fraction from the seed.
@@ -603,7 +603,7 @@ export function prefersResponses(model: string): boolean {
 
 // Native chat provider (OpenAI-compatible). All inbound formats route to the
 // provider's chat endpoint by default (the engine bridges messages/responses ->
-// chat) — but a per-link endpoint wins: pointing a hop at /v1/messages makes this
+// chat) - but a per-link endpoint wins: pointing a hop at /v1/messages makes this
 // provider take in AND emit the Messages format for that hop. The provider's
 // native format ("chat") is only the fallback when no endpoint is chosen. Build
 // methods inherit the verbatim default.
@@ -703,7 +703,7 @@ function orderAnthropicKeys(
 
 // Native messages provider (Anthropic-compatible). All inbound formats route to
 // the provider's /messages endpoint by default (the engine bridges chat ->
-// messages) — but a per-link endpoint wins: pointing a hop at /v1/chat/completions
+// messages) - but a per-link endpoint wins: pointing a hop at /v1/chat/completions
 // makes this provider take in AND emit the Chat format for that hop. The
 // provider's native format ("messages") is only the fallback when no endpoint is
 // chosen. Build methods inherit the verbatim default.

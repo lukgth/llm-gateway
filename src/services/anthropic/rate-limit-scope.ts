@@ -4,11 +4,11 @@ import {
 } from "./unified-usage";
 
 // Classifies a Claude Code (subscription) 429 by WHICH unified quota window is
-// exhausted — the base 5h/7d windows (shared by every model) vs the Fable/Mythos
+// exhausted - the base 5h/7d windows (shared by every model) vs the Fable/Mythos
 // 7d_oi window (premium-only). The split matters because the two recover on very
 // different clocks: base on a ~hourly/weekly cycle, 7d_oi over days. Treating a
 // 7d_oi exhaustion as a GLOBAL rate limit (and inheriting its multi-day reset)
-// would wrongly lock a key out of base models — Opus/Sonnet/Haiku — for days,
+// would wrongly lock a key out of base models - Opus/Sonnet/Haiku - for days,
 // even though its base quota frees up in minutes. So:
 //   - base exhausted            -> "global", reset from the BASE windows only
 //                                   (never 7d_oi), + a separate Fable reset when
@@ -24,13 +24,13 @@ export type RateLimitScope =
   | {
       scope: "global";
       reason: string;
-      /** Epoch ms when the BASE (5h/7d) quota recovers — from base windows
+      /** Epoch ms when the BASE (5h/7d) quota recovers - from base windows
        *  ONLY, never 7d_oi, so a maxed Fable window can't inflate the base
        *  cooldown. Undefined when no exhausted base window carried a usable
        *  reset (caller falls back to Retry-After / default). */
       baseResetAt?: number;
       /** Epoch ms when Fable (7d_oi) recovers, when it is ALSO exhausted in
-       *  this same 429 — the caller layers a separate Fable model-cooldown on
+       *  this same 429 - the caller layers a separate Fable model-cooldown on
        *  top of the (shorter) base rate limit so premium stays blocked to its
        *  own reset. */
       fableResetAt?: number;
@@ -114,7 +114,7 @@ export function classifyAnthropicRateLimit(
     const baseResetAt = baseResets.length ? Math.max(...baseResets) : undefined;
     return global(
       fableExhausted
-        ? "base 5h/7d quota exhausted (Fable 7d_oi also exhausted — separate cooldown)"
+        ? "base 5h/7d quota exhausted (Fable 7d_oi also exhausted - separate cooldown)"
         : "base 5h/7d quota exhausted",
       {
         ...(baseResetAt !== undefined ? { baseResetAt } : {}),
@@ -124,7 +124,7 @@ export function classifyAnthropicRateLimit(
   }
 
   if (fableExhausted) {
-    // Only the premium window is maxed — cool the Fable class alone; base
+    // Only the premium window is maxed - cool the Fable class alone; base
     // (Opus/Sonnet/Haiku) stays fully usable on this key.
     return {
       scope: "model",
@@ -134,7 +134,7 @@ export function classifyAnthropicRateLimit(
     };
   }
 
-  // Neither base nor Fable is provably exhausted (ambiguous / generic 429) —
+  // Neither base nor Fable is provably exhausted (ambiguous / generic 429) -
   // stay global with no reset; the caller falls back to Retry-After / default.
   return global("no unified window is exhausted (generic 429)");
 }

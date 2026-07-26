@@ -89,7 +89,7 @@ test("request logs preserve null attribution for keyless/pre-attempt rows", () =
 test("lastUsedByKey returns the newest ts per key, any status, scoped to provider", () => {
   const db = openDatabase(":memory:");
   try {
-    // Key A: two hits — the newest wins. Its newest is a 429, which still
+    // Key A: two hits - the newest wins. Its newest is a 429, which still
     // counts as a use (the dashboard sorts by "last exercised", not success).
     insertAt(db, "p1", "hashA", "2026-07-20T10:00:00.000Z", 200);
     insertAt(db, "p1", "hashA", "2026-07-22T08:30:00.000Z", 429);
@@ -172,7 +172,7 @@ test("dashboardStats excludes cached tokens from realized totals (top-level, byM
       upstreamKeyHash: null,
       upstreamKeyMask: null,
     });
-    // Request 2: no cache hits at all — realized = 100 + 50 = 150.
+    // Request 2: no cache hits at all - realized = 100 + 50 = 150.
     insertRequestLog(db, {
       ...base,
       model: "claude-opus",
@@ -187,7 +187,7 @@ test("dashboardStats excludes cached tokens from realized totals (top-level, byM
 
     const s = dashboardStats(db);
     // Naive input+output would read 1350; the correct realized total is
-    // 800 + 150 = 950 — cached tokens must not inflate the count.
+    // 800 + 150 = 950 - cached tokens must not inflate the count.
     assert.equal(s.tokensToday, 950);
     assert.equal(s.inputTokensToday, 1100);
     assert.equal(s.cachedTokensToday, 400);

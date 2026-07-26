@@ -2,13 +2,13 @@ import { OpenAICompatibleAdapter } from "../base";
 import { WireKind } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
-// NVIDIA NIM / build.nvidia.com — OpenAI-compatible chat endpoint, Bearer auth.
+// NVIDIA NIM / build.nvidia.com - OpenAI-compatible chat endpoint, Bearer auth.
 class NvidiaNimAdapter extends OpenAICompatibleAdapter {}
 
 export const nvidiaNim = new NvidiaNimAdapter({
   id: "nvidia-nim",
   label: "NVIDIA NIM",
-  blurb: "NVIDIA inference microservices — OpenAI-compatible chat endpoint.",
+  blurb: "NVIDIA inference microservices - OpenAI-compatible chat endpoint.",
   brand: "nvidia",
   docsUrl: "https://docs.nvidia.com/nim/",
   defaults: {

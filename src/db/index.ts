@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS usage (
 );
 
 -- Per (key, day, model, provider) token totals. Powers the dashboard's
--- "what did this key resolve to" view — e.g. a key using gpt-5.5 shows the
+-- "what did this key resolve to" view - e.g. a key using gpt-5.5 shows the
 -- token count and the provider it resolved to (after fallback).
 CREATE TABLE IF NOT EXISTS usage_breakdown (
   api_key_id  TEXT NOT NULL,
@@ -229,7 +229,7 @@ CREATE TABLE IF NOT EXISTS key_class_affinity (
   PRIMARY KEY (provider_id, key_hash, model_class)
 );
 
--- The single "sticky" key currently preferred for a (provider, model) pair —
+-- The single "sticky" key currently preferred for a (provider, model) pair -
 -- the last key that successfully served this model. Selection prefers this
 -- exact key over round-robin/affinity-pool picking so repeat requests reuse
 -- the same upstream key (better provider-side prompt-cache hit rates, more
@@ -244,7 +244,7 @@ CREATE TABLE IF NOT EXISTS key_model_sticky (
   PRIMARY KEY (provider_id, model)
 );
 
--- Keys whose subscription plan is PROVEN to have long-context usage credits —
+-- Keys whose subscription plan is PROVEN to have long-context usage credits -
 -- learned when a key succeeds on a request that OTHER keys rejected with the
 -- Claude Code "usage credits are required for long context" 429. Selection
 -- gives these keys extra pull in the pool (they float ahead of unproven keys

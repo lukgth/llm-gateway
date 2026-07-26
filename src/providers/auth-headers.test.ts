@@ -23,8 +23,8 @@ test("both sets Authorization AND x-api-key", () => {
 test("passthrough sets no auth header (the CALLER forwards the client's own auth instead)", () => {
   // applyAuthHeaders only ever ADDS a gateway-held auth header; it never
   // touches whatever's already in the headers object it's handed. The actual
-  // forwarding — keeping the client's own authorization/x-api-key in the
-  // outbound table instead of stripping it — is engine.ts's buildHeaders'
+  // forwarding - keeping the client's own authorization/x-api-key in the
+  // outbound table instead of stripping it - is engine.ts's buildHeaders'
   // job (see its `forwardClientAuth` gate and gateway/engine.test.ts's
   // "authScheme 'passthrough' forwards the client's own auth header" test).
   assert.deepEqual(applyAuthHeaders({}, "passthrough", "sk-4"), {});

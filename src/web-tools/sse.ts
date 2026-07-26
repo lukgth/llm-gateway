@@ -29,7 +29,7 @@ function openSse(res: Response): void {
 //
 // Unlike the normal streaming path (which pipes upstream bytes through
 // SsePingKeepAlive), the web-tool loop runs every upstream turn + web search
-// BUFFERED before it emits anything — so the client's SSE connection would sit
+// BUFFERED before it emits anything - so the client's SSE connection would sit
 // idle for the whole loop and time out at the proxy's ~90s ceiling. This opens
 // the SSE response immediately and writes `: ping\n\n` comment lines on an
 // interval, keeping the connection warm until the final message is ready.
@@ -63,7 +63,7 @@ export function startSseHeartbeat(
     try {
       res.write(anthropic ? ANTHROPIC_PING_EVENT : ": ping\n\n");
     } catch {
-      /* client gone — the loop's own error handling will settle */
+      /* client gone - the loop's own error handling will settle */
     }
   }, actualInterval);
   // Don't let the heartbeat keep the process alive on its own.
@@ -144,7 +144,7 @@ export function emitMessagesSse(
       });
     } else if (type === "tool_use" || type === "server_tool_use") {
       // Client tool call (tool_use) or gateway-run hosted tool (server_tool_use)
-      // — both stream a start block then the input as an input_json_delta.
+      // - both stream a start block then the input as an input_json_delta.
       writeEvent(res, "content_block_start", {
         type: "content_block_start",
         index,
@@ -170,7 +170,7 @@ export function emitMessagesSse(
     } else if (type === "web_search_tool_result") {
       // Hosted-tool result: a single start block carrying the full result
       // content (result items or an error object), then stop. There is no delta
-      // for these — the content is delivered whole in the start event.
+      // for these - the content is delivered whole in the start event.
       writeEvent(res, "content_block_start", {
         type: "content_block_start",
         index,

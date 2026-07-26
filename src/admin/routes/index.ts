@@ -4,7 +4,7 @@
 // take effect without a restart.
 //
 // Split by concern into sibling modules (settings/providers/models/users/
-// usage) — this file only wires the shared RouteCtx and registers each
+// usage) - this file only wires the shared RouteCtx and registers each
 // group's routes onto one Router.
 
 import { Router } from "express";

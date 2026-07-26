@@ -721,7 +721,7 @@ test("Generic chat path strips any thinking object, including Anthropic-shaped",
   };
   normalizeOpenAIReasoning(body);
   // Both _thinking_disabled and ANY thinking object are stripped on the generic
-  // path — only DeepSeek and GLM support the toggle; OpenAI 400s on it.
+  // path - only DeepSeek and GLM support the toggle; OpenAI 400s on it.
   assert.equal(body._thinking_disabled, undefined);
   assert.equal(body.thinking, undefined);
 });

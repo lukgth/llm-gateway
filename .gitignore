@@ -10,7 +10,7 @@ web/dist/
 *.zip
 *.tsbuildinfo
 
-# Local configuration (contains secrets — copy from config.example.json)
+# Local configuration (contains secrets - copy from config.example.json)
 config.json
 .env
 .env.*

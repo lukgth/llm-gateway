@@ -280,7 +280,7 @@ test("premium is preferred for a new base pair even when its Fable 7d_oi is maxe
     const store = new KeyHealthStore(db, clk.now);
     store.recordSuccess(p.id, hashKey("a"), "claude-fable-5");
     store.recordSuccess(p.id, hashKey("b"), "claude-sonnet-5");
-    // a's Fable class is cooling down (7d_oi maxed) — but that must NOT block it
+    // a's Fable class is cooling down (7d_oi maxed) - but that must NOT block it
     // for base traffic: Opus still prefers the premium key, since the model
     // cooldown only affects the Fable class.
     store.markModelCooldown(p.id, hashKey("a"), "fable", 3 * 86_400_000);
@@ -377,14 +377,14 @@ test("sticky: a successful key is reused for the same model instead of round-rob
     const store = new KeyHealthStore(db);
     // "a" succeeds for "gpt" first (round-robin's natural first pick).
     store.recordSuccess(p.id, hashKey("a"), "gpt");
-    // Every subsequent select for "gpt" reuses "a" — no spreading across b/c,
+    // Every subsequent select for "gpt" reuses "a" - no spreading across b/c,
     // even though a fresh call with no `tried` set would otherwise round-robin.
     for (let i = 0; i < 6; i++)
       assert.equal(store.select(p.id, p.keys, "gpt", new Set())!.key, "a");
-    // A different model is unaffected by "gpt"'s sticky pin — it has no
+    // A different model is unaffected by "gpt"'s sticky pin - it has no
     // sticky/affinity of its own yet, so it falls through to round-robin
     // (cursor untouched by the sticky picks above, since those bypass
-    // rrPick entirely — starts fresh at "a").
+    // rrPick entirely - starts fresh at "a").
     assert.equal(store.select(p.id, p.keys, "claude", new Set())!.key, "a");
   } finally {
     closeDatabase(db);
@@ -398,7 +398,7 @@ test("sticky: falls over to another key once the sticky key goes unhealthy", () 
     const store = new KeyHealthStore(db);
     store.recordSuccess(p.id, hashKey("a"), "gpt");
     assert.equal(store.select(p.id, p.keys, "gpt", new Set())!.key, "a");
-    // "a" gets rate-limited — sticky key is unhealthy, select() must skip it.
+    // "a" gets rate-limited - sticky key is unhealthy, select() must skip it.
     store.markRateLimited(p.id, hashKey("a"), 60_000);
     const pick = store.select(p.id, p.keys, "gpt", new Set())!.key;
     assert.notEqual(pick, "a");
@@ -420,7 +420,7 @@ test("sticky: a confirmed auth failure clears the sticky pointer for every model
     store.recordSuccess(p.id, hashKey("a"), "claude");
     assert.equal(store.select(p.id, p.keys, "gpt", new Set())!.key, "a");
     store.markAuthFailed(p.id, hashKey("a"));
-    // Both models must fall through to "b" — a dead key is never sticky.
+    // Both models must fall through to "b" - a dead key is never sticky.
     assert.equal(store.select(p.id, p.keys, "gpt", new Set())!.key, "b");
     assert.equal(store.select(p.id, p.keys, "claude", new Set())!.key, "b");
   } finally {
@@ -523,7 +523,7 @@ test("parseRateLimitHint falls back to Anthropic's unified-quota reset header", 
   );
   assert.ok(Math.abs(hint.ms - 4 * 3_600_000) <= 1000);
   assert.equal(hint.source, "anthropic-ratelimit-unified-reset");
-  // Standard headers still win when both are present — the unified header
+  // Standard headers still win when both are present - the unified header
   // is a fallback for when Anthropic's 429 carries no standard header.
   const withRetryAfter = parseRateLimitHint(
     {
@@ -569,7 +569,7 @@ test("markAuthFailed accumulates a lifetime count that survives recordSuccess", 
     store.markAuthFailed(p.id, hashKey("a"), 401, "bad key");
     assert.equal(store.snapshot(p.id, hashKey("a")).authFailCount, 2);
     // A later success clears the live authFailed/usable flags but the
-    // lifetime counter is history, not current state — it must not reset.
+    // lifetime counter is history, not current state - it must not reset.
     store.recordSuccess(p.id, hashKey("a"), null);
     const after = store.snapshot(p.id, hashKey("a"));
     assert.equal(after.authFailed, false);
@@ -590,7 +590,7 @@ test("a recovered (expired rate-limit) key is reused before a pristine key", () 
     const clk = clock();
     const store = new KeyHealthStore(db, clk.now);
     // "a" gets rate-limited, then its cooldown lapses. Its marker survives (no
-    // success cleared it), so it's a recovered key — preferred over pristine "b"
+    // success cleared it), so it's a recovered key - preferred over pristine "b"
     // for a base model instead of burning the untouched key.
     store.markRateLimited(p.id, hashKey("a"), 60_000);
     clk.advance(61_000);
@@ -635,7 +635,7 @@ test("recovery preference does not resurrect a still-maxed Fable key", () => {
     const p = provider(db, ["a", "b"]);
     const clk = clock();
     const store = new KeyHealthStore(db, clk.now);
-    // "a" is still inside its 7d_oi cooldown — not fresh, so never preferred as
+    // "a" is still inside its 7d_oi cooldown - not fresh, so never preferred as
     // "recovered". Fable traffic must stay on pristine "b".
     store.markModelCooldown(p.id, hashKey("a"), "fable", 60_000, 429, "7d_oi");
     assert.equal(
@@ -658,7 +658,7 @@ test("credit-proven keys get preference in the fresh pool", () => {
   try {
     const p = provider(db, ["a", "b", "c"]);
     const store = new KeyHealthStore(db);
-    // No affinity for this model, so selection falls to the generic fresh pool —
+    // No affinity for this model, so selection falls to the generic fresh pool -
     // where a credit-proven key must win over the round-robin default.
     store.markCreditProven(p.id, hashKey("b"));
     const picks = [

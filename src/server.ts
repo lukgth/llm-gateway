@@ -1,9 +1,9 @@
 // Express application assembly.
 //
-//   /api/*      — admin REST API (dashboard backend)
-//   /v1/*       — LLM gateway proxy surface (multi-provider engine)
-//   /health     — liveness
-//   /*          — built frontend SPA (production), served from web/dist
+//   /api/*      - admin REST API (dashboard backend)
+//   /v1/*       - LLM gateway proxy surface (multi-provider engine)
+//   /health     - liveness
+//   /*          - built frontend SPA (production), served from web/dist
 //
 // In dev the Vite dev server (port 5173) proxies /api and /v1 to this backend,
 // so the SPA and gateway share an origin. In production this single server
@@ -32,7 +32,7 @@ export function createServerApp(
 ): Express {
   const app = express();
 
-  // Global request logger — Morgan-style colorized line for every request.
+  // Global request logger - Morgan-style colorized line for every request.
   app.use(logger.httpMiddleware());
 
   // JSON body parsing for the admin API and gateway /v1 surface. (The gateway

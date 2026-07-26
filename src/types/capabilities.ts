@@ -1,4 +1,4 @@
-// Model capabilities — the Anthropic-style listing shape the gateway exposes
+// Model capabilities - the Anthropic-style listing shape the gateway exposes
 // per model. Cross-cutting: used by models, the provider catalog, and imports.
 
 export interface CapabilitySupport {

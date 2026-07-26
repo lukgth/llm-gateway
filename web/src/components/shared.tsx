@@ -29,14 +29,14 @@ export function PageHeader({
 }: {
   title: ReactNode;
   desc?: string;
-  // Rendered next to the title — e.g. a count badge that used to live in a
+  // Rendered next to the title - e.g. a count badge that used to live in a
   // redundant card header below.
   meta?: ReactNode;
   actions?: ReactNode;
 }) {
   return (
     <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-      {/* min-w-0 lets this shrink below its content's natural width — without
+      {/* min-w-0 lets this shrink below its content's natural width - without
           it, a flex row item defaults to min-width:auto, which locks the
           block to the description text's unwrapped width and gets clipped by
           an ancestor's overflow-hidden instead of wrapping on narrow/mobile
@@ -64,7 +64,7 @@ export function PageHeader({
   );
 }
 
-// A table's own search box — designed to read as PART of the table (sits
+// A table's own search box - designed to read as PART of the table (sits
 // inside its header strip, borderless + recessed) rather than a separate
 // filter control floating above it. One shared component so every table's
 // search looks and behaves identically app-wide. `count`/`total` (optional)
@@ -386,17 +386,17 @@ const tokenChartConfig = {
 // style), NOT flex-1. `aspect-auto` cancels ChartContainer's default
 // `aspect-video` (16:9) which would inflate height as the card widens. The
 // explicit height is required because Recharts' ResponsiveContainer needs a
-// definite parent height on first render — without it, the inner Responsive
+// definite parent height on first render - without it, the inner Responsive
 // collapses to 0 and the chart renders blank (it doesn't measure up from a
 // flex-1 ancestor that itself only got its size from min-content).
 //
-// `grow` (flex-grow only, not flex-1 — that also zeroes flex-basis, which
+// `grow` (flex-grow only, not flex-1 - that also zeroes flex-basis, which
 // would collapse this in an auto-height parent with nothing to grow into)
 // then lets that same height act as a *starting* point: it fills a
 // stretched grid row (dashboard's Token Usage card, matched against its
 // taller Top Models sibling) while simply staying at `minHeight` in a
 // self-start parent with no extra room to give (usage.tsx's 14-Day
-// History) — one component, both layouts, no separate prop needed.
+// History) - one component, both layouts, no separate prop needed.
 export function TokenChart({
   data,
   minHeight = 160,
@@ -493,7 +493,7 @@ export function Field({
       </label>
       {children}
       {/* Always rendered (even with no hint) so every Field in a shared grid
-          row has the same DOM shape — a sibling with a one-line hint and one
+          row has the same DOM shape - a sibling with a one-line hint and one
           with none then occupy the same footprint instead of the row's
           bottom edge zig-zagging between columns. A field-specific hint
           longer than one line still wraps and grows normally; this only
@@ -505,7 +505,7 @@ export function Field({
   );
 }
 
-// A titled group of settings — a light header + a divided body. No nested card
+// A titled group of settings - a light header + a divided body. No nested card
 // chrome (the page already provides the surface), so rows use the full width.
 export function FormSection({
   title,
@@ -533,7 +533,7 @@ export function FormSection({
 
 // One horizontal setting row inside a FormSection: label + optional hint on the
 // left, the control aligned on the right. Labels line up across rows, actions
-// share the same right edge — much clearer than stacked cards.
+// share the same right edge - much clearer than stacked cards.
 export function SettingRow({
   label,
   hint,
@@ -582,7 +582,7 @@ export function SectionTabs<T extends string>({
 }) {
   return (
     // no-scrollbar + overflow-x-auto: on a narrow viewport a section bar with
-    // several tabs (some carrying a badge) can exceed the available width —
+    // several tabs (some carrying a badge) can exceed the available width -
     // scroll horizontally instead of wrapping (which would break the shared
     // border-b baseline every tab's active-underline is drawn against) or
     // silently clipping the trailing tabs.

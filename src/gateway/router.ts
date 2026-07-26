@@ -2,7 +2,7 @@
 //
 // Assembles the Express middleware stack for the /v1 LLM API surface and wires
 // the final proxied requests into the multi-provider forwarding engine. (The
-// format *transform* pipeline is a separate concern — see formats/pipeline.ts.)
+// format *transform* pipeline is a separate concern - see formats/pipeline.ts.)
 //
 //   request log -> body parser -> client-key auth -> model listings ->
 //   model guard -> usage enforcement -> prefill fix ->
@@ -79,7 +79,7 @@ export class GatewayRouter {
     return this.engine.clearAllModelKeyPairs();
   }
 
-  // Health-aware key pick for the admin "Test connection" probe — see
+  // Health-aware key pick for the admin "Test connection" probe - see
   // ForwardingEngine.pickKeyForTest. Exposes just this one capability rather
   // than the whole engine, so the admin routes get the live rotation/health
   // state without reaching into forwarding internals.
@@ -222,7 +222,7 @@ export class GatewayRouter {
         const projected = inputTokens + maxOut;
 
         // Quota read + optimistic reservation are raw DB ops. A transient DB
-        // error here must not 500 the request via Express's default handler —
+        // error here must not 500 the request via Express's default handler -
         // let the request proceed (the engine settles usage when it completes).
         try {
           // Enforce the daily quota only when the key has one.
@@ -237,7 +237,7 @@ export class GatewayRouter {
                 limit: apiKey.tokensPerDay,
               });
               // Every 429 the gateway returns carries a Retry-After so clients
-              // back off precisely — here, seconds until the daily quota resets
+              // back off precisely - here, seconds until the daily quota resets
               // at UTC midnight (floor 1s).
               res.setHeader(
                 "Retry-After",
@@ -284,7 +284,7 @@ export class GatewayRouter {
     // ran on the CLIENT body before format conversion and was keyed on the alias.
     // It now runs as an Anthropic provider-adapter request hook
     // (formats/anthropic/hooks/stack.ts), on the final Messages body keyed on the
-    // upstream model — so it fires correctly for native /v1/messages, converted
+    // upstream model - so it fires correctly for native /v1/messages, converted
     // chat->messages, and the web-tool loop, and never mis-fires on a
     // messages->chat hop (OpenAI needs no prefill).
 

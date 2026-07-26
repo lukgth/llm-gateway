@@ -1,13 +1,13 @@
 # WebSocket API reference
 
 This document is the protocol reference for the admin UI's WebSocket
-connection — connection/auth, the topic-based subscribe/push cycle behind
+connection - connection/auth, the topic-based subscribe/push cycle behind
 "Live gateway telemetry," the one-shot request/response pattern, and batch
 key testing. It complements the REST docs rather than repeating them:
 
-- [`docs/key-management.md`](./key-management.md) — the REST key CRUD/batch
+- [`docs/key-management.md`](./key-management.md) - the REST key CRUD/batch
   endpoints this doc's batch-test message pair sits alongside.
-- [`docs/wire-types.md`](./wire-types.md) — request/response body shapes for
+- [`docs/wire-types.md`](./wire-types.md) - request/response body shapes for
   the gateway's own `/v1/*` proxy endpoints (unrelated to this admin channel).
 
 **Quick links:** [where the types live](#where-the-types-live) ·
@@ -23,23 +23,23 @@ key testing. It complements the REST docs rather than repeating them:
 
 ```
 src/ws/
-  schema.ts   — the single source of truth for every message shape (server side)
-  server.ts   — upgrade handling, auth, per-connection message dispatch
-  hub.ts      — WsHub: client/subscription state, push timers, mutation
+  schema.ts   - the single source of truth for every message shape (server side)
+  server.ts   - upgrade handling, auth, per-connection message dispatch
+  hub.ts      - WsHub: client/subscription state, push timers, mutation
                 broadcasts, request/response, batch-test orchestration
-  topics.ts   — fetchTopic(db, topic, params) — same repo functions the REST
+  topics.ts   - fetchTopic(db, topic, params) - same repo functions the REST
                 routes use, so a topic's pushed data always matches what the
                 equivalent GET would return
-  batch-test.ts — runBatchTest(): validation + concurrency-limited execution
+  batch-test.ts - runBatchTest(): validation + concurrency-limited execution
                   behind the "batch-test" message (see below)
 web/src/
-  lib/ws-types.ts   — hand-maintained frontend mirror of src/ws/schema.ts
-  hooks/use-ws.tsx  — WsProvider context + useWsSubscription/useWsStatus/
+  lib/ws-types.ts   - hand-maintained frontend mirror of src/ws/schema.ts
+  hooks/use-ws.tsx  - WsProvider context + useWsSubscription/useWsStatus/
                       useWsRequest/useWsBatchTest hooks
 ```
 
 `src/ws/schema.ts` and `web/src/lib/ws-types.ts` must be kept in sync by
-hand — there's no code generation step. If you add a message type, add it to
+hand - there's no code generation step. If you add a message type, add it to
 both files.
 
 ---
@@ -50,7 +50,7 @@ both files.
 GET /ws?token=<admin-token>
 ```
 
-(or `Authorization: Bearer <token>` on the upgrade request — the query
+(or `Authorization: Bearer <token>` on the upgrade request - the query
 param is what the browser client actually uses, since `WebSocket` can't set
 custom headers). Same HMAC-signed admin token as the REST API
 (`verifyToken`, `src/auth/admin-auth.ts`). An invalid/missing token gets a
@@ -101,7 +101,7 @@ listed there only push when a mutating REST route calls `broadcast()`.
 { "type": "unsubscribe", "topic": "overview" }
 ```
 
-**Invalidate** — sent to every client subscribed to an affected topic right
+**Invalidate** - sent to every client subscribed to an affected topic right
 before its refreshed `push`, so the UI can show a brief "updating…" cue
 before new data lands:
 
@@ -129,7 +129,7 @@ or, on failure:
 { "type": "response", "id": "<uuid>", "error": { "message": "unknown endpoint: foo" } }
 ```
 
-`endpoint` must be one of the `WsTopic` values — `handleRequest` reuses the
+`endpoint` must be one of the `WsTopic` values - `handleRequest` reuses the
 same `fetchTopic()` the push cycle uses. The frontend's `useWsRequest()`
 hook wraps this in a promise with a 10s client-side timeout.
 
@@ -149,11 +149,11 @@ close) without relying on TCP-level timeouts alone.
 Tests many provider keys' connectivity in one job, streamed back over the
 existing connection instead of one `POST /providers/:id/test` per key. This
 is the mechanism behind the Keys tab's "Test active" button
-(`ProviderKeyManager`) when the socket is connected — it falls back to
+(`ProviderKeyManager`) when the socket is connected - it falls back to
 individual REST calls only if the WebSocket isn't up yet.
 
 Unlike topics/requests, this is a **parallel message family**, not a
-subscribe/push cycle or a single request/response — the server streams one
+subscribe/push cycle or a single request/response - the server streams one
 progress event per completed key (in whatever order they finish) followed
 by a single terminal `done`.
 
@@ -169,14 +169,14 @@ by a single terminal `done`.
 ```
 
 - `id` is caller-chosen and scopes every progress/done/error event that
-  follows to this one run — use a fresh id per batch (concurrent or
+  follows to this one run - use a fresh id per batch (concurrent or
   repeated batches on the same connection are fine as long as ids don't
   collide; a duplicate id while one is already running under it is rejected
   with `batch-test-error`).
-- `keyIds` are `ProviderKey.id` values (stable per-key ids — see
+- `keyIds` are `ProviderKey.id` values (stable per-key ids - see
   [`docs/key-management.md`](./key-management.md#provider-key-schema)), not
   raw credentials, and must all belong to `providerId`.
-- Max **200** keys per batch, run at concurrency **5** in-flight tests —
+- Max **200** keys per batch, run at concurrency **5** in-flight tests -
   both server-enforced constants (`MAX_BATCH_KEYS` / `BATCH_CONCURRENCY` in
   `src/ws/batch-test.ts`) to bound how much upstream traffic and outbound
   connection use a single batch can generate, independent of whatever the
@@ -194,7 +194,7 @@ by a single terminal `done`.
 }
 ```
 
-`index` is the key's position in the request's `keyIds` array — stable
+`index` is the key's position in the request's `keyIds` array - stable
 regardless of completion order, so a client can always place a result back
 into its original request without waiting for the whole batch (the "returned
 with an index" contract). `keyId` is included alongside it as a more direct
@@ -207,7 +207,7 @@ join key. `result` is the same `ProviderTestResult` shape
 { "type": "batch-test-done", "id": "<uuid>", "total": 3, "ok": 2 }
 ```
 
-**Error** (server → client, only for a *fatal setup* failure — unknown
+**Error** (server → client, only for a *fatal setup* failure - unknown
 provider, a `keyId` that doesn't resolve or belongs to a different provider,
 an empty or oversized `keyIds`, or a duplicate `id` already running; NOT
 sent when an individual key's test simply fails, which is a normal
@@ -220,7 +220,7 @@ sent when an individual key's test simply fails, which is a normal
 If the connection drops mid-batch, the server-side job's `isCancelled()`
 check stops it from dispatching further tests (already in-flight requests
 are allowed to finish and their results discarded, rather than aborted mid-
-flight) — no orphaned worker pool keeps running for a client that's gone.
+flight) - no orphaned worker pool keeps running for a client that's gone.
 
 ### Frontend usage
 

@@ -33,7 +33,7 @@ function inputItemToMessages(
 
     // Reasoning items have no Chat equivalent and carry encrypted state we
     // can't bridge, so drop them. (Reasoning still works within the current
-    // turn — it just isn't preserved across multi-turn bridges.)
+    // turn - it just isn't preserved across multi-turn bridges.)
     case "reasoning":
       return [];
 
@@ -127,7 +127,7 @@ function translateMessageContent(content: unknown): ChatMessage["content"] {
         image_url: detail ? { url, detail } : { url },
       });
     }
-    // input_file / audio etc. — drop silently; not portable to Chat.
+    // input_file / audio etc. - drop silently; not portable to Chat.
   }
   return parts;
 }
@@ -154,7 +154,7 @@ function translateTools(tools: unknown): ChatTool[] | undefined {
       });
     }
     // Hosted tools (web_search, file_search, etc.) aren't expressible in Chat
-    // Completions — skip them rather than failing the whole request.
+    // Completions - skip them rather than failing the whole request.
   }
   return out.length ? out : undefined;
 }
@@ -253,7 +253,7 @@ export function responsesRequestToChat(
   if (body.stream != null) out.stream = body.stream as boolean;
   if (body.logprobs != null) out.logprobs = body.logprobs as boolean;
   if (body.top_logprobs != null) out.top_logprobs = body.top_logprobs as number;
-  // metadata exists on both APIs — carry it across rather than dropping it.
+  // metadata exists on both APIs - carry it across rather than dropping it.
   if (body.metadata != null) out.metadata = body.metadata;
 
   // --- field renames ---
@@ -282,18 +282,18 @@ export function responsesRequestToChat(
   if (toolChoice != null) out.tool_choice = toolChoice as ChatToolChoice;
 
   // `store`, `previous_response_id`, `include`, `metadata` have no Chat
-  // equivalent — drop them.
+  // equivalent - drop them.
 
   return out;
 }
 
 // --- request: Chat Completions -> Responses --------------------------------
-// The inverse of responsesRequestToChat() — needed so a chat/messages CLIENT
+// The inverse of responsesRequestToChat() - needed so a chat/messages CLIENT
 // can be routed to a responses-NATIVE provider (e.g. OpenAI's GPT-5-class
 // models, which preferredEndpoint() pins to /v1/responses). Without this,
 // that hop is unsupported and the gateway fails the request over to the next
 // provider (or 502s if none remain) even though the upstream is perfectly
-// reachable — see preferredEndpoint in providers/catalog/openai.ts. Chat's
+// reachable - see preferredEndpoint in providers/catalog/openai.ts. Chat's
 // flat message list becomes the Responses `input` item array; a leading
 // system message becomes `instructions` (Responses' own slot for it, kept
 // separate from `input` like Chat keeps it in `messages`).
@@ -321,7 +321,7 @@ function chatMessageToInputItems(
   ) {
     const items: Array<Record<string, unknown>> = [];
     // A tool-calling turn may also carry text content alongside the calls
-    // (rare, but Chat allows it) — emit the message item first so a
+    // (rare, but Chat allows it) - emit the message item first so a
     // round-trip doesn't silently drop that text.
     if (m.content) {
       items.push({
@@ -383,7 +383,7 @@ function chatContentToResponsesContent(
       });
     }
     // Other part types (already-Responses-shaped passthrough, audio, etc.)
-    // aren't portable from Chat's vocabulary — dropped, same policy as the
+    // aren't portable from Chat's vocabulary - dropped, same policy as the
     // Responses -> Chat direction (translateMessageContent).
   }
   return parts;
@@ -447,7 +447,7 @@ export function chatRequestToResponses(
   const messages = Array.isArray(body.messages) ? body.messages : [];
   // A leading system message maps to Responses' dedicated `instructions`
   // slot (mirroring how responsesRequestToChat treats `instructions` as the
-  // one that becomes a system message) — every OTHER message (including a
+  // one that becomes a system message) - every OTHER message (including a
   // later system message, which Chat allows mid-conversation but Responses
   // has no slot for beyond the first) becomes an `input` item.
   const input: Array<Record<string, unknown>> = [];
@@ -501,7 +501,7 @@ export function chatRequestToResponses(
   if (toolChoice != null) out.tool_choice = toolChoice;
 
   // `seed`, `presence_penalty`, `frequency_penalty`, `stop`, `logprobs`,
-  // `top_logprobs` have no Responses equivalent — drop them, same policy
+  // `top_logprobs` have no Responses equivalent - drop them, same policy
   // (silently skip untranslatable fields) as the reverse direction.
 
   return out;

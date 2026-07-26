@@ -66,7 +66,7 @@ export function HopConversionBadge({
       title={
         converts
           ? `Gateway converts ${clientFmt} → ${hopFmt} for this hop.`
-          : "Same wire format — no conversion for this hop."
+          : "Same wire format - no conversion for this hop."
       }
     >
       <span
@@ -85,7 +85,7 @@ export function HopConversionBadge({
 // Compact capability editor: pill toggles for boolean capabilities plus
 // thinking-type and effort-level pickers. When `locked`, the alias matches an
 // official Anthropic model and the server pins capabilities to the stock entry.
-// `bare` drops the outer card border + "Capabilities" title/summary header —
+// `bare` drops the outer card border + "Capabilities" title/summary header -
 // for callers that already render their own heading around this (e.g. the
 // Imported Models row-expander), so the two don't stack as duplicate labels.
 export function CapabilitiesEditor({
@@ -115,9 +115,9 @@ export function CapabilitiesEditor({
     onChange({ ...caps, [k]: { supported: v } });
 
   // `dim` = this pill's whole SECTION is off (thinking/effort supported:false)
-  // — distinct from `locked` (an admin-level pin). A dimmed pill is still
+  // - distinct from `locked` (an admin-level pin). A dimmed pill is still
   // disabled, but stays visible at reduced opacity instead of disappearing,
-  // so re-enabling the section restores exactly what was selected before —
+  // so re-enabling the section restores exactly what was selected before -
   // nothing is lost, only hidden from interaction while inactive.
   const pill = (
     on: boolean,

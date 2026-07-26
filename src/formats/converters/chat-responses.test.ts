@@ -6,11 +6,11 @@
 // actually maps survive the retype to shared wire types (no behavior change).
 //
 // Also covers BOTH streaming directions:
-//   - StreamingResponsesBridgeTransform       (chat SSE -> responses SSE) —
+//   - StreamingResponsesBridgeTransform       (chat SSE -> responses SSE) -
 //     had ZERO test coverage before this per the format-route completeness
 //     audit, despite being fully implemented (the module doc comment even
 //     used to claim "streaming is a separate piece of work").
-//   - StreamingResponsesToChatBridgeTransform (responses SSE -> chat SSE) —
+//   - StreamingResponsesToChatBridgeTransform (responses SSE -> chat SSE) -
 //     the new inverse, added so a chat/messages client can be routed to a
 //     responses-native provider (see pipeline.ts's "chat->responses"/
 //     "messages->responses" request converters and "responses->chat"/
@@ -119,7 +119,7 @@ test("request: function tools translate; hosted tools are dropped", () => {
     input: "hi",
     tools: [
       { type: "function", name: "get_weather", parameters: { type: "object" } },
-      { type: "web_search" }, // hosted — not expressible in Chat, dropped
+      { type: "web_search" }, // hosted - not expressible in Chat, dropped
     ],
   });
   assert.equal(chat.tools?.length, 1);
@@ -429,7 +429,7 @@ test("response (inverse) round-trips with the forward direction (Chat -> Respons
 
 test("response (inverse): empty output -> a valid (empty-content) message, not null", () => {
   // Mirrors choiceToOutput's own philosophy on the forward side ("keep an
-  // empty-content message so output is never empty") — an empty `output`
+  // empty-content message so output is never empty") - an empty `output`
   // array is a legitimate (if unusual) response, not a malformed one, so it
   // must not be discarded outright (that would silently drop id/model/usage
   // too).
@@ -590,7 +590,7 @@ test("streaming (inverse): _flush() emits a terminal chunk + [DONE] even if resp
 });
 
 // --- streaming (forward): Chat SSE -> Responses SSE -------------------------
-// StreamingResponsesBridgeTransform — had ZERO test coverage before this.
+// StreamingResponsesBridgeTransform - had ZERO test coverage before this.
 
 test("streaming (forward): content deltas -> response.output_text.delta events, terminated by response.completed", async () => {
   const raw = await runTransform(new StreamingResponsesBridgeTransform(), [
@@ -653,7 +653,7 @@ test("streaming (forward): reasoning deltas -> response.reasoning_summary_text.d
     .map((e) => e.delta);
   assert.deepEqual(reasoningDeltas, ["thinking..."]);
   // The reasoning content_part must be closed (content_part.done) before the
-  // text output starts — reasoning always precedes the answer in a turn.
+  // text output starts - reasoning always precedes the answer in a turn.
   const reasoningDoneIdx = events.findIndex(
     (e) =>
       e.type === "response.content_part.done" &&

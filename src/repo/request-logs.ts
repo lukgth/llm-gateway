@@ -7,8 +7,8 @@ import type { RequestLog } from "../types";
 
 // Canonical marker the engine stamps on the `error` of a gateway-generated
 // "whole chain is temporarily rate-limited" 503 (see engine.ts
-// finishChainExhausted). It's code-owned — never sourced from an upstream body
-// — so matching on it reliably distinguishes a transient throttle from a real
+// finishChainExhausted). It's code-owned - never sourced from an upstream body
+// - so matching on it reliably distinguishes a transient throttle from a real
 // 5xx failure, WITHOUT coupling to the fact that 503 happens to be in
 // RETRY_STATUS. The retry epoch (ms) is embedded so the row can show a
 // countdown: `throttled:<epochMs>: <human reason>`.
@@ -21,7 +21,7 @@ export function throttleLogError(retryAtMs: number, reason: string): string {
 }
 
 // Parse a log row's (status, error) into throttle state. A row is "throttled"
-// only when it's a 503 carrying the marker — a genuine upstream/gateway 5xx is
+// only when it's a 503 carrying the marker - a genuine upstream/gateway 5xx is
 // never mistaken for one. Returns the retry epoch (ms) when present.
 export function parseThrottle(
   status: number | null,
@@ -95,7 +95,7 @@ function mapLog(r: LogRow): RequestLog {
     path: r.path,
     stream: !!r.stream,
     error: r.error,
-    // Flag only — the heavy request/response blobs are fetched on demand via
+    // Flag only - the heavy request/response blobs are fetched on demand via
     // getRequestLogDetail so the list stays light.
     hasDebug: !!(r.debug_request || r.debug_response),
     catalogId: r.catalog_id,
@@ -286,7 +286,7 @@ export interface HopStat {
 }
 
 // Per-hop success/error counts for one exposed model, keyed by (providerId,
-// upstreamModel) — the same identity a chain link routes through — so the
+// upstreamModel) - the same identity a chain link routes through - so the
 // chain editor can show each hop's own hit-rate. Same success/error split as
 // the rest of the app: 2xx = success, everything else (incl. null = timeout,
 // aborted, or a request that never reached the upstream) = error.
@@ -311,8 +311,8 @@ export interface KeyStat {
   errors: number;
 }
 
-// Per-key success/error counts for one provider, keyed by upstream_key_hash —
-// the same cred_hash a provider_keys row is looked up by — so the key manager
+// Per-key success/error counts for one provider, keyed by upstream_key_hash -
+// the same cred_hash a provider_keys row is looked up by - so the key manager
 // can show each credential's own hit-rate. Same success/error split as
 // hopStats: 2xx = success, everything else (incl. null = timeout, aborted, or
 // a request that never reached the upstream) = error.
@@ -332,7 +332,7 @@ export function keyStats(db: DB, providerId: string): KeyStat[] {
 
 // Most-recent request timestamp per key for one provider, keyed by
 // upstream_key_hash (== provider_keys.cred_hash). Any logged request counts as
-// a "use" — including a 429 — since the usage dashboard sorts/highlights by
+// a "use" - including a 429 - since the usage dashboard sorts/highlights by
 // when a key was last exercised, not by whether the call succeeded. Returns a
 // hash -> ISO-timestamp map; keys that never served a logged request are absent.
 export function lastUsedByKey(db: DB, providerId: string): Map<string, string> {
@@ -352,7 +352,7 @@ export function lastUsedByKey(db: DB, providerId: string): Map<string, string> {
 export interface DashboardStats {
   requestsToday: number;
   requestsErrorToday: number;
-  /** Gateway throttle 503s today (whole chain temporarily rate-limited) —
+  /** Gateway throttle 503s today (whole chain temporarily rate-limited) -
    *  transient, excluded from requestsErrorToday and the error rate. */
   throttledToday: number;
   tokensToday: number;
@@ -383,7 +383,7 @@ export interface DashboardStats {
 export function dashboardStats(db: DB): DashboardStats {
   const today = new Date().toISOString().slice(0, 10);
   // A gateway throttle 503 (whole chain temporarily rate-limited) is a
-  // transient, retryable condition, NOT a failure — exclude it from the error
+  // transient, retryable condition, NOT a failure - exclude it from the error
   // rate and the 5xx band, and surface it in its own `throttledToday` count.
   const throttle = throttleSql();
   // Realized tokens = input (minus any cache-hit portion, which never touched
@@ -480,7 +480,7 @@ export function dashboardStats(db: DB): DashboardStats {
   }
 
   const req = agg.requests || 0;
-  // Throttles aren't failures and aren't successes either — exclude them from
+  // Throttles aren't failures and aren't successes either - exclude them from
   // the error-rate denominator so a burst of rate-limiting doesn't distort the
   // rate in either direction.
   const rateDenom = req - (agg.throttled || 0);

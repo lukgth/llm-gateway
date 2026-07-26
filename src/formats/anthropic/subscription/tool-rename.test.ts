@@ -1,4 +1,4 @@
-// Tool rename/un-rename integration tests — verifies that tool names
+// Tool rename/un-rename integration tests - verifies that tool names
 // renamed on the request side are reversed on the response side via
 // the shared ctx.state rename map.
 
@@ -82,7 +82,7 @@ test("tool-normalize renames execute_python → ExecutePython and un-rename reve
 
 test("un-rename is a no-op when no tools were renamed", () => {
   const ctx = makeCtx();
-  // No request-side tool-normalize ran — state has no rename map.
+  // No request-side tool-normalize ran - state has no rename map.
 
   const respBody: Json = {
     id: "msg_1",
@@ -184,7 +184,7 @@ test("full pipeline: responses client → messages provider, tool names reversed
       "function_call name should be un-renamed",
     );
   } else {
-    // Still in messages format (no bridge in plan) — check content blocks.
+    // Still in messages format (no bridge in plan) - check content blocks.
     const blocks = result.content as Array<{ type: string; name?: string }>;
     const tu = blocks.find((b) => b.type === "tool_use");
     assert.ok(tu, "expected a tool_use block");

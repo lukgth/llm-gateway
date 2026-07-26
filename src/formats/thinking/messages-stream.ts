@@ -5,7 +5,7 @@
 // `<thinking>...</thinking>` text inside a normal text content block instead
 // of as a proper Anthropic `thinking` content block. This transform sits on
 // the SSE byte stream and rewrites those inline tags into real thinking
-// content blocks — without otherwise perturbing the stream.
+// content blocks - without otherwise perturbing the stream.
 //
 // Design constraints (from the caller's requirements):
 //   - Truly streaming: each upstream chunk is processed and forwarded as it
@@ -72,11 +72,11 @@ export class AnthropicThinkingTransform extends Transform {
   private suppressedTextBlocks = new Set<number>();
 
   // Remapping for non-text upstream blocks (tool_use, upstream-emitted
-  // thinking, etc.) — upstreamIndex -> ourIndex.
+  // thinking, etc.) - upstreamIndex -> ourIndex.
   private indexMap = new Map<number, number>();
 
   // True once message_delta or message_stop has been forwarded. After this,
-  // no content_block_* events may be emitted — the client has torn down its
+  // no content_block_* events may be emitted - the client has torn down its
   // message state and would reject them ("content_block_delta without a
   // current message").
   private messageEnded = false;
@@ -91,7 +91,7 @@ export class AnthropicThinkingTransform extends Transform {
   }
 
   _flush(callback: TransformCallback): void {
-    // Trailing bytes (event without final blank line) — best effort.
+    // Trailing bytes (event without final blank line) - best effort.
     const frameTail = this.reader.flush();
     if (frameTail !== null) this.handleRawEvent(frameTail);
 
@@ -143,7 +143,7 @@ export class AnthropicThinkingTransform extends Transform {
   }
 
   private processEvent(parsed: ParsedEvent): string[] {
-    // data-less events (heartbeats, bare [DONE]) — forward as-is.
+    // data-less events (heartbeats, bare [DONE]) - forward as-is.
     if (!parsed.data) {
       return [parsed.raw + "\n\n"];
     }
@@ -182,7 +182,7 @@ export class AnthropicThinkingTransform extends Transform {
         return this.handleBlockStop(data);
 
       default:
-        // Unknown event type — forward verbatim rather than guess.
+        // Unknown event type - forward verbatim rather than guess.
         return [formatEvent(eventType, data)];
     }
   }
@@ -202,7 +202,7 @@ export class AnthropicThinkingTransform extends Transform {
       return [];
     }
 
-    // tool_use, upstream-emitted thinking, image, etc. — remap the index so
+    // tool_use, upstream-emitted thinking, image, etc. - remap the index so
     // our inserted thinking/text blocks don't collide with the upstream's.
     const mappedIndex = this.nextIndex++;
     this.indexMap.set(upstreamIndex, mappedIndex);
@@ -225,7 +225,7 @@ export class AnthropicThinkingTransform extends Transform {
     }
 
     // Non-text delta (input_json_delta for tool_use, upstream's own
-    // thinking_delta, etc.) — remap the index and forward.
+    // thinking_delta, etc.) - remap the index and forward.
     if (this.indexMap.has(upstreamIndex)) {
       return [
         formatEvent("content_block_delta", {
@@ -235,7 +235,7 @@ export class AnthropicThinkingTransform extends Transform {
       ];
     }
 
-    // Unknown delta (e.g., text_delta for a block we didn't see start of) —
+    // Unknown delta (e.g., text_delta for a block we didn't see start of) -
     // forward verbatim rather than drop it.
     return [formatEvent("content_block_delta", data)];
   }
@@ -245,7 +245,7 @@ export class AnthropicThinkingTransform extends Transform {
     const outputs: string[] = [];
 
     if (this.indexMap.has(upstreamIndex)) {
-      // Non-text block stop — remap and forward.
+      // Non-text block stop - remap and forward.
       outputs.push(
         formatEvent("content_block_stop", {
           type: "content_block_stop",
@@ -276,7 +276,7 @@ export class AnthropicThinkingTransform extends Transform {
       return outputs;
     }
 
-    // Unknown block stop — forward verbatim.
+    // Unknown block stop - forward verbatim.
     return [formatEvent("content_block_stop", data)];
   }
 
@@ -284,7 +284,7 @@ export class AnthropicThinkingTransform extends Transform {
   // and closing content blocks as the parser transitions between reasoning
   // and content. Indices come from `nextIndex` and stay contiguous.
   //
-  // `blockStarts` (how many <thinking> tags opened within THIS parser feed —
+  // `blockStarts` (how many <thinking> tags opened within THIS parser feed -
   // see StreamingThinkingParser) is otherwise unused here: earlier this
   // method opened one empty `{thinking:"", signature:""}` content block per
   // extra tag-open before the one carrying the actual text, so a chunk like
@@ -292,8 +292,8 @@ export class AnthropicThinkingTransform extends Transform {
   // empty one. Anthropic's own API never emits an empty thinking block, and
   // several clients treat one as malformed. Since the parser already
   // concatenates all reasoning text from one feed into a single `reasoning`
-  // string regardless of how many tags it crossed, the correct — and
-  // simpler — behavior is to fold every <thinking> tag in one feed into
+  // string regardless of how many tags it crossed, the correct - and
+  // simpler - behavior is to fold every <thinking> tag in one feed into
   // whatever thinking block is already open (or open exactly one new block
   // if none is), never more than one block per feed call.
   private emitSplit(reasoning: string, content: string): string[] {
@@ -305,7 +305,7 @@ export class AnthropicThinkingTransform extends Transform {
         const idx = this.nextIndex++;
         outputs.push(
           // Real Anthropic thinking blocks open with an empty `signature`
-          // field too (not just `thinking`) — matches the live API's own
+          // field too (not just `thinking`) - matches the live API's own
           // content_block_start shape for a not-yet-signed block.
           formatEvent("content_block_start", {
             type: "content_block_start",
@@ -355,7 +355,7 @@ export class AnthropicThinkingTransform extends Transform {
   // `signature_delta` event (the cryptographic signature) BEFORE
   // content_block_stop. This block's text was extracted from an inline
   // <thinking> tag rather than produced by a genuine Anthropic thinking
-  // turn, so there's no real signature to relay — SYNTHETIC_THINKING_SIGNATURE
+  // turn, so there's no real signature to relay - SYNTHETIC_THINKING_SIGNATURE
   // fills the slot so the block's SHAPE matches a real one. See that
   // constant's doc comment: stripUnsupportedThinking normalizes every
   // thinking block back to text before any request reaches a
@@ -388,7 +388,7 @@ export class AnthropicThinkingTransform extends Transform {
 
   // Flush parser carry (partial tags held from the last text_delta) and close
   // any open content block. Called from message_delta/message_stop handlers so
-  // all deferred text reaches the client BEFORE the message ends — and so
+  // all deferred text reaches the client BEFORE the message ends - and so
   // _flush() knows there is nothing left to emit.
   private finalizeBlocks(): string[] {
     const outputs: string[] = [];
@@ -432,7 +432,7 @@ function parseEvent(raw: string): ParsedEvent {
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         data = parsed as Record<string, unknown>;
       } else {
-        // Valid JSON but not an object — wrap so the caller can still forward.
+        // Valid JSON but not an object - wrap so the caller can still forward.
         data = { __raw: parsed };
       }
     } catch {

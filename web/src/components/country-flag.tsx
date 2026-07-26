@@ -1,5 +1,5 @@
 // Inline country flags via the Twemoji CDN. A 2-letter ISO code becomes its
-// regional-indicator codepoints, which name the Twemoji SVG — so the flag looks
+// regional-indicator codepoints, which name the Twemoji SVG - so the flag looks
 // identical across platforms (native emoji flags don't render on Windows).
 //
 // We build the <img> in JSX (rather than twemoji.parse + dangerouslySetInnerHTML)
@@ -11,11 +11,11 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
-// Twemoji CDN base (jdecked fork, pinned) — the same URL @twemoji/api composes.
+// Twemoji CDN base (jdecked fork, pinned) - the same URL @twemoji/api composes.
 const TWEMOJI_BASE =
   "https://cdn.jsdelivr.net/gh/jdecked/twemoji@17.0.3/assets";
 
-// A compact, commonly-useful country list for the picker. Not exhaustive — the
+// A compact, commonly-useful country list for the picker. Not exhaustive - the
 // backend accepts any 2-letter code, so this is just the dropdown's convenience
 // set (ordered roughly by prevalence of proxy/egress regions).
 export const COUNTRIES: Array<{ code: string; name: string }> = [
@@ -49,7 +49,7 @@ export const COUNTRIES: Array<{ code: string; name: string }> = [
 const NAME_BY_CODE = new Map(COUNTRIES.map((c) => [c.code, c.name]));
 
 // Convert "US" -> "1f1fa-1f1f8" (the two regional-indicator codepoints, hex,
-// dash-joined) — the Twemoji SVG file naming. Null for a non-2-letter code.
+// dash-joined) - the Twemoji SVG file naming. Null for a non-2-letter code.
 function codeToTwemojiName(code: string): string | null {
   const cc = code.trim().toUpperCase();
   if (!/^[A-Z]{2}$/.test(cc)) return null;
@@ -84,7 +84,7 @@ export function CountryFlag({
       title={label}
     >
       {failed ? (
-        // CDN unreachable — a legible 2-letter code beats a broken image / tofu.
+        // CDN unreachable - a legible 2-letter code beats a broken image / tofu.
         <span className="text-[0.5rem] font-semibold leading-none tracking-tight text-muted-foreground">
           {code!.toUpperCase()}
         </span>

@@ -137,7 +137,7 @@ test("thinkingBlocksToText: a message with no thinking blocks is left as the SAM
   const body = { messages: [msg] };
   const out = thinkingBlocksToText(body);
   const msgs = out.messages as unknown[];
-  assert.equal(msgs[0], msg); // reference equality — not rebuilt
+  assert.equal(msgs[0], msg); // reference equality - not rebuilt
 });
 
 test("thinkingBlocksToText: no messages array -> shallow copy, no throw", () => {
@@ -248,7 +248,7 @@ test("stack: anthropic:thinking-signature is first and strips a real OR syntheti
   const msgs = out.messages as Array<{
     content: Array<Record<string, unknown>>;
   }>;
-  // Converted to text regardless of whether the signature "looked real" — the
+  // Converted to text regardless of whether the signature "looked real" - the
   // gateway can never prove ANY signature is valid for whatever provider this
   // hop is about to hit (see the module doc comment).
   assert.deepEqual(msgs[0].content, [

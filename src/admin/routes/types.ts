@@ -30,7 +30,7 @@ export interface RouteCtx {
 }
 
 // Minimal provider shape the connectivity-test / model-discovery probes need
-// — either a saved Provider row or an ad-hoc pre-create wizard config, which
+// - either a saved Provider row or an ad-hoc pre-create wizard config, which
 // has no id/adapter yet.
 export interface ProviderLike {
   baseUrl: string;

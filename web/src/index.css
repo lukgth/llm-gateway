@@ -17,13 +17,13 @@
   /* Override Tailwind's stock `ease-in-out` (cubic-bezier(0.4,0,0.2,1)) with
      the same curve as the default above, so any explicit `ease-in-out` class
      (Switch, Sheet, …) matches the app-wide default instead of silently
-     drifting to Tailwind's own — one curve, one feel, everywhere. */
+     drifting to Tailwind's own - one curve, one feel, everywhere. */
   --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
   /* Sidebar collapse/expand: a stronger symmetric S-curve (easeInOutCubic)
      shared by the width, label fades and group-header collapse so they all
      move as one. Reused (via explicit `ease-sidebar` + `duration-200/250`)
-     by every other panel-like open/close in the app — dialogs, popovers,
-     selects, tooltips, sheets, collapsibles, the switch thumb — so anything
+     by every other panel-like open/close in the app - dialogs, popovers,
+     selects, tooltips, sheets, collapsibles, the switch thumb - so anything
      that moves, slides, resizes, or zooms shares the sidebar's snap instead
      of Tailwind's default `animate-in`/`animate-out` timing (150ms, plain
      ease). See docs on each component for which bucket it's in. */
@@ -96,7 +96,7 @@
      up as body text, not just a chart fill. */
   --success: oklch(0.55 0.105 162);
   /* "Approaching limit" usage-bar fill. Dimmer + redder than Tailwind's stock
-     amber-500 (oklch(0.769 0.188 70.08)) — pulled toward --destructive's hue
+     amber-500 (oklch(0.769 0.188 70.08)) - pulled toward --destructive's hue
      (27) and down in lightness/chroma so it reads as a real warning next to
      amber's cheerier yellow, without being as alarming as full destructive
      red. */
@@ -139,11 +139,11 @@
   --accent: oklch(0.2 0.006 70);
   --accent-foreground: oklch(0.93 0.004 70);
   --destructive: oklch(0.704 0.191 22.216);
-  /* See --success in :root — same muted-vs-destructive intent, lightened +
+  /* See --success in :root - same muted-vs-destructive intent, lightened +
      chroma-trimmed for dark-background legibility (mirrors how --destructive
      itself shifts light->dark). */
   --success: oklch(0.72 0.1 162);
-  /* See --warning in :root — same dim-vs-amber, redder-than-amber intent,
+  /* See --warning in :root - same dim-vs-amber, redder-than-amber intent,
      lightened for dark-background legibility. */
   --warning: oklch(0.68 0.15 42);
   --border: oklch(0.92 0.005 70 / 9%);
@@ -157,7 +157,7 @@
   --sidebar-accent-foreground: oklch(0.93 0.004 70);
   --sidebar-border: oklch(0.92 0.005 70 / 7%);
   --sidebar-ring: oklch(0.5 0.008 70);
-  /* Chart series palette (dark) — slightly brighter for contrast on dark bg. */
+  /* Chart series palette (dark) - slightly brighter for contrast on dark bg. */
   --chart-1: oklch(0.646 0.24 292.717);
   --chart-2: oklch(0.7 0.15 232);
   --chart-3: oklch(0.74 0.14 162);
@@ -170,7 +170,7 @@
     @apply border-border outline-ring/50;
   }
   /* Page-level chrome (the main content scroll, sidebar nav, body) stays clean
-     with no visible track — carries the `.no-scrollbar` class. Overlays and
+     with no visible track - carries the `.no-scrollbar` class. Overlays and
      bordered scroll boxes instead use `.scrollbar-thin` (below) so their scroll
      is DISCOVERABLE. This replaces the old blanket scrollbar hide that made every
      dropdown scroll invisibly. */
@@ -193,8 +193,8 @@
   }
 
   /* Default: a slim, themed scrollbar everywhere (Firefox + WebKit/Chromium).
-     Subtle enough to feel integrated, visible enough that scrollable regions —
-     especially dropdowns, command lists and dialogs — are discoverable. Native
+     Subtle enough to feel integrated, visible enough that scrollable regions -
+     especially dropdowns, command lists and dialogs - are discoverable. Native
      Chromium form controls (date/number spinners, <select> popups, autofill)
      follow `color-scheme`, which is set on :root/.dark, so they render cleanly. */
   * {
@@ -247,7 +247,7 @@
   }
   /* Every enabled clickable gets a pointer cursor (Tailwind v4 resets buttons
      to cursor-default). Covers native buttons, links, radix triggers with
-     role=button, and summary — disabled states are excluded. */
+     role=button, and summary - disabled states are excluded. */
   button:not(:disabled),
   [role="button"]:not(:disabled),
   a[href],

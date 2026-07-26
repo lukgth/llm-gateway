@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/tooltip";
 
 const ROW_HEIGHT = 56;
-// h-8 (32px) + border-b (1px) — the sticky header row now lives inside the
+// h-8 (32px) + border-b (1px) - the sticky header row now lives inside the
 // same scrollable element as the virtualized rows (see the table markup
 // below), so it occupies real space there. Passed to useVirtualizer as
 // scrollMargin so its visible-range math accounts for that leading offset
@@ -77,7 +77,7 @@ function mask(key: string): string {
 
 function relativeTime(iso: string): string {
   const ms = new Date(iso).getTime() - Date.now();
-  if (!Number.isFinite(ms)) return "—";
+  if (!Number.isFinite(ms)) return "-";
   const past = ms <= 0;
   const abs = Math.abs(ms);
   const min = Math.round(abs / 60000);
@@ -91,14 +91,14 @@ function relativeTime(iso: string): string {
   return past ? `${unit} ago` : `in ${unit}`;
 }
 
-// "resets in 4h 59m" (still cooling down) vs "reset 6m ago" (stale — the row
+// "resets in 4h 59m" (still cooling down) vs "reset 6m ago" (stale - the row
 // hasn't re-fetched since the cooldown lapsed). Same grammar as the Key
 // Usage page's resetLabel, so a rate-limited key reads identically in both
 // places regardless of whether the cooldown came from a generic 429 Retry-
 // After or Anthropic's own unified-quota reset header.
 function resetLabel(iso: string): string {
   const rt = relativeTime(iso);
-  if (rt === "—") return "reset —";
+  if (rt === "-") return "reset -";
   if (rt === "now") return "resets now";
   return rt.endsWith("ago") ? `reset ${rt}` : `resets ${rt}`;
 }
@@ -159,7 +159,7 @@ export function ProviderKeyManager({
       const fetchedStats = await api.keyStats(providerId);
       setStats(Object.fromEntries(fetchedStats.map((s) => [s.credHash, s])));
     } catch {
-      // Stats are a nice-to-have — leave rows without them rather than block loading.
+      // Stats are a nice-to-have - leave rows without them rather than block loading.
     }
   }, [providerId]);
 
@@ -260,7 +260,7 @@ export function ProviderKeyManager({
     if (!queue.length) return;
     setTestingAll(true);
 
-    // Prefer the WS batch endpoint — one connection, server-streamed
+    // Prefer the WS batch endpoint - one connection, server-streamed
     // per-key results (index-tagged) instead of N individual HTTP round-
     // trips. Falls back to the old client-side worker pool when the socket
     // isn't up yet (first paint, reconnecting, or an upgrade-blocking proxy).
@@ -516,7 +516,7 @@ export function ProviderKeyManager({
             <Loader2 className="h-4 w-4 animate-spin" /> Loading keys…
           </div>
         ) : keys.length === 0 ? (
-          <EmptyState msg="No provider keys yet — add credentials to begin routing requests" />
+          <EmptyState msg="No provider keys yet - add credentials to begin routing requests" />
         ) : filteredRows.length === 0 ? (
           <EmptyState msg="No keys match your search" />
         ) : (
@@ -527,7 +527,7 @@ export function ProviderKeyManager({
                 this scroller instead, the scrollbar that appears once there
                 are enough rows to need one would shrink only the body's
                 width, shifting every column after the flexible Key/Tags
-                track — Status, Active, Success, Errors, Actions — out of
+                track - Status, Active, Success, Errors, Actions - out of
                 alignment with the header above it. Sticky positioning keeps
                 the header pinned to the top of this scroll container.
                 overflow-x-auto on this same element (not a separate wrapper)
@@ -576,7 +576,7 @@ export function ProviderKeyManager({
                   <div
                     role="columnheader"
                     className="hidden truncate text-right md:block"
-                    title="Failed hits — non-2xx status, including timeouts and bad requests"
+                    title="Failed hits - non-2xx status, including timeouts and bad requests"
                   >
                     Errors
                   </div>
@@ -701,7 +701,7 @@ const ProviderKeyRow = memo(function ProviderKeyRow({
   const dead = !!key.health?.dead;
   const rateLimitedUntil = key.health?.rateLimitedUntil;
   // The server only sends rateLimitedUntil while the cooldown is still live,
-  // but this row can go stale between polls — re-check locally so a lapsed
+  // but this row can go stale between polls - re-check locally so a lapsed
   // cooldown stops reading as an active warning the moment the client's own
   // clock says it's over, instead of waiting for the next reload().
   const rateLimited =
@@ -712,7 +712,7 @@ const ProviderKeyRow = memo(function ProviderKeyRow({
     key.health?.lastErrorAt
       ? `Observed ${new Date(key.health.lastErrorAt).toLocaleString()}`
       : null,
-    // Meaningless on a dead key — auth failure needs a manual re-enable, it
+    // Meaningless on a dead key - auth failure needs a manual re-enable, it
     // doesn't clear itself when a leftover cooldown timer lapses.
     rateLimited && !dead
       ? `Resets ${new Date(rateLimitedUntil!).toLocaleString()}`
@@ -724,11 +724,11 @@ const ProviderKeyRow = memo(function ProviderKeyRow({
   // Single source of truth for the status dot: persistent health problems
   // (auth failure, rate limit) always win over a stale manual test result,
   // which in turn wins over having no test data at all. The dot itself is
-  // never omitted — an untested-but-healthy key still gets a neutral dot,
+  // never omitted - an untested-but-healthy key still gets a neutral dot,
   // matching the always-visible indicator in the model chain table. Rate
   // limit cooldowns are sourced from KeyHealthStore, which on a real 429
-  // reads Retry-After / X-RateLimit-Reset or — for Anthropic subscription
-  // (Claude Code) keys with neither — the unified quota system's own
+  // reads Retry-After / X-RateLimit-Reset or - for Anthropic subscription
+  // (Claude Code) keys with neither - the unified quota system's own
   // anthropic-ratelimit-unified-reset header (see key-health.ts
   // parseRateLimitHint), so the countdown here is accurate either way.
   const status = testing
@@ -874,8 +874,8 @@ const ProviderKeyRow = memo(function ProviderKeyRow({
             toggling
               ? "Saving key status"
               : key.enabled
-                ? "Active — click to disable"
-                : "Disabled — click to enable"
+                ? "Active - click to disable"
+                : "Disabled - click to enable"
           }
         />
       </div>
@@ -895,7 +895,7 @@ const ProviderKeyRow = memo(function ProviderKeyRow({
             ? "text-destructive"
             : "text-muted-foreground",
         )}
-        title={`${stat?.errors ?? 0} failed hits — non-2xx status, including timeouts and bad requests`}
+        title={`${stat?.errors ?? 0} failed hits - non-2xx status, including timeouts and bad requests`}
       >
         {stat?.errors ?? 0}
       </div>

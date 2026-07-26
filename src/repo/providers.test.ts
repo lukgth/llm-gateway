@@ -122,7 +122,7 @@ test("listProviders returns created rows", () => {
   }
 });
 
-test("id is decoupled from name — two same-named providers both persist", () => {
+test("id is decoupled from name - two same-named providers both persist", () => {
   const db = freshDb();
   try {
     const a = createProvider(db, {
@@ -147,7 +147,7 @@ test("id is decoupled from name — two same-named providers both persist", () =
   }
 });
 
-test("format is nullable — omitted stores null, not 'openai'", () => {
+test("format is nullable - omitted stores null, not 'openai'", () => {
   const db = freshDb();
   try {
     const p = createProvider(db, {
@@ -211,7 +211,7 @@ test("legacy path-string endpoints are read back as kinds (migration-tolerant ma
 
 // --- normBasePath ------------------------------------------------------------
 // basePath REPLACES the implicit "/v1" prefix (see standardPath in
-// providers/base.ts) — it must compose cleanly as `origin + basePath + suffix`,
+// providers/base.ts) - it must compose cleanly as `origin + basePath + suffix`,
 // so normBasePath's job is: trim, force a leading slash, strip trailing
 // slashes, and treat a bare "/" the same as unset (empty = "use the implicit
 // /v1 default", not "route to the bare origin with a dangling slash").

@@ -3,7 +3,7 @@
 // We model only the fields the gateway reads or writes; everything else rides
 // through opaquely via the `[k: string]: unknown` index signatures. This is the
 // same "only what we touch" philosophy the converters already used with local
-// interfaces — now shared, so transforms authored against the Messages format
+// interfaces - now shared, so transforms authored against the Messages format
 // (onRequest("messages", …) / onResponse("messages", …)) get real types.
 
 // --- content blocks --------------------------------------------------------
@@ -51,21 +51,21 @@ export interface AnthropicThinkingBlock {
   [k: string]: unknown;
 }
 
-// Real Anthropic `thinking` blocks always carry a cryptographic `signature` —
+// Real Anthropic `thinking` blocks always carry a cryptographic `signature` -
 // Anthropic verifies it when a client echoes the block back on a later turn
 // (e.g. a tool-use continuation) and 400s if it's missing or invalid. When the
-// gateway SYNTHESIZES a thinking block itself — extracting inline
+// gateway SYNTHESIZES a thinking block itself - extracting inline
 // <thinking>...</thinking> tags from a non-Anthropic upstream's text, or
 // bridging `reasoning_content`/reasoning output items from a Chat/Responses
-// provider into Anthropic's shape — there is no real signature to carry
+// provider into Anthropic's shape - there is no real signature to carry
 // forward (the upstream never produced one). Omitting `signature` entirely
 // causes some clients/SDKs (including Anthropic's own) to reject the block
 // as malformed on echo-back, so every synthesized thinking block gets this
-// placeholder instead. It is NOT a valid Anthropic signature — it exists
+// placeholder instead. It is NOT a valid Anthropic signature - it exists
 // purely so the block's shape matches what a real `thinking` block looks
 // like. It is never forwarded to a real upstream: `stripUnsupportedThinking`
 // (see formats/converters/thinking-signature.ts) converts every thinking
-// block — synthetic OR genuine — back into a plain text block before ANY
+// block - synthetic OR genuine - back into a plain text block before ANY
 // request reaches a `messages`-speaking provider, because the gateway can
 // never prove a signature it's echoing (synthetic or another account's real
 // one) is valid for the upstream it's about to hit.
@@ -82,7 +82,7 @@ export interface AnthropicDocumentBlock {
   [k: string]: unknown;
 }
 
-// A content block in either direction. Open union — the trailing
+// A content block in either direction. Open union - the trailing
 // `Record<string, unknown>` member keeps it a pure passthrough bag (any block
 // the gateway builds or forwards is assignable) while the named members give
 // authoring-time narrowing on `type`.

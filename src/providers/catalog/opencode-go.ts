@@ -7,7 +7,7 @@ import { WireKind } from "../../types";
 import type { ProviderKeyUsageWindow } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
-// OpenCode Go — a paid subscription tier at opencode.ai/go, distinct from Zen.
+// OpenCode Go - a paid subscription tier at opencode.ai/go, distinct from Zen.
 // Supports both /chat/completions and /messages.
 //
 // Quota display: no public REST endpoint (open GitHub issue for /zen/v1/balance).
@@ -15,8 +15,8 @@ import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 // opencode-quota community tool (github.com/slkiser/opencode-quota).
 //
 // Required metadata keys on each ProviderKey:
-//   workspaceId  — the workspace slug from the URL (opencode.ai/workspace/<id>/go)
-//   authCookie   — the value of the "auth" cookie from an active browser session
+//   workspaceId  - the workspace slug from the URL (opencode.ai/workspace/<id>/go)
+//   authCookie   - the value of the "auth" cookie from an active browser session
 //
 // Parse strategy A (SolidJS SSR hydration):
 //   rollingUsage:$R[0]={usagePercent:12.3,resetInSec:1234}
@@ -38,7 +38,7 @@ interface UsageWindow {
 
 function extractWindowSsr(html: string, key: string): UsageWindow | null {
   // SolidJS SSR format: rollingUsage:$R[N]={usagePercent:N,resetInSec:N}
-  // Field order varies — try both orderings.
+  // Field order varies - try both orderings.
   const base = key + String.raw`:\$R\[\d+\]=\{[^}]*`;
   const pctFirst = new RegExp(
     base + `usagePercent:${NUM}[^}]*resetInSec:${NUM}`,
@@ -201,7 +201,7 @@ class OpenCodeGoAdapter extends OpenAICompatibleAdapter {
       return {
         windows: [],
         unavailable: true,
-        message: "Key disabled — usage not queried.",
+        message: "Key disabled - usage not queried.",
       };
     }
 
@@ -221,7 +221,7 @@ class OpenCodeGoAdapter extends OpenAICompatibleAdapter {
         return {
           windows: [],
           unavailable: true,
-          message: `Dashboard returned HTTP ${res.status} — check workspaceId and authCookie.`,
+          message: `Dashboard returned HTTP ${res.status} - check workspaceId and authCookie.`,
         };
       }
       html = res.text;
@@ -240,7 +240,7 @@ class OpenCodeGoAdapter extends OpenAICompatibleAdapter {
         windows: [],
         unavailable: true,
         message:
-          "Could not parse quota data — page structure may have changed, or session expired.",
+          "Could not parse quota data - page structure may have changed, or session expired.",
       };
     }
 
@@ -260,7 +260,7 @@ export const opencodeGo = new OpenCodeGoAdapter({
   id: "opencode-go",
   label: "OpenCode Go",
   blurb:
-    "OpenCode Go subscription — both /chat/completions and /messages endpoints.",
+    "OpenCode Go subscription - both /chat/completions and /messages endpoints.",
   brand: "opencode",
   docsUrl: "https://opencode.ai/docs/go/",
   defaults: {
@@ -280,7 +280,7 @@ export const opencodeGo = new OpenCodeGoAdapter({
       key: "apiKeys",
       label: "API key",
       required: true,
-      hint: "One per line — rotated round-robin.",
+      hint: "One per line - rotated round-robin.",
     },
     {
       key: "baseUrl",

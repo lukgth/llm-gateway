@@ -10,7 +10,7 @@
 //
 // Every default returns FORMAT-TAGGED transforms (onRequest/onResponse/
 // onStreamEvent), so buildTransformPlan places each stage automatically relative
-// to the wire conversion — no per-set placement logic here or in the engine.
+// to the wire conversion - no per-set placement logic here or in the engine.
 
 import type {
   AnyRequestTransform,
@@ -34,7 +34,7 @@ import { normalizeOpenAIReasoning } from "../hooks/openai-reasoning";
 export interface DefaultCtx {
   /** Shared thinking converter (stateless) used by the thinking default. */
   thinking: ThinkingConverter;
-  /** The hop's provider wire format — thinking runs once, on the provider shape. */
+  /** The hop's provider wire format - thinking runs once, on the provider shape. */
   providerFmt: WireFmt;
 }
 
@@ -47,14 +47,14 @@ export interface DefaultTransformSet {
   stream?(ctx: DefaultCtx): AnyStreamTransform[];
 }
 
-// The registry — the single source of truth for always-on transforms. Order is
+// The registry - the single source of truth for always-on transforms. Order is
 // the order stages are collected into each bag (buildTransformPlan then places
 // them by tag, so this order only matters among same-format stages).
 export const DEFAULT_TRANSFORMS: DefaultTransformSet[] = [
   {
     // Anthropic-native request hooks (thinking-config, max_tokens, prefill),
     // tagged "messages" + gated on providerFmt so they engage only for a hop
-    // that emits Messages — native Anthropic OR a Claude model behind an
+    // that emits Messages - native Anthropic OR a Claude model behind an
     // OpenAI-type provider whose hop routes /v1/messages.
     id: "anthropic-hooks",
     request: () => defaultAnthropicRequestHooks(),
@@ -133,7 +133,7 @@ export const DEFAULT_TRANSFORMS: DefaultTransformSet[] = [
   {
     // <thinking>/<reasoning> extraction. Runs ONCE, on the provider-native shape,
     // pre-bridge (exactly as the old standalone applyThinking/thinkingStream did)
-    // — so we emit only the transform tagged this hop's providerFmt, not all
+    // - so we emit only the transform tagged this hop's providerFmt, not all
     // three (a clientFmt-tagged copy would run a wasteful post-bridge second pass).
     id: "thinking",
     response: (ctx) =>

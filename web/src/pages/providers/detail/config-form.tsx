@@ -1,5 +1,5 @@
 // Config tab (identity/wire-format) and Advanced tab (connection/reliability/
-// headers/proxy/region) — both driven by the same ConfigForm, split by
+// headers/proxy/region) - both driven by the same ConfigForm, split by
 // `section`.
 
 import { useState } from "react";
@@ -108,7 +108,7 @@ export function ConfigForm({
       return;
     }
     try {
-      // Keys are managed on the Keys tab — omit them here so a config save can't
+      // Keys are managed on the Keys tab - omit them here so a config save can't
       // clobber a key edit (updateProvider merges: undefined keeps existing).
       await api.updateProvider(provider.id, {
         ...form,
@@ -237,7 +237,7 @@ export function ConfigForm({
             label="Base path"
             hint={
               <>
-                Inserted between origin and endpoint —{" "}
+                Inserted between origin and endpoint -{" "}
                 <span className="font-mono">
                   origin + basePath + /chat/completions
                 </span>
@@ -257,7 +257,7 @@ export function ConfigForm({
           </SettingRow>
           <SettingRow
             label="Models path"
-            hint="For discovery / test — joined onto origin + base path."
+            hint="For discovery / test - joined onto origin + base path."
           >
             <Input
               value={form.modelsPath ?? ""}
@@ -301,7 +301,7 @@ export function ConfigForm({
             hint="The composed URL the first endpoint resolves to."
           >
             <div className="break-all rounded-md border border-border bg-muted/30 px-3 py-1.5 font-mono text-xs text-foreground">
-              {previewUrl || "—"}
+              {previewUrl || "-"}
             </div>
           </SettingRow>
         </FormSection>
@@ -403,7 +403,7 @@ export function ConfigForm({
       <FormSection title="Headers, proxy & region">
         <SettingRow
           label="Extra upstream headers"
-          hint="JSON object — merged onto every request."
+          hint="JSON object - merged onto every request."
         >
           <JsonEditor
             value={headersText}
@@ -416,7 +416,7 @@ export function ConfigForm({
           hint={
             <>
               <span className="font-mono">socks5://host:port</span> or{" "}
-              <span className="font-mono">http://host:port</span> — blank =
+              <span className="font-mono">http://host:port</span> - blank =
               direct.
             </>
           }
@@ -515,7 +515,7 @@ function CountryPicker({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="none">— none —</SelectItem>
+          <SelectItem value="none">- none -</SelectItem>
           {COUNTRIES.map((c) => (
             <SelectItem key={c.code} value={c.code}>
               {c.name}

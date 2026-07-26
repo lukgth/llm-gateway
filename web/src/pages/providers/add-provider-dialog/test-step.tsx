@@ -1,4 +1,4 @@
-// Step 3: test connectivity — the trigger button lives in the dialog footer;
+// Step 3: test connectivity - the trigger button lives in the dialog footer;
 // this is just the idle hint + async result.
 
 import { Check, Loader2 } from "lucide-react";
@@ -23,13 +23,13 @@ export function TestStep({
   endpointPaths?: Partial<Record<WireKind, string>>;
 }) {
   // The connectivity test hits the model-list endpoint (origin + basePath +
-  // modelsPath — same composition modelsUrl() uses server-side in routes.ts),
+  // modelsPath - same composition modelsUrl() uses server-side in routes.ts),
   // not a completion endpoint. Shown here so the preview matches exactly what
   // gets probed.
   const origin = (baseUrl || "").replace(/\/+$/, "");
   const modelsUrl = origin ? origin + (basePath || "") + modelsPath : "";
   return (
-    // Top-anchored like every other step (Configure, Import) — a step that
+    // Top-anchored like every other step (Configure, Import) - a step that
     // only centers itself when its own content is short reads as an odd
     // vertical jump the instant a result appears and the block re-centers.
     // Left-aligned throughout so the URLs and result read as a clean
@@ -39,7 +39,7 @@ export function TestStep({
         <div className="text-sm text-muted-foreground">
           Test connectivity to{" "}
           <span className="font-mono break-all text-foreground">
-            {modelsUrl || "—"}
+            {modelsUrl || "-"}
           </span>
         </div>
         {endpoints && endpoints.length > 0 && (
@@ -58,13 +58,13 @@ export function TestStep({
       </div>
 
       {/* The "Test" button lives in the dialog footer (shared with Skip/
-          Import so the primary actions stay in one place) — this is just the
+          Import so the primary actions stay in one place) - this is just the
           idle hint + the async result, not a second trigger for the same
           action. */}
       {!probe && !testing && (
         <p className="text-xs text-muted-foreground">
           Click <span className="font-medium text-foreground">Test</span> below
-          to check connectivity — it isn't required, you can skip and create the
+          to check connectivity - it isn't required, you can skip and create the
           provider anyway.
         </p>
       )}
@@ -93,20 +93,20 @@ export function TestStep({
                 </span>
               </>
             ) : (
-              <span>Failed — {probe.error || `status ${probe.status}`}</span>
+              <span>Failed - {probe.error || `status ${probe.status}`}</span>
             )}
           </div>
           {probe.keyMask && (
             <p
               className="text-[0.7rem] text-muted-foreground"
-              title="Key selected via the provider's normal rotation/health rules — the same pick a live request would use"
+              title="Key selected via the provider's normal rotation/health rules - the same pick a live request would use"
             >
               Tested with key{" "}
               <span className="font-mono text-foreground">{probe.keyMask}</span>
             </p>
           )}
           <p className="text-[0.7rem] text-muted-foreground">
-            The test isn't required — you can skip and create the provider
+            The test isn't required - you can skip and create the provider
             anyway.
           </p>
         </div>

@@ -1,4 +1,4 @@
-// Claude Code subscription transform stacks — request, response, and stream.
+// Claude Code subscription transform stacks - request, response, and stream.
 //
 // Wired into the ClaudeCodeAdapter via requestTransforms/responseTransforms/
 // streamTransforms overrides (see providers/catalog/claude-code.ts). Billing
@@ -172,7 +172,7 @@ export const subscriptionRequestStack: RequestTransform[] = [
           ctx.state[TOOL_RENAME_KEY] = renameMap;
         }
       } catch {
-        // Normalization failed — keep body as-is.
+        // Normalization failed - keep body as-is.
       }
 
       replaceBody(body, ensureCcDecoyTools(body));

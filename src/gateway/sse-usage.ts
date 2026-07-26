@@ -5,7 +5,7 @@
 // the gateway would otherwise never learn the real token counts for a stream.
 // This Transform sits first in the streaming pipeline (on the PROVIDER-native
 // SSE bytes, before any format bridge), scans each `data:` event for usage
-// numbers, and — when the upstream reports none — accumulates the length of the
+// numbers, and - when the upstream reports none - accumulates the length of the
 // streamed text deltas as a fallback output estimate. It forwards every chunk
 // unchanged; a parse error on one event is swallowed so it can never break the
 // stream.
@@ -194,7 +194,7 @@ export class SseUsageObserver extends Transform {
     const output = num(o.output_tokens) ?? num(o.completion_tokens) ?? null;
     const cached = readCachedTokens(o);
     // Anthropic's input_tokens excludes cached tokens. Normalise so `input`
-    // always means "total input including cached" — the convention
+    // always means "total input including cached" - the convention
     // computeCostUsd expects. For OpenAI, prompt_tokens already includes
     // cached, so only add when detecting the Anthropic shape.
     if (

@@ -1,5 +1,5 @@
 // DashScope Coding Plan sends the Claude Code user-agent on EVERY outbound
-// request — including the model-list GET and the connectivity probe.
+// request - including the model-list GET and the connectivity probe.
 //
 // Why this is an adapter override and not just quirks.requiredHeaders:
 // requiredHeaders is applied by applyTemplateDefaults at provider-CREATE time,
@@ -7,7 +7,7 @@
 // A row created before this provider existed, or one whose extraHeaders an
 // operator edited or cleared in the UI, would silently fall back to sending no
 // UA at all (nothing else in the probe path sets one). These tests therefore
-// drive the adapter with an EMPTY header set — the state that used to fail.
+// drive the adapter with an EMPTY header set - the state that used to fail.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

@@ -303,7 +303,7 @@ const ProviderCard = memo(function ProviderCard({
         {result && (
           // The toast on click already says WHY (see test() above); this badge
           // persists after the toast fades, so it needs to carry the same
-          // status/error detail — never a bare, uninformative "Failed" (same
+          // status/error detail - never a bare, uninformative "Failed" (same
           // fix as overview-tab.tsx's "Test connection" badge).
           <Badge
             variant={result.ok ? "success" : "destructive"}

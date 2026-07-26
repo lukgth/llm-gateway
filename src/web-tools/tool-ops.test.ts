@@ -1,7 +1,7 @@
 // Format-agnostic web-tool surface tests.
 //
 // The same hosted web tools must be detected + rewritten whatever wire format a
-// hop speaks — a Claude model behind an OpenAI-type provider sends chat-shaped
+// hop speaks - a Claude model behind an OpenAI-type provider sends chat-shaped
 // tool defs, a native Anthropic hop sends messages-shaped ones. tool-ops renders
 // the neutral defs per format; tools.ts detects + rewrites through it.
 
@@ -50,7 +50,7 @@ test("detectWebTools finds hosted web_search in messages-shaped tools", () => {
 });
 
 test("detectWebTools does NOT detect chat-shaped tools as hosted", () => {
-  // Chat tool defs use type:"function" — they are never Anthropic hosted tools.
+  // Chat tool defs use type:"function" - they are never Anthropic hosted tools.
   // A hosted web tool has type:"web_search_20250305" or type:"web_search", which
   // is stripped by anthropicToolsToChat() during Messages→Chat conversion.
   const body = {
@@ -73,7 +73,7 @@ test("custom web_search tool in Chat format is NOT detected as hosted", () => {
   };
   // Not detected on the raw Chat body.
   assert.deepEqual(detectWebTools(chatBody), { search: false, fetch: false });
-  // After normalization the body is Messages-shaped and still not detected —
+  // After normalization the body is Messages-shaped and still not detected -
   // the tool has no type field, so it's a custom tool, not a hosted one.
   const messagesBody = chatRequestToMessages(chatBody);
   assert.ok(Array.isArray(messagesBody.messages));

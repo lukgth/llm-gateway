@@ -2,13 +2,13 @@ import { OpenAICompatibleAdapter } from "../base";
 import { WireKind } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
-// OpenCode Zen — OpenAI-compatible gateway aimed at coding agents.
+// OpenCode Zen - OpenAI-compatible gateway aimed at coding agents.
 class OpenCodeAdapter extends OpenAICompatibleAdapter {}
 
 export const opencode = new OpenCodeAdapter({
   id: "opencode",
   label: "OpenCode Zen",
-  blurb: "Coding-focused model gateway — OpenAI-compatible chat endpoint.",
+  blurb: "Coding-focused model gateway - OpenAI-compatible chat endpoint.",
   brand: "opencode",
   docsUrl: "https://opencode.ai/docs/zen/",
   defaults: {

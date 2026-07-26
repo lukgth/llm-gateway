@@ -78,7 +78,7 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="card-footer"
       className={cn(
         // flex-wrap: an action row that doesn't fit the card's width wraps
-        // onto a second line instead of overflowing — the parent Card is
+        // onto a second line instead of overflowing - the parent Card is
         // overflow-visible, so an unwrapped row would bleed past the card's
         // edge (visually floating outside it) rather than clip or wrap.
         "flex flex-wrap items-center gap-y-2 rounded-b-lg border-t bg-muted/50 -mx-4 -mb-4 mt-auto px-4 py-2.5",

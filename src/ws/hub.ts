@@ -1,4 +1,4 @@
-// WebSocket hub — manages connected clients, subscriptions, push timers,
+// WebSocket hub - manages connected clients, subscriptions, push timers,
 // and mutation broadcasts. All DB queries are synchronous (better-sqlite3),
 // so push handlers run on the event loop without async overhead.
 

@@ -1,5 +1,5 @@
-// Transform pipeline tests: a custom adapter transform must appear in — and run
-// through — the composed plan for both the buffered (request/response) and
+// Transform pipeline tests: a custom adapter transform must appear in - and run
+// through - the composed plan for both the buffered (request/response) and
 // streaming paths, and the built-in format conversion must compose correctly.
 
 import { test } from "node:test";
@@ -181,7 +181,7 @@ test("onStage observer reports each composed stage once", () => {
 });
 
 test("an upstream-supplied `unsupported` (e.g. no endpoint match) is surfaced, not silently dropped", () => {
-  // buildTransformPlan's own plan.unsupported passthrough — set by the
+  // buildTransformPlan's own plan.unsupported passthrough - set by the
   // adapter's routeFor() before the transform tables are ever consulted
   // (e.g. a provider that accepts none of the three wire kinds). Distinct
   // from a missing converter-table entry: see the "all 6 cross-format pairs
@@ -196,11 +196,11 @@ test("an upstream-supplied `unsupported` (e.g. no endpoint match) is surfaced, n
 
 test("all 6 cross-format request/response pairs are supported (no gateway-side gap)", () => {
   // Every (clientFmt, providerFmt) pair among the 3 wire formats must have
-  // BOTH a request and a response converter — this is what lets, e.g., a
+  // BOTH a request and a response converter - this is what lets, e.g., a
   // chat or messages client be routed to an OpenAI Responses-native model
   // (preferredEndpoint() pins GPT-5-class ids to /v1/responses) without the
   // hop being skipped as unsupported. responses<->messages is the two-hop
-  // case (via chat — see REQUEST_CONVERTERS/RESPONSE_CONVERTERS in
+  // case (via chat - see REQUEST_CONVERTERS/RESPONSE_CONVERTERS in
   // pipeline.ts); this test doesn't care HOW a pair is implemented, only
   // that buildTransformPlan resolves it without `unsupported`.
   const FMTS = ["chat", "messages", "responses"] as const;
@@ -216,7 +216,7 @@ test("all 6 cross-format request/response pairs are supported (no gateway-side g
         undefined,
         `${clientFmt} -> ${providerFmt} should be supported, got: ${plan.unsupported}`,
       );
-      // Non-streaming AND streaming both need a resolved path — a plan
+      // Non-streaming AND streaming both need a resolved path - a plan
       // that's "supported" for buffered but silently has zero stream stages
       // would 502 the moment a client sets stream:true (see engine.ts
       // streamConvert's route.convert && !route.streamBridged check).
@@ -314,7 +314,7 @@ test("a request transform can rewrite the URL, and edit ctx.headers directly, vi
   // place, and both survive on the SAME ctx object the engine passed in (the
   // engine reads them back after applyBodyTransforms). ctx.headers arrives
   // already merged (client headers first, gateway values layered on top and
-  // winning) — a transform edits that same table, exactly like it edits body.
+  // winning) - a transform edits that same table, exactly like it edits body.
   const rewrite = {
     name: "custom:rewrite",
     apply: (b: Json, c: TransformCtx) => {
@@ -329,15 +329,15 @@ test("a request transform can rewrite the URL, and edit ctx.headers directly, vi
   const out = applyBodyTransforms([rewrite], { m: 1 }, c);
   assert.deepEqual(out, { m: 1 }); // body untouched
   assert.equal(c.urlOverride, "https://edge.example.com/v1/chat/completions");
-  // The transform's edit landed on the SAME table — client's own header
+  // The transform's edit landed on the SAME table - client's own header
   // untouched, the new one added, authorization removed.
   assert.deepEqual(c.headers, { "x-client": "1", "x-edge": "1" });
 });
 
-test("ctx.apiKey and ctx.headers's auth header are the SAME key — a transform can use either", () => {
+test("ctx.apiKey and ctx.headers's auth header are the SAME key - a transform can use either", () => {
   // The parity contract: whatever key the engine resolved for this attempt
   // is both directly readable as ctx.apiKey AND already applied to
-  // ctx.headers's auth header (by buildHeaders, before any transform runs) —
+  // ctx.headers's auth header (by buildHeaders, before any transform runs) -
   // a transform never has to parse a header to recover the raw key, and a
   // transform that wants to REPLACE the auth header (e.g. a signed/derived
   // scheme) reads the same ctx.apiKey a bespoke build method would.
@@ -346,7 +346,7 @@ test("ctx.apiKey and ctx.headers's auth header are the SAME key — a transform 
     apply: (b: Json, c: TransformCtx) => {
       // Prove the header the engine built already carries this exact key.
       assert.equal(c.headers!["authorization"], `Bearer ${c.apiKey}`);
-      // A transform can still fully replace it — full upstream header
+      // A transform can still fully replace it - full upstream header
       // control, same as editing any other header.
       delete c.headers!["authorization"];
       c.headers!["x-signed-key"] = `sig(${c.apiKey})`;

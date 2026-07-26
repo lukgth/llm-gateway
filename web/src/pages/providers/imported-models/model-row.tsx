@@ -159,7 +159,7 @@ export function ModelRow({
         <TableCell className="text-muted-foreground">
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="truncate" title={model.displayName ?? undefined}>
-              {model.displayName ?? "—"}
+              {model.displayName ?? "-"}
             </span>
             {model.capabilities && (
               <Badge
@@ -173,17 +173,17 @@ export function ModelRow({
           </span>
         </TableCell>
         <TableCell className="text-right tabular-nums">
-          {model.contextWindow ? fmtTokens(model.contextWindow) : "—"}
+          {model.contextWindow ? fmtTokens(model.contextWindow) : "-"}
         </TableCell>
         <TableCell className="text-right tabular-nums">
-          {model.maxOutputTokens ? fmtTokens(model.maxOutputTokens) : "—"}
+          {model.maxOutputTokens ? fmtTokens(model.maxOutputTokens) : "-"}
         </TableCell>
         <TableCell className="text-right tabular-nums">
-          {model.transforms.length || "—"}
+          {model.transforms.length || "-"}
         </TableCell>
         <TableCell onClick={(e) => e.stopPropagation()}>
           {usedBy.length === 0 ? (
-            <span className="text-xs text-muted-foreground">—</span>
+            <span className="text-xs text-muted-foreground">-</span>
           ) : (
             <span className="flex min-w-0 flex-wrap items-center gap-1">
               {usedBy.slice(0, 2).map((m) => (

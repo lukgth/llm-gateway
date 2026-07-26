@@ -5,7 +5,7 @@
 // the bootstrap values needed to open the database and start the server
 // (port, paths, admin password), and may also carry seed data (upstream,
 // gatewayApiKeys, models) which is synced into the database on boot whenever
-// the file changes — see db/sync.ts.
+// the file changes - see db/sync.ts.
 //
 // No environment variables are consulted; edit config.json instead.
 

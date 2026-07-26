@@ -1,7 +1,7 @@
 # Provider Credentials
 
 How to obtain the extra credentials that some providers require for quota display.
-These are stored in **key metadata** — open the provider in the admin panel,
+These are stored in **key metadata** - open the provider in the admin panel,
 click a key, and add the fields in the Metadata section.
 
 ---

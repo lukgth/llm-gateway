@@ -53,7 +53,7 @@ function choiceToOutput(
   const msg = choice && choice.message;
   const gpt56 = isGpt56Plus(model);
 
-  // 1) Reasoning — one output item per reasoning_details entry (preserving
+  // 1) Reasoning - one output item per reasoning_details entry (preserving
   //    the original per-item structure, including encrypted_content for
   //    multi-turn continuity). GPT-5.6+ only uses encrypted thinking, so
   //    omit the content field entirely for those models.
@@ -89,7 +89,7 @@ function choiceToOutput(
     }
   }
 
-  // 2) The message (text content) — emitted before tool calls.
+  // 2) The message (text content) - emitted before tool calls.
   const hasToolCalls = !!(
     msg &&
     Array.isArray(msg.tool_calls) &&
@@ -116,7 +116,7 @@ function choiceToOutput(
     });
   }
 
-  // 3) Tool calls — each becomes a function_call output item, after the text.
+  // 3) Tool calls - each becomes a function_call output item, after the text.
   if (msg && Array.isArray(msg.tool_calls)) {
     for (const tc of msg.tool_calls) {
       if (!tc || !tc.function) continue;
@@ -166,7 +166,7 @@ export function chatResponseToResponses(
 }
 
 // --- response: Responses -> Chat Completions -------------------------------
-// The inverse of chatResponseToResponses() — the buffered half of serving a
+// The inverse of chatResponseToResponses() - the buffered half of serving a
 // chat/messages CLIENT off a responses-native provider (paired with
 // chatRequestToResponses() for the request side).
 
@@ -187,7 +187,7 @@ function usageFromResponses(
   return out;
 }
 
-// Build a Chat message + finish_reason from a Responses `output` array —
+// Build a Chat message + finish_reason from a Responses `output` array -
 // the inverse of choiceToOutput(). Reasoning items become reasoning_details
 // (round-tripping through the SAME { type:'reasoning.text', text } shape our
 // own <thinking> extraction uses, so a reasoning->chat->reasoning round trip
@@ -237,7 +237,7 @@ function outputToMessage(output: ResponseOutputItem[]): {
       }
     }
     // function_call_output items only ever appear on the REQUEST side
-    // (they're how a client supplies a tool result back to the model) —
+    // (they're how a client supplies a tool result back to the model) -
     // never in a model-generated `output` array, so there's nothing to
     // translate for them here.
   }
@@ -257,7 +257,7 @@ export function responsesResponseToChat(
   const output = Array.isArray(body.output) ? body.output : [];
 
   const { message, finishReason } = outputToMessage(output);
-  // STATUS_TO_FINISH only overrides for "incomplete" (length-truncated) —
+  // STATUS_TO_FINISH only overrides for "incomplete" (length-truncated) -
   // every other status is re-derived from output contents above, since the
   // status alone can't distinguish "stopped after text" from "stopped after
   // a tool call" (see the comment on STATUS_TO_FINISH).

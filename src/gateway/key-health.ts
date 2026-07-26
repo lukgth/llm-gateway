@@ -8,21 +8,21 @@
 //
 // Selection priority (per request, `tried` = key hashes already used this call):
 //   1. the STICKY key for this model, if fresh (not tried, not auth-failed,
-//      not rate-limited) — the last key that successfully served this exact
+//      not rate-limited) - the last key that successfully served this exact
 //      model, reused as-is instead of round-robin/affinity-pool picking, so
 //      repeat requests concentrate on one key (better provider-side
 //      prompt-cache hit rates, predictable per-key rate-limit budgeting)
 //      rather than spreading evenly across the whole pool;
 //   2. else round-robin among FRESH keys (not tried, not auth-failed, not
 //      rate-limited), preferring keys already PROVEN for this model (affinity)
-//      — the FIRST key to win this pool becomes the new sticky key for the
+//      - the FIRST key to win this pool becomes the new sticky key for the
 //      model (see recordSuccess);
 //   3. else the untried non-auth-failed key whose cooldown expires soonest;
 //   4. else round-robin among non-auth-failed;
 //   5. else round-robin among all.
 // A key falls out of "sticky" (back to step 2's pool) the moment it goes
 // unhealthy (auth-failed/rate-limited) or its (key,model) affinity is
-// evicted after repeated failures — see markAuthFailed/recordFailure.
+// evicted after repeated failures - see markAuthFailed/recordFailure.
 
 import crypto from "crypto";
 import type { Database as DB } from "better-sqlite3";
@@ -32,7 +32,7 @@ import { modelClassOf } from "../formats/model-version";
 // live in the engine; these two sets drive key health specifically.)
 export const RATE_LIMIT_STATUS = 429;
 export const AUTH_FAIL_STATUS = new Set([401, 403]);
-// 402 means the key/account is out of credits — not an auth failure, but
+// 402 means the key/account is out of credits - not an auth failure, but
 // the key is just as dead: disable it and skip it the same way.
 export const NO_CREDIT_STATUS = new Set([402]);
 
@@ -51,7 +51,7 @@ interface HealthRow {
   lastErrorStatus: number | null;
   lastError: string | null;
   lastErrorAt: string | null;
-  /** Lifetime count of 401/403 responses — survives recordSuccess clearing
+  /** Lifetime count of 401/403 responses - survives recordSuccess clearing
    *  the `authFailed` flag, since it's a history counter, not current state. */
   authFailCount: number;
 }
@@ -115,7 +115,7 @@ function delayHint(ms: number, source: string, now: number): RateLimitHint {
 // (epoch ms) -> x-ratelimit-reset / x-rate-limit-reset (usually epoch seconds)
 // -> ratelimit-reset (RFC delay seconds) -> anthropic-ratelimit-unified-reset
 // (epoch seconds; Anthropic's own unified-quota reset, sent on a 429 from
-// their 5h/7d subscription limiter — see services/anthropic/unified-usage.ts)
+// their 5h/7d subscription limiter - see services/anthropic/unified-usage.ts)
 // -> default 60s.
 export function parseRateLimitHint(
   headers: Record<string, string | string[] | undefined>,
@@ -388,7 +388,7 @@ export class KeyHealthStore {
   }
 
   // Choose a key for this attempt. Returns null only when the provider has no
-  // keys at all (a keyless provider still routes — the engine sends no auth).
+  // keys at all (a keyless provider still routes - the engine sends no auth).
   select(
     providerId: string,
     keys: string[],
@@ -410,7 +410,7 @@ export class KeyHealthStore {
       );
     };
 
-    // Sticky key for this model, if it's still fresh — cache locality wins
+    // Sticky key for this model, if it's still fresh - cache locality wins
     // over spreading load, as long as the proven key is actually healthy.
     if (model) {
       const stuckHash = this.sticky.get(this.mk(providerId, model));
@@ -425,7 +425,7 @@ export class KeyHealthStore {
     if (fresh.length) {
       // Within any fresh pool, cycle a key that has RECOVERED from an expired
       // rate-limit / model cooldown back into rotation before spending a
-      // never-limited key — so a base-model request reuses a key whose 429 (or,
+      // never-limited key - so a base-model request reuses a key whose 429 (or,
       // for Fable/Mythos, whose 7d_oi window) has since reset instead of pulling
       // a pristine one, and the recovered key gets used again the moment it's
       // eligible. `isFresh` already excludes keys still cooling down (readyAt >
@@ -448,11 +448,11 @@ export class KeyHealthStore {
           // Starting a NEW base pair (no exact-model affinity above): prefer a
           // premium (Fable-proven) key first. A Fable-proven account is a
           // known-good, guaranteed-working subscription, so a fresh Opus/Sonnet/
-          // Haiku pairing lands on one of those before a base-only-proven key —
+          // Haiku pairing lands on one of those before a base-only-proven key -
           // even when the key's Fable 7d_oi window is exhausted, since that only
           // cools the Fable class (isFresh already cleared it for base). Exact-
           // model affinity still won above, so this never disrupts an
-          // established (key, base-model) pair — only seeds new ones.
+          // established (key, base-model) pair - only seeds new ones.
           if (modelClass === "base") {
             const premiumProven = fresh.filter((i) =>
               this.classAffinity
@@ -470,7 +470,7 @@ export class KeyHealthStore {
         }
       }
       // No exact/class affinity match (or no model): prefer keys PROVEN to hold
-      // long-context usage credits — they get the round-robin pool to themselves
+      // long-context usage credits - they get the round-robin pool to themselves
       // so long-context traffic lands on a key that can serve it instead of
       // wasting a rotation on a credit-less one (see key_credit_proven). Exact-
       // model affinity above still wins for cache locality; this only refines the
@@ -530,13 +530,13 @@ export class KeyHealthStore {
     return { key: keys[cand], keyHash: hashes[cand], index: cand };
   }
 
-  // Narrow a fresh pool to keys that carry a lapsed cooldown — a rate limit or
+  // Narrow a fresh pool to keys that carry a lapsed cooldown - a rate limit or
   // (for Fable/Mythos) a 7d_oi model cooldown that has since expired but whose
   // marker hasn't been cleared by a subsequent success yet. These are keys the
   // pool already burned once and that have recovered; reusing them before an
   // untouched key concentrates load onto proven credentials and lets a
   // recovered key re-enter rotation promptly. If none have recovered, the pool
-  // is returned unchanged (every key is pristine — nothing to prefer). The
+  // is returned unchanged (every key is pristine - nothing to prefer). The
   // caller only passes FRESH indices, so any lapsed marker here is genuinely
   // recovered (readyAt <= now); a still-active cooldown was already filtered out.
   private preferRecovered(
@@ -552,7 +552,7 @@ export class KeyHealthStore {
 
   // Whether a key still carries a rate-limit or Fable 7d_oi model-cooldown
   // marker (non-zero), whether or not it's expired. Paired with the caller's
-  // freshness check, a true here on a fresh key means "recovered" — the marker
+  // freshness check, a true here on a fresh key means "recovered" - the marker
   // outlives its own expiry and is only zeroed by a later recordSuccess.
   private hasCooldownMarker(providerId: string, keyHash: string): boolean {
     if (this.getHealth(providerId, keyHash).rateLimitedUntil > 0) return true;
@@ -587,7 +587,7 @@ export class KeyHealthStore {
       set.add(model);
     }
     this.persistAffinity(providerId, keyHash, model, 0);
-    // This key just proved itself for this model — make it (or re-confirm
+    // This key just proved itself for this model - make it (or re-confirm
     // it as) the sticky pick so subsequent requests for this model reuse it
     // instead of round-robining to a different key.
     const mkey = this.mk(providerId, model);
@@ -605,7 +605,7 @@ export class KeyHealthStore {
     }
   }
 
-  // Mark a key as PROVEN to hold long-context usage credits — its subscription
+  // Mark a key as PROVEN to hold long-context usage credits - its subscription
   // plan served a request that other keys rejected with the Claude Code
   // long-context credits 429. Gives the key extra pull in select() so future
   // long-context traffic prefers it. Idempotent + persisted.
@@ -627,7 +627,7 @@ export class KeyHealthStore {
     }
   }
 
-  // Drop a key's long-context-credit proof — it just returned the credits 429
+  // Drop a key's long-context-credit proof - it just returned the credits 429
   // itself, so its plan no longer qualifies. Idempotent + persisted.
   clearCreditProven(providerId: string, keyHash: string): void {
     const k = this.hk(providerId, keyHash);
@@ -868,7 +868,7 @@ export class KeyHealthStore {
   }
 
   // A key just lost affinity for `model` (evicted after repeated failures,
-  // or wiped entirely on a confirmed auth failure) — stop preferring it as
+  // or wiped entirely on a confirmed auth failure) - stop preferring it as
   // the sticky pick for that model so the next select() falls through to the
   // normal fresh/proven pool instead of reusing a key that just proved
   // itself unreliable.

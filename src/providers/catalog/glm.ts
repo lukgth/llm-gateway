@@ -7,14 +7,14 @@ import { WireKind } from "../../types";
 import type { ProviderKeyUsageWindow } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
-// Z.ai GLM Coding Plan — OpenAI-compatible, but the chat/models paths sit under
+// Z.ai GLM Coding Plan - OpenAI-compatible, but the chat/models paths sit under
 // a deep prefix (/api/coding/paas/v4), not /v1. The adapter composes
 //   origin + basePath + suffix
 // so the upstream URL builds as:
 //   https://api.z.ai + /api/coding/paas/v4 + /chat/completions
 //   => https://api.z.ai/api/coding/paas/v4/chat/completions
 //
-// keyUsage() queries GET {origin}/api/monitor/usage/quota/limit (Bearer auth) —
+// keyUsage() queries GET {origin}/api/monitor/usage/quota/limit (Bearer auth) -
 // a SIBLING path, not under /api/coding/paas/v4, so it's built from ctx.baseUrl
 // directly rather than ctx.resolve() (which would compose through basePath).
 // Response shape:
@@ -47,30 +47,30 @@ import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 //     "success": true
 //   }
 //
-// The `type` names are misleading relative to their content — cross-checked
+// The `type` names are misleading relative to their content - cross-checked
 // against github.com/guyinwonder168/opencode-glm-quota (an OpenCode plugin
 // hitting this same endpoint) and its test fixtures:
 //
 //   TOKENS_LIMIT  the actual token/prompt quota, NOT a raw "tokens" count. The
 //                 5-hour window (unit=3,number=5) is ALWAYS shown, even at 0%,
-//                 since every plan tier has one — the dashboard never silently
+//                 since every plan tier has one - the dashboard never silently
 //                 drops it. The weekly window (unit=6,number=1) is only shown
-//                 when the upstream actually returns that entry — lower tiers
+//                 when the upstream actually returns that entry - lower tiers
 //                 (e.g. Lite) don't have a weekly quota at all, and a fabricated
 //                 0% bar for a limit that doesn't exist would be misleading. No
 //                 response observed ever carries an absolute total (only
 //                 `percentage`), so the bar is built as used=percentage /
-//                 limit=100 (a "% of window" bar, not a real count) —
+//                 limit=100 (a "% of window" bar, not a real count) -
 //                 `unit: "percent"` explicitly represents utilization rather
 //                 than pretending this is a literal request count.
 //   TIME_LIMIT    MCP tool-call usage (web search / web read / zread) over a
-//                 rolling month. Carries real `currentValue`/`usage` — mapped to
+//                 rolling month. Carries real `currentValue`/`usage` - mapped to
 //                 a real "requests" window. No `nextResetTime` (monthly, not
 //                 shown as a countdown upstream either).
 //
 // `usageDetails` (the TIME_LIMIT per-tool breakdown) has no home in
 // ProviderKeyUsageWindow's flat shape and isn't surfaced. The key's `message`
-// carries ONLY the plan level ("Plan: Lite") — nothing else is folded into it.
+// carries ONLY the plan level ("Plan: Lite") - nothing else is folded into it.
 
 const QUOTA_LIMIT_PATH = "/api/monitor/usage/quota/limit";
 
@@ -104,7 +104,7 @@ interface GlmQuotaResponse {
   success?: boolean;
 }
 
-// "lite" -> "Lite", "PRO" -> "Pro" — the API returns the plan level lowercase
+// "lite" -> "Lite", "PRO" -> "Pro" - the API returns the plan level lowercase
 // (and possibly other casings); the dashboard should read like a proper noun.
 function titleCase(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
@@ -126,7 +126,7 @@ function tokenWindowLabel(l: GlmLimit): string {
 }
 
 // Builds a percentage-based bar (see header comment) for a TOKENS_LIMIT entry.
-// `limit` is undefined when the upstream didn't return this window at all —
+// `limit` is undefined when the upstream didn't return this window at all -
 // still renders as a real 0% bar rather than being omitted.
 function tokenWindow(
   id: string,
@@ -156,7 +156,7 @@ class GlmAdapter extends OpenAICompatibleAdapter {
       return {
         windows: [],
         unavailable: true,
-        message: "Key disabled — usage not queried.",
+        message: "Key disabled - usage not queried.",
       };
     }
 
@@ -211,9 +211,9 @@ class GlmAdapter extends OpenAICompatibleAdapter {
     const limits = parsed.data.limits ?? [];
     const windows: ProviderKeyUsageWindow[] = [];
 
-    // Prompts — the 5-hour window is ALWAYS shown (every tier has one), even
+    // Prompts - the 5-hour window is ALWAYS shown (every tier has one), even
     // when the upstream reports 0% for it (see header comment). The weekly
-    // window only appears when the upstream actually defines it — not every
+    // window only appears when the upstream actually defines it - not every
     // plan tier has one, and a fabricated 0% bar for a nonexistent limit would
     // be misleading.
     const tokenLimits = limits.filter((l) => l.type === "TOKENS_LIMIT");
@@ -236,7 +236,7 @@ class GlmAdapter extends OpenAICompatibleAdapter {
       );
     }
 
-    // MCP tool usage (TIME_LIMIT) — a real used/limit window, only when the
+    // MCP tool usage (TIME_LIMIT) - a real used/limit window, only when the
     // upstream actually supplies a total.
     const mcp = limits.find(
       (l) => l.type === "TIME_LIMIT" && typeof l.usage === "number",
@@ -266,7 +266,7 @@ export const glm = new GlmAdapter({
   id: "glm-coding",
   label: "GLM Coding Plan (Z.ai)",
   blurb:
-    "Z.ai GLM coding-plan models — OpenAI-compatible under /api/coding/paas/v4.",
+    "Z.ai GLM coding-plan models - OpenAI-compatible under /api/coding/paas/v4.",
   brand: "zai",
   docsUrl: "https://docs.z.ai/",
   defaults: {
@@ -284,13 +284,13 @@ export const glm = new GlmAdapter({
       label: "API key",
       placeholder: "…",
       required: true,
-      hint: "One per line — rotated round-robin.",
+      hint: "One per line - rotated round-robin.",
     },
     {
       key: "baseUrl",
       label: "Base URL",
       editable: true,
-      hint: "Origin only — the /api/coding/paas/v4 prefix is added automatically.",
+      hint: "Origin only - the /api/coding/paas/v4 prefix is added automatically.",
     },
   ],
   quirks: {

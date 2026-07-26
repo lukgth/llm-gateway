@@ -1,10 +1,10 @@
 // Provider key-usage page. A branded card per provider showing each API key's
-// upstream quota windows — token AND request limits over any time window, fed by
+// upstream quota windows - token AND request limits over any time window, fed by
 // the provider adapter's async keyUsage() hook. Values are placeholder
 // ("estimate") until an adapter wires a real upstream usage query. The refresh
 // button (top-right) re-runs every adapter's keyUsage() live.
 //
-// Layout: a hand-rolled masonry — cards are sized to their own content (a
+// Layout: a hand-rolled masonry - cards are sized to their own content (a
 // provider with 1 key sits short; one with many keys runs tall), and are
 // greedily packed into N independent flex columns (shortest-column-first, by
 // an estimated weight) so columns stay visually balanced. Neither CSS
@@ -43,10 +43,10 @@ import { cn, fmtNum, fmtTokens } from "@/lib/utils";
 const KEYS_PER_PAGE = 6;
 
 // A key sitting in a 429 cooldown. Dead (auth-failed) keys never reach the
-// client — they're filtered server-side — so a live rate-limit is the only
+// client - they're filtered server-side - so a live rate-limit is the only
 // health state this gate needs to consider. The server only sends
 // rateLimitedUntil while the cooldown is still live, but this list can go stale
-// between refreshes — re-check the timestamp locally so a cooldown that lapses
+// between refreshes - re-check the timestamp locally so a cooldown that lapses
 // after the last fetch stops counting as rate-limited (dropping the key out of
 // the hidden/"show rate-limited" set) the moment the client's own clock says
 // it's over, instead of waiting for the next reload. Mirrors the same guard in
@@ -56,8 +56,8 @@ export function isRateLimited(key: ProviderKeyUsage): boolean {
   return !!until && new Date(until).getTime() > Date.now();
 }
 
-// Order keys most-recently-used first (by lastUsedAt), so the freshest key —
-// the one the router most recently picked — leads the list and gets the green
+// Order keys most-recently-used first (by lastUsedAt), so the freshest key -
+// the one the router most recently picked - leads the list and gets the green
 // highlight. Never-used keys (no lastUsedAt) sink to the bottom, keeping their
 // original relative order (a stable sort on the decorated index). Pure: returns
 // a new array, doesn't mutate the input.
@@ -77,7 +77,7 @@ export function sortByLastUsed<T extends { lastUsedAt?: string }>(
 
 // Tracks how many masonry columns fit the viewport. Thresholds are double
 // the `sm`/`xl` Tailwind breakpoints (640px / 1280px) this page used as a
-// CSS grid before, so each card gets roughly twice the width — cards read
+// CSS grid before, so each card gets roughly twice the width - cards read
 // better wide since a single key can carry several usage bars side by side.
 // Re-evaluated on resize so dragging the window across a breakpoint
 // re-balances the columns.
@@ -94,7 +94,7 @@ function useColumnCount(): number {
 }
 
 // Rough rendered-height proxy for a provider card, used only to balance
-// masonry columns — doesn't need to be pixel-accurate, just proportional.
+// masonry columns - doesn't need to be pixel-accurate, just proportional.
 // Mirrors ProviderUsageCard's structure: header, optional search bar, one
 // KeyUsageBlock per visible key (paginated, so capped at KEYS_PER_PAGE), and
 // pagination controls.
@@ -145,8 +145,8 @@ function packColumns(
 export default function ProviderUsage() {
   const [reports, setReports] = useState<ProviderUsageReport[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  // Rate-limited keys are hidden by default — they're cooling down and clutter
-  // the at-a-glance quota view — behind an opt-in toggle.
+  // Rate-limited keys are hidden by default - they're cooling down and clutter
+  // the at-a-glance quota view - behind an opt-in toggle.
   const [showRateLimited, setShowRateLimited] = useState(false);
 
   // Refresh pulls live usage from each provider adapter (its async keyUsage()).
@@ -347,7 +347,7 @@ function ProviderUsageCard({
           <Badge
             variant="secondary"
             className="shrink-0 opacity-70"
-            title="Placeholder data — this provider does not yet report real upstream usage"
+            title="Placeholder data - this provider does not yet report real upstream usage"
           >
             estimate
           </Badge>
@@ -371,12 +371,12 @@ function ProviderUsageCard({
           No recorded key usage yet.
         </div>
       ) : sortedKeys.length === 0 ? (
-        // Every key is rate-limited and the toggle is off — say so rather than
+        // Every key is rate-limited and the toggle is off - say so rather than
         // showing a bare "no match", so it's clear the toggle would reveal them.
         <div className="flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
           <KeyRound className="h-3.5 w-3.5" />
           All {report.keys.length} {report.keys.length === 1 ? "key" : "keys"}{" "}
-          rate-limited — enable “show rate-limited” to view.
+          rate-limited - enable “show rate-limited” to view.
         </div>
       ) : pageKeys.length === 0 ? (
         <EmptyState msg="No keys match this filter" />
@@ -414,11 +414,11 @@ export function KeyUsageBlock({
 }) {
   const health = usage.health;
   // Re-check the timestamp (not just its presence) so a cooldown that lapsed
-  // between refreshes stops tinting the block amber / showing the badge —
+  // between refreshes stops tinting the block amber / showing the badge -
   // consistent with the isRateLimited() gate that hides these keys.
   const rateLimited = isRateLimited(usage);
   const healthNote = rateLimited
-    ? `Rate-limited — ${resetLabel(health!.rateLimitedUntil!)}`
+    ? `Rate-limited - ${resetLabel(health!.rateLimitedUntil!)}`
     : null;
   return (
     <div
@@ -514,7 +514,7 @@ export function KeyUsageBlock({
   );
 }
 
-// A key's own lifetime — distinct from a window's reset countdown. Tone
+// A key's own lifetime - distinct from a window's reset countdown. Tone
 // ramps up as expiry approaches so an operator notices a dying credential
 // before it fails requests: neutral when far off, amber inside a week,
 // destructive inside a day or already expired.
@@ -558,7 +558,7 @@ function fmtUsage(n: number, unit: UsageUnit): string {
 function UsageBar({ window: w }: { window: ProviderKeyUsageWindow }) {
   // `resetsAt` is when this window's counter rolls over to a fresh quota. Once
   // it's in the past, the reported `used` describes a window that has already
-  // reset — stale data — so show 0 (a fresh, empty window) rather than a filled
+  // reset - stale data - so show 0 (a fresh, empty window) rather than a filled
   // bar that no longer reflects the live quota. The "reset … ago" line below
   // still renders, explaining why it reads empty.
   const reset = w.resetsAt
@@ -604,7 +604,7 @@ function UsageBar({ window: w }: { window: ProviderKeyUsageWindow }) {
           {pct.toFixed(0)}% used
         </span>
         {/* A one-shot balance (e.g. a prepaid credit grant) has no rolling
-            reset — omit the line rather than showing a broken "resets —". */}
+            reset - omit the line rather than showing a broken "resets -". */}
         {w.resetsAt && (
           <span className="shrink-0 whitespace-nowrap">
             {resetLabel(w.resetsAt)}
@@ -618,11 +618,11 @@ function UsageBar({ window: w }: { window: ProviderKeyUsageWindow }) {
 // Compact "in 3h 42m" / "2d ago" relative time for an ISO timestamp, either
 // direction. `now` for anything within a minute of the present. Hours carry
 // minute precision (e.g. "4h 59m") so a countdown doesn't look frozen at "5h"
-// for the better part of an hour; days stay whole (e.g. "2d") — sub-day
+// for the better part of an hour; days stay whole (e.g. "2d") - sub-day
 // precision doesn't matter once a window is a day-plus out.
 function relativeTime(iso: string): string {
   const ms = new Date(iso).getTime() - Date.now();
-  if (!Number.isFinite(ms)) return "—";
+  if (!Number.isFinite(ms)) return "-";
   const past = ms <= 0;
   const abs = Math.abs(ms);
   const totalMin = Math.round(abs / 60000);
@@ -640,12 +640,12 @@ function relativeTime(iso: string): string {
   return past ? `${unit} ago` : `in ${unit}`;
 }
 
-// "resets in 21h" (future) vs "reset 6h ago" (past) — relativeTime's "ago"
+// "resets in 21h" (future) vs "reset 6h ago" (past) - relativeTime's "ago"
 // suffix already carries the past tense, so pairing it with "resets" reads
 // as a grammar error ("resets 6h ago").
 function resetLabel(iso: string): string {
   const rt = relativeTime(iso);
-  if (rt === "—") return "reset —";
+  if (rt === "-") return "reset -";
   if (rt === "now") return "resets now";
   return rt.endsWith("ago") ? `reset ${rt}` : `resets ${rt}`;
 }

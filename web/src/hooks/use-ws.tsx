@@ -81,7 +81,7 @@ export function WsProvider({ children }: { children: ReactNode }) {
   );
   // invalidation callbacks
   const invalidateHandlers = useRef(new Set<InvalidateCallback>());
-  // batch-test id → { onProgress, resolve, reject } — symmetric to
+  // batch-test id → { onProgress, resolve, reject } - symmetric to
   // pendingRequests, but supports a stream of progress events before the
   // terminal resolve/reject (done/error) instead of a single response.
   const batchTestHandlers = useRef(
@@ -214,7 +214,7 @@ export function WsProvider({ children }: { children: ReactNode }) {
         pendingRequests.current.delete(id);
       }
 
-      // Reject all in-flight batch tests — the server-side job is gone too
+      // Reject all in-flight batch tests - the server-side job is gone too
       // (the hub removes the client and its job set on disconnect).
       for (const [id, pending] of batchTestHandlers.current) {
         pending.reject(new Error("WebSocket closed"));
@@ -230,7 +230,7 @@ export function WsProvider({ children }: { children: ReactNode }) {
     };
 
     ws.onerror = () => {
-      // onclose will fire after onerror — reconnect is handled there
+      // onclose will fire after onerror - reconnect is handled there
     };
   }, [send]);
 

@@ -188,10 +188,10 @@ export function chatContentToAnthropic(content: unknown): AnthropicBlock[] {
         }
       }
     } else if (p.type === "image" && p.source) {
-      // Already Anthropic-shaped image (hybrid request) — pass through.
+      // Already Anthropic-shaped image (hybrid request) - pass through.
       out.push({ type: "image", source: p.source });
     } else if (p.type === "file") {
-      // R4: OpenAI file block -> Claude document. PDF only — Claude rejects
+      // R4: OpenAI file block -> Claude document. PDF only - Claude rejects
       // other document mimes, so a non-PDF file is dropped, not sent.
       const file = p.file as { file_data?: string } | undefined;
       const m = file?.file_data ? file.file_data.match(DATA_URI_RE) : null;
@@ -203,7 +203,7 @@ export function chatContentToAnthropic(content: unknown): AnthropicBlock[] {
       }
     } else if (p.type === "tool_result") {
       // R5: hybrid Chat content already carrying an Anthropic tool_result block
-      // — keep it, preserving the is_error flag.
+      // - keep it, preserving the is_error flag.
       out.push({
         type: "tool_result",
         tool_use_id: typeof p.tool_use_id === "string" ? p.tool_use_id : "",
@@ -211,7 +211,7 @@ export function chatContentToAnthropic(content: unknown): AnthropicBlock[] {
         ...(p.is_error ? { is_error: p.is_error } : {}),
       });
     } else if (p.type === "tool_use") {
-      // Hybrid Chat content already carrying an Anthropic tool_use block — keep
+      // Hybrid Chat content already carrying an Anthropic tool_use block - keep
       // it so the tool_use/tool_result ordering normalizer can see it.
       out.push({
         type: "tool_use",

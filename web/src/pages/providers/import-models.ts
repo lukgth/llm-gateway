@@ -30,7 +30,7 @@ export async function importModelsForProvider(
   result.skipped = list.length - fresh.length;
   if (fresh.length === 0) return result;
 
-  // One request, one transaction — not one round-trip per model.
+  // One request, one transaction - not one round-trip per model.
   const res = await api.batchProviderModels(providerId, {
     create: fresh.map((m) => ({
       upstreamId: m.id,

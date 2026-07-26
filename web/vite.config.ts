@@ -71,7 +71,7 @@ export default defineConfig(({ command }) => ({
         // single biggest chunk and only used on the dashboard/usage pages.
         // Everything NOT matched here is left for Rollup's own automatic
         // grouping (returning undefined) rather than forced into one more
-        // named bucket — a static catch-all here creates chunk-graph cycles
+        // named bucket - a static catch-all here creates chunk-graph cycles
         // with the named chunks below (each pulls in shared internal modules
         // that Rollup would otherwise place with them).
         manualChunks(id) {

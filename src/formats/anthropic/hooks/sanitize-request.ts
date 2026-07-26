@@ -2,7 +2,7 @@
 //
 // Rescues effort hints from non-standard fields into output_config.effort
 // (the real Anthropic field), then strips every top-level field the API does
-// not accept — Chat-only fields, the gateway's own intermediates (reasoning,
+// not accept - Chat-only fields, the gateway's own intermediates (reasoning,
 // reasoning_effort), and anything a native /v1/messages client sends that
 // isn't in the spec.
 //

@@ -18,17 +18,17 @@ type Block = Record<string, unknown>;
 
 // --- anthropic-cache: prompt-caching breakpoints ---------------------------
 
-// A library BodyXform has no access to TransformCtx (see apply.ts —
+// A library BodyXform has no access to TransformCtx (see apply.ts -
 // buildModelTransforms only threads `body` through), so this can't gate on
 // ctx.providerFmt the way a format-tagged pipeline stage would. Since
 // anthropicCache is now also an unconditional Anthropic-FAMILY default (see
-// ANTHROPIC_DEFAULT_TRANSFORMS in providers/catalog/anthropic-compatible.ts —
+// ANTHROPIC_DEFAULT_TRANSFORMS in providers/catalog/anthropic-compatible.ts -
 // applied to every request on that family regardless of the resolved hop
 // format), it needs its OWN shape check for the case an operator pins a
 // provider endpoint away from Messages (a per-link override the gateway
 // allows but that this transform can't see coming). These are strong,
 // unambiguous OpenAI Chat/Responses-only markers that never appear on a
-// genuine Anthropic Messages body — `role:"tool"` and `tool_calls` don't
+// genuine Anthropic Messages body - `role:"tool"` and `tool_calls` don't
 // exist in Anthropic's message shape (it uses `tool_use`/`tool_result`
 // CONTENT BLOCKS instead), and `{type:"function"}` is OpenAI's tool-wrapper,
 // not Anthropic's flat `{name, input_schema}` tool shape.
@@ -137,7 +137,7 @@ export function openaiCache(retention: string): BodyXform {
 
 // Shape-aware: prepend `text` to the Anthropic top-level `system` (string or
 // block array), or to a chat system message (existing or newly unshifted).
-// This is a GENERIC system injection — the text is whatever the user configured,
+// This is a GENERIC system injection - the text is whatever the user configured,
 // NOT any first-party-impersonation prompt.
 export function systemPrepend(text: string): BodyXform {
   return (body: Json) => {
@@ -162,7 +162,7 @@ export function systemPrepend(text: string): BodyXform {
       }
       return body;
     }
-    // Neither present — set an Anthropic system field.
+    // Neither present - set an Anthropic system field.
     body.system = text;
     return body;
   };

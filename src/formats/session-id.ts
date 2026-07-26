@@ -45,9 +45,9 @@ export function parseAnthropicUserId(raw: unknown): UserIdentity | null {
 }
 
 // Extract a stable cache-routing key from a request body. Checks (in order):
-//   1. prompt_cache_key (already set by the client — pass through)
-//   2. user (OpenAI convention — hash it for stability)
-//   3. metadata.user_id (Anthropic convention — extract session_id)
+//   1. prompt_cache_key (already set by the client - pass through)
+//   2. user (OpenAI convention - hash it for stability)
+//   3. metadata.user_id (Anthropic convention - extract session_id)
 //   4. static fallback so all gateway requests share one cache slot
 //
 // The returned key is short (≤ 32 chars) and stable across identical inputs.

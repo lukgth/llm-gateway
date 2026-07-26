@@ -32,7 +32,7 @@ export const BILLING_SALT = "59cf53e54c78";
 
 /**
  * Latest published Claude Code version as of 2026-06-29. This is the single
- * source of truth — config.ts reads it to build the matching `user-agent`.
+ * source of truth - config.ts reads it to build the matching `user-agent`.
  * Bump when Anthropic ships a new release; otherwise requests route to
  * "extra usage".
  */
@@ -41,7 +41,7 @@ export const CC_VERSION = "2.1.207";
 /**
  * Anthropic requires the first content block of any OAuth-authenticated
  * Messages request's `system[]` to be exactly this string (effective March 16,
- * 2026; Sonnet/Opus only — Haiku exempt).
+ * 2026; Sonnet/Opus only - Haiku exempt).
  */
 export const CLAUDE_CODE_IDENTITY_TEXT =
   "You are Claude Code, Anthropic's official CLI for Claude.";
@@ -232,8 +232,8 @@ export function stripExistingFingerprint(blocks: SystemBlock[]): SystemBlock[] {
 
 /**
  * Build the final `system[]` array in the order real Claude Code emits:
- *   system[0]  = billing header block (NO cache_control — rotates per request)
- *   system[1]  = identity block (NO cache_control — matches plugin wire format),
+ *   system[0]  = billing header block (NO cache_control - rotates per request)
+ *   system[1]  = identity block (NO cache_control - matches plugin wire format),
  *               ONLY for Claude models newer than 4.5 (see below)
  *   system[..] = original blocks (cache_control preserved if present)
  */

@@ -7,7 +7,7 @@ import { WireKind } from "../../types";
 import type { ProviderKeyUsageWindow } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
-// MiniMax — OpenAI-compatible API at https://api.minimax.io/v1
+// MiniMax - OpenAI-compatible API at https://api.minimax.io/v1
 //
 // Auth: Authorization: Bearer <api-key>
 // Endpoint: POST /v1/chat/completions (standard OpenAI format)
@@ -20,13 +20,13 @@ import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 // Both return { base_resp: { status_code, status_msg }, model_remains: [...] }
 // Each model entry carries:
 //   model_name / modelName
-//   current_interval_{total,usage}_count  — 5h window
-//   current_interval_remaining_percent    — 5h % remaining (0–100)
-//   remains_time                          — ms until 5h resets
-//   current_weekly_{total,usage}_count    — 7d window
-//   current_weekly_remaining_percent      — 7d % remaining
-//   weekly_remains_time                   — ms until 7d resets
-// The M-series aggregate bucket is named "MiniMax-M*" or "general" —
+//   current_interval_{total,usage}_count  - 5h window
+//   current_interval_remaining_percent    - 5h % remaining (0–100)
+//   remains_time                          - ms until 5h resets
+//   current_weekly_{total,usage}_count    - 7d window
+//   current_weekly_remaining_percent      - 7d % remaining
+//   weekly_remains_time                   - ms until 7d resets
+// The M-series aggregate bucket is named "MiniMax-M*" or "general" -
 // both are normalised to "M-series" in the UI.
 
 const QUOTA_URLS = [
@@ -172,7 +172,7 @@ class MiniMaxAdapter extends OpenAICompatibleAdapter {
       return {
         windows: [],
         unavailable: true,
-        message: "Key disabled — usage not queried.",
+        message: "Key disabled - usage not queried.",
       };
     }
 

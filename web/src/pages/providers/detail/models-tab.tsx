@@ -77,7 +77,7 @@ export function ModelsTab({
                       {m.alias}
                     </TableCell>
                     <TableCell className="max-w-[14rem] truncate font-mono text-muted-foreground">
-                      {link?.upstreamModel ?? "—"}
+                      {link?.upstreamModel ?? "-"}
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">{formatLabel(m.type)}</Badge>

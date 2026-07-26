@@ -1,4 +1,4 @@
-// formats/converters/chat-messages — bidirectional bridge between the
+// formats/converters/chat-messages - bidirectional bridge between the
 // Anthropic Messages API (/v1/messages) and the OpenAI Chat Completions API
 // (/v1/chat/completions). One of the two converter pairs under
 // formats/converters/ (see chat-responses for the other); each pair owns a
@@ -24,11 +24,11 @@
 // opaquely via index signatures.
 //
 // Split across sibling files by concern:
-//   shared.ts             — genId, usage/content/tools translation, safeParse
-//   request.ts             — messagesRequestToChat / chatRequestToMessages
-//   response.ts             — chatResponseToMessages / messagesResponseToChat
-//   stream-to-messages.ts   — ChatToMessagesSseTransform (chat SSE -> messages SSE)
-//   stream-to-chat.ts       — MessagesToChatSseTransform (messages SSE -> chat SSE)
+//   shared.ts             - genId, usage/content/tools translation, safeParse
+//   request.ts             - messagesRequestToChat / chatRequestToMessages
+//   response.ts             - chatResponseToMessages / messagesResponseToChat
+//   stream-to-messages.ts   - ChatToMessagesSseTransform (chat SSE -> messages SSE)
+//   stream-to-chat.ts       - MessagesToChatSseTransform (messages SSE -> chat SSE)
 
 export { messagesRequestToChat, chatRequestToMessages } from "./request";
 export { chatResponseToMessages, messagesResponseToChat } from "./response";

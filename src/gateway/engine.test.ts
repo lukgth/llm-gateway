@@ -1,7 +1,7 @@
 // Failover-hardening tests: forward() must always resolve (never reject) and
 // must fall over / finish cleanly instead of letting an exception escape to a
 // 500. We drive a real engine against an in-memory DB, using an unserializable
-// request body (a BigInt) to force the request-serialization path to throw —
+// request body (a BigInt) to force the request-serialization path to throw -
 // which exercises the guarded attempt path deterministically with no network.
 
 import { test } from "node:test";
@@ -39,7 +39,7 @@ function quietLogger(): Logger {
 
 // Minimal Express-ish response capturing status + json. Covers both the
 // failover/finish502 path (res.status().json()) and the normal buffered
-// forward path (res.writeHead(status, headers) + res.end(buf)) — the latter
+// forward path (res.writeHead(status, headers) + res.end(buf)) - the latter
 // is what a successful (possibly cross-format-converted) response goes
 // through, so `end()` captures + JSON-parses whatever bytes it's given into
 // state.body for assertions.
@@ -253,8 +253,8 @@ test("forward() sends the adapter-built request to the wire (verbatim default)",
 test("settleUsage: cached tokens are billed at a discount but excluded from the quota-debited/logged token total", async () => {
   // Upstream reports 1000 prompt tokens (600 of which were a cache hit) + 200
   // completion tokens. The daily quota counter and request_logs.tokens-equiv
-  // total must reflect only the REALIZED (non-cached) work — 400 + 200 = 600
-  // — while the cost calculation still applies the cache discount to the
+  // total must reflect only the REALIZED (non-cached) work - 400 + 200 = 600
+  // - while the cost calculation still applies the cache discount to the
   // full 600 cached tokens. A naive input+output sum would debit 1200,
   // silently overcharging the key's daily quota for tokens it got a cache
   // discount on.
@@ -342,7 +342,7 @@ test("settleUsage: cached tokens are billed at a discount but excluded from the 
     assert.equal(usage.tokens, 600);
 
     // The logged row still carries the full input/cached breakdown for
-    // billing transparency — those raw fields are untouched by this fix.
+    // billing transparency - those raw fields are untouched by this fix.
     const log = listRequestLogs(db)[0];
     assert.equal(log?.inputTokens, 1000);
     assert.equal(log?.outputTokens, 200);
@@ -502,7 +502,7 @@ test("Claude Code captures unified usage headers from 429 responses", async () =
 test("forward() merges client headers first, then the gateway's own values win on collision", async () => {
   // The header-merge contract (TransformCtx.headers / engine.ts buildHeaders):
   // client headers form the base, then the gateway's own values (auth from
-  // the selected key, host) are layered on top and WIN — a client sending its
+  // the selected key, host) are layered on top and WIN - a client sending its
   // own bogus `authorization` must never reach the upstream; a harmless
   // client-only header must still pass through untouched.
   const captured: { headers?: http.IncomingHttpHeaders } = {};
@@ -549,9 +549,9 @@ test("forward() merges client headers first, then the gateway's own values win o
       {
         method: "POST",
         headers: {
-          // A harmless client header — should pass through untouched.
+          // A harmless client header - should pass through untouched.
           "x-client-trace": "abc123",
-          // A client trying to smuggle its OWN auth — the gateway's key must
+          // A client trying to smuggle its OWN auth - the gateway's key must
           // win instead (buildHeaders drops client authorization entirely).
           authorization: "Bearer client-supplied-and-must-be-dropped",
         },
@@ -573,10 +573,10 @@ test("forward() merges client headers first, then the gateway's own values win o
 
 test("forward() with authScheme 'passthrough' forwards the client's own auth header upstream", async () => {
   // Passthrough means "the gateway holds no auth of its own for this
-  // provider — send the client's own credentials through untouched." Before
+  // provider - send the client's own credentials through untouched." Before
   // this fix, buildHeaders unconditionally stripped authorization/x-api-key
   // from the client-passthrough loop, and applyAuthHeaders is correctly a
-  // no-op for "passthrough" — so the client's auth was silently dropped and
+  // no-op for "passthrough" - so the client's auth was silently dropped and
   // the upstream got NO auth header at all.
   const captured: { headers?: http.IncomingHttpHeaders } = {};
   const server = http.createServer((req, res) => {
@@ -602,7 +602,7 @@ test("forward() with authScheme 'passthrough' forwards the client's own auth hea
       name: "up",
       baseUrl: `http://127.0.0.1:${port}`,
       // A configured key exists, but authScheme "passthrough" means it's
-      // never applied — client auth must be forwarded instead.
+      // never applied - client auth must be forwarded instead.
       apiKeys: ["k-unused-in-passthrough"],
       catalogId: "openai",
       authScheme: "passthrough",
@@ -644,7 +644,7 @@ test("forward() with authScheme 'passthrough' forwards the client's own auth hea
 
 test("forward() with no provider key configured forwards the client's own auth header upstream", async () => {
   // A keyless provider (e.g. a local server) still routes (key-health.ts:
-  // "a keyless provider still routes — the engine sends no auth" is about
+  // "a keyless provider still routes - the engine sends no auth" is about
   // the GATEWAY's own auth; the client's own credentials, if any, are the
   // only auth available and must reach the upstream, not be dropped.
   const captured: { headers?: http.IncomingHttpHeaders } = {};
@@ -785,7 +785,7 @@ function streamRes() {
 
 test("streaming: primes a ping on connect + surfaces upstream error as SSE event", async () => {
   // Upstream sends an event-stream, one chunk, then destroys the socket WITHOUT
-  // a terminating [DONE] — an abnormal end the gateway must surface, not swallow.
+  // a terminating [DONE] - an abnormal end the gateway must surface, not swallow.
   const server = http.createServer((req, res) => {
     req.resume();
     res.writeHead(200, { "content-type": "text/event-stream" });
@@ -1036,19 +1036,19 @@ test("pipeThrough SSE: a native event-stream that dies surfaces a terminal error
 });
 
 // ===========================================================================
-// Cross-format round-trip tests — per the format-route completeness audit,
+// Cross-format round-trip tests - per the format-route completeness audit,
 // engine.test.ts previously only ever exercised chat->chat (no conversion).
 // Every cross-format check elsewhere in the suite is a unit test on an
 // isolated converter function; these instead drive a REAL request through
 // engine.forward() end-to-end (client body -> converted upstream request ->
 // upstream response -> converted client response), proving the pipeline
 // COMPOSITION + engine plumbing (not just the converter math) works for a
-// genuinely mismatched (clientFmt, providerFmt) pair — the exact gap the
+// genuinely mismatched (clientFmt, providerFmt) pair - the exact gap the
 // audit flagged as having zero coverage.
 // ===========================================================================
 
 // A local http server that always replies with a fixed CHAT-shaped body,
-// regardless of what was sent — used as the "chat-native provider" in the
+// regardless of what was sent - used as the "chat-native provider" in the
 // cross-format tests below (the client format differs from this).
 function chatUpstream(): Promise<{ server: http.Server; port: number }> {
   return new Promise((resolve) => {
@@ -1138,7 +1138,7 @@ test("cross-format round-trip: a messages CLIENT against a chat-native PROVIDER 
 });
 
 test("cross-format round-trip: a chat CLIENT against a responses-native PROVIDER converts both ways (the GPT-5 routing gap this session fixed)", async () => {
-  // The upstream here speaks RESPONSES shape (not chat) — proving the engine
+  // The upstream here speaks RESPONSES shape (not chat) - proving the engine
   // actually built + sent a Responses-shaped request (via
   // requestFromChatCompletions -> the "chat->responses" REQUEST_CONVERTERS
   // entry) and correctly parsed a Responses-shaped reply back (via
@@ -1210,7 +1210,7 @@ test("cross-format round-trip: a chat CLIENT against a responses-native PROVIDER
       }),
     );
     // Before this session's fix, this hop was `unsupported` and the request
-    // would 502 (no provider left to try) — this asserts it now succeeds.
+    // would 502 (no provider left to try) - this asserts it now succeeds.
     assert.equal(
       state.statusCode,
       200,
@@ -1276,7 +1276,7 @@ test("anthropic:thinking-signature strips a client-echoed thinking block (real O
   const db = openDatabase(":memory:");
   try {
     // catalogId "anthropic" + endpoints:[Messages] -> native messages
-    // provider (no format bridge on this hop — the default `openai` catalog
+    // provider (no format bridge on this hop - the default `openai` catalog
     // adapter's routeFor() falls back to provider.endpoints[0] absent an
     // explicit per-link endpoint, and an "anthropic"-catalog provider with no
     // endpoints declared defaults to ["chat"], which would otherwise route
@@ -1388,7 +1388,7 @@ test("forward() on a 401: doesn't fail the request, disables the dead key, and r
       apiKeys: ["bad", "good"],
       catalogId: "openai",
       authScheme: "bearer",
-      // 1 configured retry — the engine must still widen the attempt budget
+      // 1 configured retry - the engine must still widen the attempt budget
       // to the usable-key count so a dead key fails over within this request.
       retryAttempts: 1,
       retryIntervalMs: 1,
@@ -1435,7 +1435,7 @@ test("forward() on a 401: doesn't fail the request, disables the dead key, and r
 test("forward() falls over to the next provider once every key on the first is dead", async () => {
   // Provider "dead" has a single key that's already disabled (simulating a
   // prior request's auth failures having exhausted it). The chain's second
-  // provider "alive" must serve the request — and the client must never see
+  // provider "alive" must serve the request - and the client must never see
   // an attempt against "dead" (no auth header leak, no wasted round trip).
   let aliveHit = false;
   const server = http.createServer((req, res) => {
@@ -1459,7 +1459,7 @@ test("forward() falls over to the next provider once every key on the first is d
     createProvider(db, {
       id: "dead",
       name: "dead",
-      // A bogus address that would hang/refuse if ever actually hit —
+      // A bogus address that would hang/refuse if ever actually hit -
       // proves the engine skips it outright rather than attempting first.
       baseUrl: "http://127.0.0.1:1",
       apiKeys: [],
@@ -1696,7 +1696,7 @@ test("Claude Code rotates past a key without premium-model (Fable) credits, no p
     assert.equal(upstreamErrors, 0);
     assert.equal(warnings.includes("provider_attempt_failed"), false);
     const health = new KeyHealthStore(db);
-    // Both keys stay fully usable for base models — key-1 wasn't penalized…
+    // Both keys stay fully usable for base models - key-1 wasn't penalized…
     assert.equal(
       health.usableCount("cc-modelcred", ["key-1", "key-2"], "claude-opus-4-8"),
       2,
@@ -1794,7 +1794,7 @@ test("Claude Code fails a fully premium-credit-less provider over to the next ho
     );
     assert.equal(state.statusCode || 200, 200);
     assert.equal(fallbackHit, true);
-    // The premium-less keys are NOT rate-limited/dead — still usable for base.
+    // The premium-less keys are NOT rate-limited/dead - still usable for base.
     assert.equal(
       new KeyHealthStore(db).usableCount(
         "cc-prem",
@@ -1990,7 +1990,7 @@ test("credit rotation marks the surviving key credit-proven and prefers it next 
 test("all-keys-credit-less fails over to the next provider with no key issues", async () => {
   // Provider 1 (claude-code): every key returns the long-context credits 429.
   // Provider 2 (anthropic): serves the request. The chain must fail provider 1
-  // over CLEANLY — provider 1's keys stay fully usable (not a key fault).
+  // over CLEANLY - provider 1's keys stay fully usable (not a key fault).
   const p1Keys: string[] = [];
   const server1 = http.createServer((req, res) => {
     p1Keys.push(String(req.headers.authorization));
@@ -2074,10 +2074,10 @@ test("all-keys-credit-less fails over to the next provider with no key issues", 
     // Provider 2 served the client.
     assert.equal(state.statusCode || 200, 200);
     assert.ok(p2Served, "next provider must serve");
-    // Provider 1 tried both keys once each, then failed over — no retry sleep.
+    // Provider 1 tried both keys once each, then failed over - no retry sleep.
     assert.deepEqual(p1Keys, ["Bearer key-1", "Bearer key-2"]);
     assert.ok(Date.now() - started < 1_000, "must not wait retryIntervalMs");
-    // Provider 1's keys stay fully usable — the credits 429 is not a key fault.
+    // Provider 1's keys stay fully usable - the credits 429 is not a key fault.
     assert.equal(
       new KeyHealthStore(db).usableCount(
         "cc",
@@ -2285,7 +2285,7 @@ test("count_tokens gate does not fire for a non-Sonnet-4-6 model (Opus 4.6 1M)",
         "/v1/messages",
       ),
     );
-    // Opus 4.6 1M is NOT gated — no pre-flight count, straight to the request.
+    // Opus 4.6 1M is NOT gated - no pre-flight count, straight to the request.
     assert.equal(cc.seen.countPath, false);
     assert.equal(cc.seen.messagesPath, true);
     assert.equal(state.statusCode || 200, 200);
@@ -2370,7 +2370,7 @@ test("Claude Code 7d_oi exhaustion cools a key for Fable without blocking Opus",
         messages: [{ role: "user", content: "hi" }],
       }),
     );
-    // The only key's Fable class is now cooling down until 7d_oi resets — from
+    // The only key's Fable class is now cooling down until 7d_oi resets - from
     // the Fable request's view the whole (single-provider) chain is temporarily
     // rate-limited, so it answers 503 + Retry-After (the reset), not a hard 502.
     assert.equal(fableRes.state.statusCode, 503);
@@ -2418,7 +2418,7 @@ test("base + Fable both exhausted: base cools on the 5h clock, Fable on 7d_oi", 
     req.on("end", () => {
       res.writeHead(429, {
         "content-type": "application/json",
-        // NOTE: no `retry-after` — the old code fell back to the representative
+        // NOTE: no `retry-after` - the old code fell back to the representative
         // unified reset (7d_oi, 3d) here, which is exactly the bug.
         "anthropic-ratelimit-unified-status": "rate_limited",
         "anthropic-ratelimit-unified-reset": String(fableReset),
@@ -2471,7 +2471,7 @@ test("base + Fable both exhausted: base cools on the 5h clock, Fable on 7d_oi", 
     );
 
     const health = new KeyHealthStore(db);
-    // Base (Opus) is cooling only to the 5h reset — NOT the 3d 7d_oi reset.
+    // Base (Opus) is cooling only to the 5h reset - NOT the 3d 7d_oi reset.
     const opusReadyAt = health.nextReadyAt(
       "cc-dual",
       ["key-1"],
@@ -2672,7 +2672,7 @@ test("fully rate-limited chain answers 503 + Retry-After (soonest key recovery)"
     );
     assert.equal(state.statusCode, 503);
     const retryAfter = Number(state.headers["Retry-After"]);
-    // ceil(60s) — allow a little slop for test execution time.
+    // ceil(60s) - allow a little slop for test execution time.
     assert.ok(
       retryAfter >= 55 && retryAfter <= 60,
       `Retry-After ${retryAfter} not ~60`,
@@ -2680,7 +2680,7 @@ test("fully rate-limited chain answers 503 + Retry-After (soonest key recovery)"
     const body = state.body as { error?: { type?: string } };
     assert.equal(body.error?.type, "rate_limited");
     // The final log row carries the 503 and is flagged as a transient throttle
-    // (marker-tagged error) with a future retry epoch — not a hard error.
+    // (marker-tagged error) with a future retry epoch - not a hard error.
     const row = listRequestLogs(db)[0]!;
     assert.equal(row.status, 503);
     assert.equal(row.throttled, true);

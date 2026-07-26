@@ -119,8 +119,8 @@ export function normalizeOpenAIReasoning(
 //   - `reasoning_effort` (top-level): "high" (default) or "max".
 //   - `max_tokens` is the only accepted output-length field;
 //     `max_completion_tokens` (OpenAI's newer name) is not recognised.
-//   - `frequency_penalty` and `presence_penalty` are deprecated — strip always.
-//   - `top_k`, `seed`, `parallel_tool_calls` are not in the API — strip always.
+//   - `frequency_penalty` and `presence_penalty` are deprecated - strip always.
+//   - `top_k`, `seed`, `parallel_tool_calls` are not in the API - strip always.
 //   - `temperature` and `top_p` have no effect when thinking is enabled.
 //
 // The gateway treats "low" effort (and "minimal"/"none") as "disable thinking"
@@ -205,7 +205,7 @@ function resolveDeepSeekEffort(
 ): "high" | "max" | "disabled" | string {
   if (typeof value !== "string") return String(value);
   const v = value.toLowerCase();
-  // "low" has no actual candidate in DeepSeek's envelope — the upstream
+  // "low" has no actual candidate in DeepSeek's envelope - the upstream
   // silently maps it to "high", which betrays the client's intent.
   if (
     v === "low" ||
@@ -306,7 +306,7 @@ function normalizeGlmChatReasoning(
 
   const rawEffort = body.reasoning_effort;
   if (rawEffort === undefined) {
-    // No effort hint — but a disabled signal from the Messages source still
+    // No effort hint - but a disabled signal from the Messages source still
     // takes effect (turn thinking off via the toggle).
     if (disabled) {
       const existingThinking =
@@ -320,7 +320,7 @@ function normalizeGlmChatReasoning(
 
   const effort = toGlmEffort(rawEffort);
   if (!effort) {
-    // Unknown effort alias — still respect the disabled signal.
+    // Unknown effort alias - still respect the disabled signal.
     if (disabled) {
       const existingThinking =
         body.thinking && typeof body.thinking === "object"

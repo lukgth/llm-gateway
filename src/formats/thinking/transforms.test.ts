@@ -5,7 +5,7 @@
 // It's now a format-tagged default (defaultThinkingResponse / defaultThinkingStream)
 // placed pre-bridge by buildTransformPlan. These tests prove the tagged defaults
 // produce identical output to a direct ThinkingConverter call, and that the plan
-// places them FIRST (pre-bridge) for every provider format — so nothing regressed
+// places them FIRST (pre-bridge) for every provider format - so nothing regressed
 // in the move.
 
 import { test } from "node:test";
@@ -109,7 +109,7 @@ test("tagged default never throws on a malformed body (returns it as-is)", () =>
 test("thinking response default is placed first, before the format bridge", () => {
   // messages provider, chat client: response bridges messages->chat. The engine
   // emits only the providerFmt-tagged thinking (via collectDefaults), which the
-  // plan places BEFORE that bridge — and it runs exactly once.
+  // plan places BEFORE that bridge - and it runs exactly once.
   const providerFmt = "messages";
   const plan = buildTransformPlan(
     "chat",

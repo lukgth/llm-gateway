@@ -1,7 +1,7 @@
 // Daily token-usage repository (replaces the old JSON-file usage tracker).
 //
 // Each (api_key, UTC day) pair has a single integer counter. Day rollover is
-// implicit — a new day key starts at zero. Quota enforcement reads today's row
+// implicit - a new day key starts at zero. Quota enforcement reads today's row
 // and optimistically debits projected tokens before proxying; the engine later
 // reconciles with the upstream-reported actual usage (subtract estimate, add
 // actual).
@@ -12,7 +12,7 @@ import type { KeyUsage } from "../types";
 // Realized tokens = input (minus any cache-hit portion, which never touched
 // the model at full cost) + output. cached_tokens is a SUBSET of
 // input_tokens (see formats/tokens.ts readResponseUsage's doc comment), so it
-// must be subtracted here rather than summed on top — otherwise a cache hit
+// must be subtracted here rather than summed on top - otherwise a cache hit
 // would inflate the quota-debited/reported total past what was actually
 // processed, causing billing-estimate errors.
 const REALIZED_TOKENS_SQL =
@@ -182,7 +182,7 @@ export function usageSummaryToday(db: DB): {
 //
 // Records the token cost of each request attributed to the model alias the
 // client requested and the provider the request actually resolved to (after
-// fallback). Powers the dashboard's "what did this key resolve to" view —
+// fallback). Powers the dashboard's "what did this key resolve to" view -
 // e.g. a key using gpt-5.5 shows the token count and the provider chosen.
 
 export interface UsageBreakdownRow {
@@ -292,7 +292,7 @@ export function fullBreakdownToday(
     .all({ day }) as FullBreakdownRow[];
 }
 
-// Aggregate "what did requests for model X resolve to" — which providers and
+// Aggregate "what did requests for model X resolve to" - which providers and
 // how many tokens. Answers "if the user uses gpt-5.5 show what provider it
 // resolved to".
 export interface ModelResolutionRow {

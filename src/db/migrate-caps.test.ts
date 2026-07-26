@@ -139,7 +139,7 @@ test("legacy path-string endpoints migrate to kinds with byte-identical URLs", (
     });
     closeDatabase(db);
   } finally {
-    // Best-effort cleanup — Windows may hold the file handle briefly.
+    // Best-effort cleanup - Windows may hold the file handle briefly.
     try {
       fs.rmSync(dir, { recursive: true, force: true });
     } catch {

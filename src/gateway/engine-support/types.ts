@@ -1,4 +1,4 @@
-// Pure types for ForwardingEngine's internal routing/attempt plumbing — no
+// Pure types for ForwardingEngine's internal routing/attempt plumbing - no
 // `this`-bound logic, so they live apart from the class in engine.ts.
 
 import type {
@@ -26,7 +26,7 @@ export type Fmt = "chat" | "messages" | "responses";
 // so buildRoute can place them on opposite sides of the adapter's own
 // transform stack: builtin -> family defaults -> adapter -> model's own
 // overrides. familyTransforms already excludes any entry ownTransforms
-// overrides by (id, phase) — see dropOverriddenDefaults.
+// overrides by (id, phase) - see dropOverriddenDefaults.
 export interface ChainEntry {
   provider: Provider;
   upstreamModel: string;
@@ -70,7 +70,7 @@ export interface ForwardContext {
   inputTokens: number;
   /** Tokens the pipeline optimistically debited from the key's daily counter
    *  (input estimate + reserved max output). Settlement reverses exactly this,
-   *  then applies the actual usage — see settleUsage(). */
+   *  then applies the actual usage - see settleUsage(). */
   reservedTokens: number;
   isStream: boolean;
   client: string | null;
@@ -137,13 +137,13 @@ export interface AttemptResult {
   usageCreditsRequired?: boolean;
   /** The upstream returned the Claude Code PREMIUM-model usage-credits 429 for
    * this key: its plan has no Fable/Mythos access, but the key is healthy and
-   * can still serve base models. Handled exactly like usageCreditsRequired —
-   * rotate to another key with no penalty/cooldown/log — but WITHOUT clearing or
+   * can still serve base models. Handled exactly like usageCreditsRequired -
+   * rotate to another key with no penalty/cooldown/log - but WITHOUT clearing or
    * setting the long-context credit-proof (that's a different credit ceiling). */
   modelCreditsRequired?: boolean;
   /** The pre-flight count_tokens gate found the input over the model's context
    * window for this provider (Claude Code Sonnet 4.6 → 200k). Abandon this
-   * provider and fail over to the next hop WITHOUT any key-health penalty — the
+   * provider and fail over to the next hop WITHOUT any key-health penalty - the
    * request simply doesn't fit here, it's not a key/auth/rate-limit problem. */
   skipProvider?: boolean;
 }

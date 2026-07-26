@@ -1,4 +1,4 @@
-// Step 4: import models — pick a subset of the discovered upstream models to
+// Step 4: import models - pick a subset of the discovered upstream models to
 // import alongside the new provider.
 
 import { Check } from "lucide-react";
@@ -53,7 +53,7 @@ export function ImportStep({
         </Button>
       </div>
       <div className="text-[0.7rem] text-muted-foreground">
-        {selected.size} of {models.length} selected — new aliases are imported
+        {selected.size} of {models.length} selected - new aliases are imported
         disabled (enable the ones you want public on the Models page); existing
         ones gain this provider as a fallback.
       </div>

@@ -3,8 +3,8 @@
 //
 // Two prefix layers (carried over from the legacy gateway) are applied when
 // listing models and reversed when resolving an incoming model name:
-//   1. modelPrefix  — global namespace applied to ALL ids.
-//   2. exposePrefix — prepended to every alias UNLESS it starts with one of
+//   1. modelPrefix  - global namespace applied to ALL ids.
+//   2. exposePrefix - prepended to every alias UNLESS it starts with one of
 //                     exposeExempt (e.g. 'claude'). Default 'anthropic/' so
 //                     non-Claude models show up in Claude Code.
 //
@@ -133,7 +133,7 @@ export class ModelRegistry {
     const model = this.models.find((m) => m.alias === alias);
     if (model) return { model };
     if (this.settings.allowUnknown) {
-      // Forward verbatim to a single-link chain (no provider known yet — the
+      // Forward verbatim to a single-link chain (no provider known yet - the
       // engine will treat the raw name as the upstream model for every enabled
       // provider that has no opinion).
       return {
@@ -262,7 +262,7 @@ export class ModelRegistry {
     };
   }
 
-  // All enabled provider ids that appear in some model's chain — used by the
+  // All enabled provider ids that appear in some model's chain - used by the
   // engine for allowUnknown pass-through (try every active provider).
   enabledProviderIds(): string[] {
     const ids = new Set<string>();

@@ -19,7 +19,7 @@ test("runWithConcurrency: never exceeds the concurrency cap", async () => {
 });
 
 test("runWithConcurrency: preserves item order despite out-of-order completion", async () => {
-  // Item 0 takes longest, item 4 finishes first — results must still land
+  // Item 0 takes longest, item 4 finishes first - results must still land
   // back in index order, matching the "returned with an index" requirement.
   const delays = [30, 5, 20, 10, 1];
   const results = await runWithConcurrency(delays, 5, async (delay, i) => {

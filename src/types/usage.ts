@@ -3,7 +3,7 @@
 // A standardized shape each provider adapter can populate to surface upstream
 // consumption + rate limits for its API keys (5-hour and weekly windows, etc.).
 // The gateway's own token counters live elsewhere (usage_breakdown); this is the
-// UPSTREAM provider's view — how much of the provider's own quota a key has
+// UPSTREAM provider's view - how much of the provider's own quota a key has
 // burned. Adapters that can't query real usage return placeholder data (dummy:
 // true) so the dashboard has content until a real poller is wired in.
 
@@ -20,7 +20,7 @@ export interface ProviderKeyUsageWindow {
   unit: UsageUnit;
   /**
    * ISO timestamp when this window's counter RESETS (rolls over to a fresh
-   * quota) — a rate-limit window, not the credential's own lifetime. Omitted
+   * quota) - a rate-limit window, not the credential's own lifetime. Omitted
    * for a one-shot balance that doesn't refill (e.g. a prepaid credit grant);
    * see `ProviderKeyUsage.expiresAt` for when the KEY ITSELF stops working.
    */
@@ -28,7 +28,7 @@ export interface ProviderKeyUsageWindow {
 }
 
 export interface ProviderKeyUsage {
-  /** Masked key (head…tail) — never the raw secret. */
+  /** Masked key (head…tail) - never the raw secret. */
   keyMask: string;
   /** Whether this key is currently active (false = operator-disabled). */
   enabled: boolean;
@@ -44,7 +44,7 @@ export interface ProviderKeyUsage {
   windows: ProviderKeyUsageWindow[];
   /**
    * ISO timestamp of the most recent proxied request that used this key
-   * (MAX(ts) over request_logs by upstream key hash — any status, a 429 is
+   * (MAX(ts) over request_logs by upstream key hash - any status, a 429 is
    * still a "use"). Drives the usage dashboard's last-used sort + highlight.
    * Omitted when the key has never served a logged request.
    */
@@ -61,7 +61,7 @@ export interface ProviderKeyUsage {
    */
   unavailable?: boolean;
   /**
-   * Optional free-text note for this key — e.g. "Rate limited until 3pm",
+   * Optional free-text note for this key - e.g. "Rate limited until 3pm",
    * "Trial tier", or an error detail. Shown under the key on the usage view.
    */
   message?: string;

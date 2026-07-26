@@ -1,6 +1,6 @@
 // Anthropic thinking-config normalization (request hook).
 //
-// Runs on the final Anthropic Messages body — after any format conversion, for
+// Runs on the final Anthropic Messages body - after any format conversion, for
 // every path (native /v1/messages, chat->messages, the web-tool loop). It makes
 // a request whose thinking config a client sent (or a converter produced) valid
 // against the live Anthropic Messages spec, so the upstream doesn't 400:
@@ -15,7 +15,7 @@
 //     `system` field (Anthropic has no system role inside messages[]).
 //
 // Ported from 9router formats/claude.js (normalizeClaudePassthrough +
-// prepareClaudeRequest), STRUCTURAL rules only — no OAuth/cloaking/attestation.
+// prepareClaudeRequest), STRUCTURAL rules only - no OAuth/cloaking/attestation.
 //
 // Verified against https://platform.claude.com/docs/en/api/messages:
 //   thinking = { type:"enabled", budget_tokens } | { type:"disabled" }
@@ -114,7 +114,7 @@ function messageText(content: unknown): string {
   return parts.join("\n");
 }
 
-// Strip output_config.effort (and an emptied output_config) — Haiku rejects it.
+// Strip output_config.effort (and an emptied output_config) - Haiku rejects it.
 function stripHaikuEffort(body: AnthropicMessagesRequest): void {
   const oc = body.output_config;
   if (oc && typeof oc === "object" && oc.effort != null) {

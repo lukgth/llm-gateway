@@ -78,7 +78,7 @@ function parseChatSse(raw: string): Array<Record<string, unknown>> {
 }
 
 // ===========================================================================
-// R1 — tool-id sanitization (-> messages)
+// R1 - tool-id sanitization (-> messages)
 // ===========================================================================
 
 test("R1: chat->messages sanitizes tool ids to Anthropic ^[A-Za-z0-9_-]+$", () => {
@@ -110,7 +110,7 @@ test("R1: chat->messages sanitizes tool ids to Anthropic ^[A-Za-z0-9_-]+$", () =
 });
 
 // ===========================================================================
-// R2 — missing tool-response insertion (-> chat)
+// R2 - missing tool-response insertion (-> chat)
 // ===========================================================================
 
 test("R2: messages->chat inserts a placeholder tool reply for an unanswered tool_use", () => {
@@ -128,7 +128,7 @@ test("R2: messages->chat inserts a placeholder tool reply for an unanswered tool
           },
         ],
       },
-      // No tool_result follows — OpenAI would 400 without a filler.
+      // No tool_result follows - OpenAI would 400 without a filler.
       { role: "user", content: "thanks" },
     ],
   });
@@ -170,7 +170,7 @@ test("R2: a tool_use that IS answered gets no filler", () => {
 });
 
 // ===========================================================================
-// R3 — response_format -> system instruction (-> messages)
+// R3 - response_format -> system instruction (-> messages)
 // ===========================================================================
 
 test("R3: chat->messages turns json_object into a system instruction", () => {
@@ -195,7 +195,7 @@ test("R3: chat->messages embeds a json_schema into the system instruction", () =
 });
 
 // ===========================================================================
-// R4 — OpenAI file block -> Claude document (PDF only)
+// R4 - OpenAI file block -> Claude document (PDF only)
 // ===========================================================================
 
 test("R4: chat->messages maps a PDF file block to a document block", () => {
@@ -245,7 +245,7 @@ test("R4: a non-PDF file block is dropped, not sent", () => {
 });
 
 // ===========================================================================
-// R7 — max_tokens default (-> messages)
+// R7 - max_tokens default (-> messages)
 // ===========================================================================
 
 test("R7: chat->messages defaults max_tokens when absent", () => {
@@ -267,7 +267,7 @@ test("R7: max_completion_tokens is honored as a source", () => {
 });
 
 // ===========================================================================
-// R9 — temperature range reconciliation (OpenAI 0–2 -> Anthropic 0–1)
+// R9 - temperature range reconciliation (OpenAI 0–2 -> Anthropic 0–1)
 // ===========================================================================
 
 test("R9: chat->messages clamps temperature above 1.0 to 1.0 (Anthropic max)", () => {
@@ -298,7 +298,7 @@ test("R9: a negative temperature is clamped up to 0", () => {
 });
 
 // ===========================================================================
-// R8 — reasoning-effort passthrough
+// R8 - reasoning-effort passthrough
 // ===========================================================================
 
 test("R8: chat->messages carries reasoning_effort as output_config.effort", () => {
@@ -427,7 +427,7 @@ test("R8: absent thinking does not produce _thinking_disabled", () => {
 });
 
 // ===========================================================================
-// S1 — thinking <-> reasoning_content (buffered)
+// S1 - thinking <-> reasoning_content (buffered)
 // ===========================================================================
 
 test("S1: messages->chat maps a thinking block to reasoning_content", () => {
@@ -471,7 +471,7 @@ test("S1: chat->messages maps reasoning_content to a leading thinking block", ()
 });
 
 // ===========================================================================
-// S2 — cache-token accounting (buffered)
+// S2 - cache-token accounting (buffered)
 // ===========================================================================
 
 test("S2: messages->chat folds cache tokens into prompt_tokens + details", () => {
@@ -500,7 +500,7 @@ test("S2: messages->chat folds cache tokens into prompt_tokens + details", () =>
   assert.equal(usage.completion_tokens, 4);
   assert.equal(usage.total_tokens, 22);
   assert.equal(usage.prompt_tokens_details?.cached_tokens, 6);
-  // cache_creation_tokens is NOT emitted — it's Anthropic-only, not part of
+  // cache_creation_tokens is NOT emitted - it's Anthropic-only, not part of
   // the OpenAI spec. The creation tokens are folded into prompt_tokens.
   assert.equal(
     (usage.prompt_tokens_details as Record<string, unknown>)
@@ -540,7 +540,7 @@ test("S2: chat->messages subtracts folded cache tokens back out of input_tokens"
 });
 
 // ===========================================================================
-// S1/S2 — streaming
+// S1/S2 - streaming
 // ===========================================================================
 
 test("S1 streaming: chat reasoning_content -> Anthropic thinking events", async () => {
@@ -612,7 +612,7 @@ test("S2 streaming: Anthropic cache usage merges start+delta into chat usage", a
 });
 
 // ===========================================================================
-// Streaming tool calls — per the format-route completeness audit, the
+// Streaming tool calls - per the format-route completeness audit, the
 // buffered tool_use<->tool_calls mapping (R1/R2/round-trip above) was tested,
 // but the STREAMING half (delta-by-delta) had zero coverage despite being
 // fully implemented.
@@ -807,7 +807,7 @@ test("round-trip: assistant tool_calls survive chat->messages", () => {
 });
 
 // ===========================================================================
-// C — Anthropic schema conformance (structural rules ported from 9router)
+// C - Anthropic schema conformance (structural rules ported from 9router)
 // ===========================================================================
 
 test("C1: developer role folds into the Anthropic system field", () => {
@@ -838,7 +838,7 @@ test("C2: consecutive same-role turns are merged (strict alternation)", () => {
     ],
   });
   const msgs = out.messages as Array<{ role: string; content: unknown }>;
-  // user, assistant — two turns, no adjacent duplicates.
+  // user, assistant - two turns, no adjacent duplicates.
   assert.deepEqual(
     msgs.map((m) => m.role),
     ["user", "assistant"],

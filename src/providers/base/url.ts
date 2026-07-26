@@ -35,7 +35,7 @@ export function composeUrl(
 }
 
 // True when a path ends in one of the three canonical endpoint suffixes. Used to
-// recognize a full path (vs a bare wire-kind) — migration + per-link parsing.
+// recognize a full path (vs a bare wire-kind) - migration + per-link parsing.
 export function endsWithKnownSuffix(p: string): boolean {
   const x = p.split("?")[0];
   return (
@@ -87,8 +87,8 @@ export function endpointPathFor(provider: Provider, kind: WireKind): string {
 }
 
 // Which wire KIND a hop routes through. Precedence:
-//   1. explicit per-link endpoint (kind or legacy path) — an operator pin wins.
-//   2. adapter `preferred` — a model-aware preference (e.g. GPT-5 -> responses),
+//   1. explicit per-link endpoint (kind or legacy path) - an operator pin wins.
+//   2. adapter `preferred` - a model-aware preference (e.g. GPT-5 -> responses),
 //      honored only when the provider actually accepts that kind.
 //   3. the provider's first declared endpoint kind.
 //   4. the adapter's native kind.

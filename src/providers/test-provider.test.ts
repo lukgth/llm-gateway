@@ -1,4 +1,4 @@
-// testProvider() seam tests — the PROVIDER-level connectivity check ("Test
+// testProvider() seam tests - the PROVIDER-level connectivity check ("Test
 // connection" + the per-key Test button), as opposed to test-model.test.ts's
 // per-MODEL testModel()/probeEndpoint() seam. Verifies:
 //   - the base default GETs ctx.url (the model-list endpoint) and reports

@@ -18,7 +18,7 @@ import {
 } from "./types";
 
 // The smallest real request body that gets a one-token reply out of each wire
-// kind — what `probeEndpoint()` sends by default, TYPED to that kind's own
+// kind - what `probeEndpoint()` sends by default, TYPED to that kind's own
 // request schema so an override never hand-writes an untyped object. Pass your
 // own body to `probeEndpoint()` instead when a provider needs something
 // different (e.g. rejects `max_tokens` on some models).
@@ -118,7 +118,7 @@ export function normalizeModels(result: ModelsResult): UpstreamModel[] {
     : normalizeOpenAIModels(result.list);
 }
 
-// QoL: reduce a universal list to its sorted, de-duped ids — the shape the
+// QoL: reduce a universal list to its sorted, de-duped ids - the shape the
 // import wizard's id-only picker and the connectivity summary want.
 export function modelIds(models: UpstreamModel[]): string[] {
   const ids = new Set<string>();

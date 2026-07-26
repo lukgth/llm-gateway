@@ -1,7 +1,7 @@
-// SearXNG web search provider — search only (no page fetch).
+// SearXNG web search provider - search only (no page fetch).
 //
 // SearXNG is a self-hosted meta-search engine with a free JSON API. No API key
-// needed — just point baseUrl at a running instance.
+// needed - just point baseUrl at a running instance.
 //
 // Docs: https://docs.searxng.org/dev/search_api.html
 //   GET /search?format=json&q=...&safesearch=0
@@ -15,7 +15,7 @@ import type {
   WebProviderConfig,
 } from "./types";
 
-// No default baseUrl — the user MUST configure one (plan §Step 1).
+// No default baseUrl - the user MUST configure one (plan §Step 1).
 const DEFAULT_BASE = "";
 const DEFAULT_TIMEOUT = 20_000;
 
@@ -31,7 +31,7 @@ export function createSearxngProvider(
     const base = (config.baseUrl || DEFAULT_BASE).replace(/\/+$/, "");
     if (!base)
       throw new Error(
-        "searxng search requires baseUrl (webProviderBaseUrl) — " +
+        "searxng search requires baseUrl (webProviderBaseUrl) - " +
           "point it at a self-hosted instance, e.g. http://localhost:8080",
       );
 
@@ -77,7 +77,7 @@ export function createSearxngProvider(
     });
   }
 
-  // SearXNG is search-only — no `fetch`. executeWebTool reports web_fetch as
+  // SearXNG is search-only - no `fetch`. executeWebTool reports web_fetch as
   // unsupported for this provider rather than crashing.
   return { name: "searxng", search };
 }

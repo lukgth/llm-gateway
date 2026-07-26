@@ -1,16 +1,16 @@
 // Web-tool interception for Anthropic Messages requests.
 //
-// Anthropic's `web_search` / `web_fetch` are SERVER-SIDE (hosted) tools —
+// Anthropic's `web_search` / `web_fetch` are SERVER-SIDE (hosted) tools -
 // Anthropic runs them and returns results inline. Most upstreams (e.g. 9router
 // fronting arbitrary models) don't implement them. This module lets the gateway
 // provide those tools itself, backed by a pluggable web provider (see
 // ./web-providers):
 //
-//   1. detectWebTools()   — is the request asking for web_search / web_fetch?
-//   2. rewriteRequest()   — swap the hosted tool DEFINITIONS for ordinary
+//   1. detectWebTools()   - is the request asking for web_search / web_fetch?
+//   2. rewriteRequest()   - swap the hosted tool DEFINITIONS for ordinary
 //                           custom function tools the model can actually call
 //                           (a normal `tool_use` block), so any model works.
-//   3. executeWebTool()   — run a model's tool_use via the web provider and
+//   3. executeWebTool()   - run a model's tool_use via the web provider and
 //                           format the `tool_result` content for the loop.
 //
 // Everything here works in Anthropic Messages shape; the loop (loop.ts)
@@ -40,7 +40,7 @@ export interface WebToolsPresent {
 //
 // Hosted tools are identified by their `type` field (e.g. "web_search_20250305"
 // or "web_search"). A custom tool named "web_search" has no `type` field
-// (Messages) or type:"function"/"custom" (Chat/Responses) — the type prefix is
+// (Messages) or type:"function"/"custom" (Chat/Responses) - the type prefix is
 // the only reliable indicator. Matching on name alone would false-positive on
 // any third-party tool also named "web_search" (omp.sh, etc.).
 function isHostedWebTool(
@@ -69,7 +69,7 @@ export function detectWebTools(body: Record<string, unknown>): WebToolsPresent {
 // True when EVERY tool in the request is a hosted web tool. This is the
 // signature of a standalone web-search sub-request (Claude Code sends web
 // search as its own /v1/messages call with only web_search tool(s)), which we
-// can short-circuit — run the search directly and return a synthetic response
+// can short-circuit - run the search directly and return a synthetic response
 // without a model round-trip. Mirrors LiteLLM's try_short_circuit_search.
 export function isWebToolsOnly(body: Record<string, unknown>): boolean {
   const tools = body.tools;
@@ -220,11 +220,11 @@ interface WebToolOutcome {
 
 // `encrypted_content` is Anthropic's opaque per-result payload that native
 // clients pass back on multi-turn calls. We aren't Anthropic, so we emit an
-// empty string here — matching how LiteLLM's web_search_tool_result block does
+// empty string here - matching how LiteLLM's web_search_tool_result block does
 // it (the field is present but empty).
 const SYNTHETIC = "";
 
-// Execute one web tool call via the configured web provider. Never throws —
+// Execute one web tool call via the configured web provider. Never throws -
 // failures become an error outcome the model can read and the client sees as an
 // error result.
 export async function executeWebTool(
@@ -254,7 +254,7 @@ export async function executeWebTool(
         page_age: "",
         encrypted_content: SYNTHETIC,
       }));
-      // Text form for the reasoning model — explicit header so upstreams that
+      // Text form for the reasoning model - explicit header so upstreams that
       // re-wrap tool messages still make it obvious these are live results.
       const list = hits
         .map(

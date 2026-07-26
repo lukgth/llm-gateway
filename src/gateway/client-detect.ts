@@ -1,8 +1,8 @@
 // Best-effort detection of the client application behind a gateway request.
 //
 // Coding agents and SDKs identify themselves through User-Agent (and a few
-// side-channel headers like x-app). We match against an ordered rule list —
-// most specific first — and fall back to the raw product token so unknown
+// side-channel headers like x-app). We match against an ordered rule list -
+// most specific first - and fall back to the raw product token so unknown
 // clients still show up as *something* useful in the logs.
 
 import type { Request } from "express";
@@ -47,7 +47,7 @@ const RULES: ClientRule[] = [
   { pattern: /litellm/, name: "litellm" },
   { pattern: /langchain/, name: "langchain" },
   { pattern: /llamaindex|llama-index/, name: "llamaindex" },
-  // --- raw SDKs (least specific — agents above embed these too) ---
+  // --- raw SDKs (least specific - agents above embed these too) ---
   { pattern: /anthropic-sdk|@anthropic-ai/, name: "anthropic sdk" },
   { pattern: /openai-python|openai-node|openai\//, name: "openai sdk" },
   { pattern: /\bcurl\b/, name: "curl" },

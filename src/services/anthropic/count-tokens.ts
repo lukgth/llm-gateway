@@ -1,4 +1,4 @@
-// Anthropic /v1/messages/count_tokens — a real upstream token count, used to
+// Anthropic /v1/messages/count_tokens - a real upstream token count, used to
 // pre-flight the ONE model that needs it: Claude Code Sonnet 4.6.
 //
 // Sonnet 4.6 on a Claude Code subscription is served only up to its BASE 200k
@@ -6,7 +6,7 @@
 // other models don't share this ceiling.) So before sending a Sonnet-4.6 request
 // to a claude-code provider, the engine counts the input tokens here and, if
 // it's over the window, skips that provider and fails over to one that can serve
-// the long context. Everything is a plain callable function — no adapter seam.
+// the long context. Everything is a plain callable function - no adapter seam.
 
 import { requestJson } from "../../gateway/http";
 import { dispatchAgent } from "../../gateway/proxy-agent";
@@ -18,7 +18,7 @@ export const SONNET_46_BASE_WINDOW = 200_000;
 // The only top-level fields /v1/messages/count_tokens accepts. We send the SAME
 // model/messages/system/tools/thinking as the real request so the count matches
 // what would be billed; other keys (max_tokens, stream, metadata, …) are dropped
-// — count_tokens 400s on some of them.
+// - count_tokens 400s on some of them.
 const COUNT_TOKENS_KEYS = [
   "model",
   "messages",
@@ -73,9 +73,9 @@ export interface CountInputTokensOpts {
   /** The real request's upstream URL (…/v1/messages[?beta=true]). */
   url: string;
   /** The real request's headers (auth + anthropic-version + OAuth beta). A
-   *  content-length, if present, is dropped — the count body has its own. */
+   *  content-length, if present, is dropped - the count body has its own. */
   headers: Record<string, string>;
-  /** The real request's built body — trimmed to the count_tokens fields here. */
+  /** The real request's built body - trimmed to the count_tokens fields here. */
   body: Record<string, unknown>;
   timeoutMs?: number;
   tlsVerify?: boolean;
@@ -85,7 +85,7 @@ export interface CountInputTokensOpts {
 
 // POST to /v1/messages/count_tokens and return the counted input tokens, or
 // null when the count is inconclusive (network error, non-2xx, unparseable
-// response). Never throws — a null result means "couldn't tell, proceed".
+// response). Never throws - a null result means "couldn't tell, proceed".
 export async function countInputTokens(
   opts: CountInputTokensOpts,
 ): Promise<number | null> {

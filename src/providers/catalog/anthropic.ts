@@ -9,7 +9,7 @@ class AnthropicAdapter extends AnthropicCompatibleAdapter {}
 export const anthropic = new AnthropicAdapter({
   id: "anthropic",
   label: "Anthropic",
-  blurb: "Official Anthropic API — Claude models via /v1/messages.",
+  blurb: "Official Anthropic API - Claude models via /v1/messages.",
   brand: "anthropic",
   docsUrl: "https://docs.anthropic.com/en/api",
   defaults: {
@@ -26,14 +26,14 @@ export const anthropic = new AnthropicAdapter({
       label: "API key",
       placeholder: "sk-ant-…",
       required: true,
-      hint: "One per line — rotated round-robin.",
+      hint: "One per line - rotated round-robin.",
     },
   ],
   quirks: {
     requiredHeaders: { "anthropic-version": "2023-06-01" },
     thinking: { defaultType: "adaptive", supportsEffort: true },
     // Inherits the Anthropic-family base (prompt caching + tool-arg sanitize)
-    // from anthropic-compatible.ts — see ANTHROPIC_DEFAULT_TRANSFORMS's own
+    // from anthropic-compatible.ts - see ANTHROPIC_DEFAULT_TRANSFORMS's own
     // doc comment. The official API has no additional defaults beyond the
     // shared base today; add provider-specific entries here (spread the base
     // first so a provider-specific entry with the same id+phase overrides it)

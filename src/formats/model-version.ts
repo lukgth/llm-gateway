@@ -1,4 +1,4 @@
-// Shared model-version predicates — the ONE file that owns the regexes.
+// Shared model-version predicates - the ONE file that owns the regexes.
 //
 // Every hook that branches on model family imports from here instead of
 // keeping local copies. Covers both Claude and OpenAI model families.
@@ -6,7 +6,7 @@
 // Claude:
 //   isModelPost45: strictly NEWER than 4.5 (4.6+, 5+, fable, mythos).
 //   isModelSamplingStripped: models that reject temperature/top_p/top_k (400).
-//   Family matchers: FABLE, MYTHOS, OPUS_47_PLUS, etc. — used by thinking-mode.
+//   Family matchers: FABLE, MYTHOS, OPUS_47_PLUS, etc. - used by thinking-mode.
 //
 // OpenAI / GPT:
 //   isGpt56Plus: GPT-5.6 and above (supports max effort, no unencrypted thinking).
@@ -80,7 +80,7 @@ export function isGpt5Family(model: unknown): boolean {
 // ---- DeepSeek ---------------------------------------------------------------
 
 // Matches DeepSeek reasoner (deepseek-reasoner, deepseek-r1) and v4-family
-// chat models — all of which support the `thinking` toggle per
+// chat models - all of which support the `thinking` toggle per
 // https://api-docs.deepseek.com/guides/thinking_mode/.
 const DEEPSEEK_REASONER_RE = /^deepseek-(?:reasoner|r1|v4)/i;
 

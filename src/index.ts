@@ -145,7 +145,7 @@ function main(): void {
 }
 
 function configureTimeouts(server: Server, logger: Logger): void {
-  // LLM streams can run for many minutes — disable request/headers/keepAlive
+  // LLM streams can run for many minutes - disable request/headers/keepAlive
   // timeouts entirely. A 15-min socket inactivity timeout reaps truly dead
   // connections; SSE pings keep active streams alive.
   server.requestTimeout = 0;

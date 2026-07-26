@@ -4,8 +4,8 @@
 // blocks out of an upstream response and surface them as the wire format's native
 // reasoning shape (chat reasoning_details, Anthropic thinking blocks, Responses
 // reasoning items). Historically the engine applied this OUTSIDE the transform
-// arrays — `applyThinking(providerFmt, body)` on the buffered body and
-// `thinkingStream(providerFmt)` as the first stream stage — both BEFORE the
+// arrays - `applyThinking(providerFmt, body)` on the buffered body and
+// `thinkingStream(providerFmt)` as the first stream stage - both BEFORE the
 // format bridge, on the provider-native shape.
 //
 // Here that becomes a **pre-bridge, provider-format-tagged** response/stream
@@ -25,14 +25,14 @@ import { SseThinkingTransform } from "./chat-stream";
 import { AnthropicThinkingTransform } from "./messages-stream";
 
 // Shared display metadata for the buffered + streaming thinking stages below
-// — same behavior regardless of which wire format they're tagged for, so one
+// - same behavior regardless of which wire format they're tagged for, so one
 // label/blurb covers all of them (see TransformMeta's doc comment in
 // formats/pipeline.ts). Not grouped: each is tagged a DIFFERENT format and
 // only ever one of them fires on a given hop (see this file's own header
 // comment), so there's never more than one visible at once to collapse.
 const THINKING_LABEL = "Inline <thinking> tag extraction";
 const THINKING_BLURB =
-  "Pulls inline <thinking>/<reasoning> text out of the response and surfaces it as the wire format's native reasoning shape — only scans actual message content, never tool-call arguments or results.";
+  "Pulls inline <thinking>/<reasoning> text out of the response and surfaces it as the wire format's native reasoning shape - only scans actual message content, never tool-call arguments or results.";
 
 // The buffered-response thinking layer: one tagged transform per format. Only the
 // one whose tag matches the hop's providerFmt runs (pre-bridge). Guarded so a

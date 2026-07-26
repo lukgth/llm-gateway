@@ -86,7 +86,7 @@ export function parseProviderInput(
           ? null
           : str(b.catalogId),
     // Normalized here too (not just inside createProvider/updateProvider) so
-    // parseProviderInput's OWN output is self-consistent — any future caller
+    // parseProviderInput's OWN output is self-consistent - any future caller
     // of this parser gets an already-clean value, not one that merely happens
     // to be safe because of where it's currently used.
     basePath:

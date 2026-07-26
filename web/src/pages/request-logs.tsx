@@ -42,7 +42,7 @@ import {
 const PAGE_SIZE = 50;
 
 // Future-tense countdown for a throttle row's retry epoch (ms): "retry in 45s"
-// / "retry in 3m" — or "retry now" once it has lapsed (the row hasn't re-fetched
+// / "retry in 3m" - or "retry now" once it has lapsed (the row hasn't re-fetched
 // since the cooldown cleared). relTime is past-tense only, so this is separate.
 function retryHint(retryAtMs: number): string {
   const s = Math.round((retryAtMs - Date.now()) / 1000);
@@ -81,7 +81,7 @@ export default function RequestLogs() {
     <div>
       <PageHeader
         title="Request Logs"
-        desc="Per-request activity — real-time via WebSocket"
+        desc="Per-request activity - real-time via WebSocket"
         actions={
           <div className="flex items-center gap-3">
             <Input
@@ -164,7 +164,7 @@ export default function RequestLogs() {
   );
 }
 
-// Known client brands for icon matching — keys are the lowercase labels
+// Known client brands for icon matching - keys are the lowercase labels
 // detectClient() returns (see gateway/client-detect.ts).
 const CLIENT_BRANDS: Record<string, string> = {
   "claude code": "claude",
@@ -279,7 +279,7 @@ const LogRow = memo(function LogRow({
           {l.client ? (
             <ClientBadge name={l.client} />
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">-</span>
           )}
         </TableCell>
         <TableCell className="min-w-0 font-mono text-primary">
@@ -289,7 +289,7 @@ const LogRow = memo(function LogRow({
               <span className="truncate">{l.model}</span>
             </span>
           ) : (
-            "—"
+            "-"
           )}
         </TableCell>
         <TableCell className="min-w-0">
@@ -301,7 +301,7 @@ const LogRow = memo(function LogRow({
                 className="size-3.5"
               />
               <span className="truncate">
-                {l.providerName ?? l.providerId ?? "—"}
+                {l.providerName ?? l.providerId ?? "-"}
               </span>
             </span>
             {(l.upstreamModel || l.upstreamKeyMask) && (
@@ -342,7 +342,7 @@ const LogRow = memo(function LogRow({
         <TableCell className="text-right tabular-nums text-muted-foreground">
           {l.inputTokens != null || l.outputTokens != null
             ? `${fmtNum(l.inputTokens)}/${fmtNum(l.outputTokens)}`
-            : "—"}
+            : "-"}
           {l.stream && (
             <span className="ml-1 text-[0.6rem] text-primary">stream</span>
           )}
@@ -356,7 +356,7 @@ const LogRow = memo(function LogRow({
           )}
         </TableCell>
         <TableCell className="text-right tabular-nums text-muted-foreground">
-          {l.costUsd != null ? fmtUsd(l.costUsd) : "—"}
+          {l.costUsd != null ? fmtUsd(l.costUsd) : "-"}
         </TableCell>
         <TableCell className="text-right tabular-nums text-muted-foreground">
           {fmtLatency(l.latencyMs)}

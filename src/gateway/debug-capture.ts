@@ -2,7 +2,7 @@
 // compact, truncated JSON blobs for the Request Logs debug view. This is
 // opt-in (settings.debugLogging) because it stores message content.
 //
-// Nothing here buffers the response stream — the streaming side is fed by the
+// Nothing here buffers the response stream - the streaming side is fed by the
 // SseUsageObserver, which taps each SSE event as it passes through. This module
 // only provides (a) request distillation from the already-parsed client body
 // and (b) response distillation from a non-streaming parsed body.
@@ -152,7 +152,7 @@ function summarizeTools(tools: unknown): unknown {
   });
 }
 
-// Distill the client request body — what the client actually supplied to the
+// Distill the client request body - what the client actually supplied to the
 // model. Captures messages, system prompt, tools, tool_choice and sampling.
 export function captureRequest(body: Record<string, unknown>): string {
   const messages = Array.isArray(body.messages)

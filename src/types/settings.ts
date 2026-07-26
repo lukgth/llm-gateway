@@ -1,4 +1,4 @@
-// Global settings — a key/value store with a typed view.
+// Global settings - a key/value store with a typed view.
 
 export interface Settings {
   modelPrefix: string;

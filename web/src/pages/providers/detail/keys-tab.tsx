@@ -74,7 +74,7 @@ function ImportSection({
         mode,
       });
       toast.success(
-        `Imported ${result.fetched} key(s) — ${result.batch.added} added, ${result.batch.duplicatesSkipped} skipped`,
+        `Imported ${result.fetched} key(s) - ${result.batch.added} added, ${result.batch.duplicatesSkipped} skipped`,
       );
       setUrl("");
       onImported();
@@ -234,7 +234,7 @@ function SyncConfigSection({
     try {
       const result = await api.triggerProviderKeySync(providerId);
       toast.success(
-        `Synced ${result.fetched} key(s) — ${result.batch.added} added, ${result.batch.enabled} re-enabled, ${result.batch.disabled} disabled`,
+        `Synced ${result.fetched} key(s) - ${result.batch.added} added, ${result.batch.enabled} re-enabled, ${result.batch.disabled} disabled`,
       );
       onChanged();
     } catch (e) {
@@ -249,7 +249,7 @@ function SyncConfigSection({
   return (
     <FormSection
       title="Background polling"
-      desc="Automatically sync keys from an external source on a schedule. The URL response is the source of truth — missing keys are disabled, not deleted."
+      desc="Automatically sync keys from an external source on a schedule. The URL response is the source of truth - missing keys are disabled, not deleted."
     >
       <div className="px-4 py-3 space-y-3">
         <Button
@@ -432,7 +432,7 @@ function KeyUsagePanel({ providerId }: { providerId: string }) {
             {(() => {
               // Freshest-first; green-outline the most-recently-used key. This
               // detail view keeps rate-limited keys visible (it's the key
-              // manager) — only the dashboard hides them behind a toggle.
+              // manager) - only the dashboard hides them behind a toggle.
               const sorted = sortByLastUsed(report.keys);
               const highlightMask = sorted.find((k) => k.lastUsedAt)?.keyMask;
               return sorted.map((k, i) => (

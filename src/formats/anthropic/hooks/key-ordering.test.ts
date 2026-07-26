@@ -1,5 +1,5 @@
 // Verify that Anthropic Messages bodies are serialized with keys in
-// ORDERED_KEYS order — the order the Anthropic API expects.
+// ORDERED_KEYS order - the order the Anthropic API expects.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

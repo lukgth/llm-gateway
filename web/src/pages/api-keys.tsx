@@ -87,7 +87,7 @@ export default function ApiKeys() {
               widths={["55%", "40%", "50%", "30%", "45%", "25%", "20%"]}
             />
           ) : items.length === 0 ? (
-            <EmptyState msg="No keys yet — until you create one, the gateway is open (no auth)" />
+            <EmptyState msg="No keys yet - until you create one, the gateway is open (no auth)" />
           ) : (
             <Table>
               <TableHeader>
@@ -176,12 +176,12 @@ const KeyRow = memo(function KeyRow({
 
   return (
     <TableRow>
-      <TableCell className="max-w-[12rem] truncate">{k.name ?? "—"}</TableCell>
+      <TableCell className="max-w-[12rem] truncate">{k.name ?? "-"}</TableCell>
       <TableCell>
         <span className="font-mono text-primary">{k.keyPrefix}</span>
       </TableCell>
       <TableCell className="max-w-[12rem] truncate">
-        {k.userName ?? "—"}
+        {k.userName ?? "-"}
       </TableCell>
       <TableCell className="text-right tabular-nums">
         {k.tokensPerDay ? fmtNum(k.tokensPerDay) : "∞"}
@@ -248,7 +248,7 @@ function KeyCreateDialog({
         <DialogHeader>
           <DialogTitle>New API Key</DialogTitle>
           <DialogDescription>
-            A fresh credential will be generated. Copy it now — the full value
+            A fresh credential will be generated. Copy it now - the full value
             won't be shown again.
           </DialogDescription>
         </DialogHeader>
@@ -266,7 +266,7 @@ function KeyCreateDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">— none —</SelectItem>
+                <SelectItem value="none">- none -</SelectItem>
                 {users.map((u) => (
                   <SelectItem key={u.id} value={u.id}>
                     {u.name}
@@ -406,7 +406,7 @@ function KeyEditDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">— none —</SelectItem>
+                <SelectItem value="none">- none -</SelectItem>
                 {users.map((u) => (
                   <SelectItem key={u.id} value={u.id}>
                     {u.name}

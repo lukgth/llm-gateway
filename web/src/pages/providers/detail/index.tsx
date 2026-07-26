@@ -1,4 +1,4 @@
-// Provider detail — a routed page (/providers/:id) with section tabs.
+// Provider detail - a routed page (/providers/:id) with section tabs.
 //
 // Replaces the old in-grid ProviderDetail dialog: a chain/config is too much for
 // a modal. Overview · Config · Keys · Models · Advanced via the shared
@@ -6,10 +6,10 @@
 // linkable and survives refresh.
 //
 // Split across sibling files by tab:
-//   overview-tab.tsx  — OverviewTab (summary rows, connectivity test, recent errors)
-//   keys-tab.tsx      — KeysTab (bulk key manager + per-key usage)
-//   config-form.tsx   — ConfigForm (Config + Advanced sections)
-//   models-tab.tsx    — ModelsTab + DangerZone
+//   overview-tab.tsx  - OverviewTab (summary rows, connectivity test, recent errors)
+//   keys-tab.tsx      - KeysTab (bulk key manager + per-key usage)
+//   config-form.tsx   - ConfigForm (Config + Advanced sections)
+//   models-tab.tsx    - ModelsTab + DangerZone
 
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";

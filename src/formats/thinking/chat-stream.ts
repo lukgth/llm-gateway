@@ -13,7 +13,7 @@ import { Transform, type TransformCallback } from "stream";
 import { StreamingThinkingParser } from "./stream";
 import { SseFrameReader } from "../sse/frame";
 
-// Minimal view of a chat-completion stream chunk — only the bits we touch.
+// Minimal view of a chat-completion stream chunk - only the bits we touch.
 interface ChatCompletionChunk {
   choices?: Array<{
     index?: number;
@@ -95,13 +95,13 @@ export class SseThinkingTransform extends Transform {
     }
 
     if (dataLines.length === 0) {
-      // No data lines: heartbeat, comment, or out-of-band event — pass through.
+      // No data lines: heartbeat, comment, or out-of-band event - pass through.
       return event + "\n\n";
     }
 
     const data = dataLines.join("\n");
     if (data === "[DONE]") {
-      // Stream terminator — emit unchanged.
+      // Stream terminator - emit unchanged.
       return event + "\n\n";
     }
 
@@ -109,7 +109,7 @@ export class SseThinkingTransform extends Transform {
     try {
       chunk = JSON.parse(data);
     } catch {
-      // Non-JSON data — pass through unchanged rather than corrupting the stream.
+      // Non-JSON data - pass through unchanged rather than corrupting the stream.
       return event + "\n\n";
     }
 

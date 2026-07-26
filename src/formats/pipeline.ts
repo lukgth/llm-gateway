@@ -1,4 +1,4 @@
-// The format transform pipeline — the one place cross-format conversion is
+// The format transform pipeline - the one place cross-format conversion is
 // declared, for both streaming and non-streaming responses.
 //
 // A request flows: client body --[request transforms]--> upstream body.
@@ -10,7 +10,7 @@
 // conversion tables, then appends any adapter-supplied custom transforms. To add
 // custom logic for a provider you return extra transforms from its adapter
 // (see providers/base.ts requestTransforms()/responseTransforms()/streamTransforms())
-// — nothing here changes, and the transform runs identically streaming or not.
+// - nothing here changes, and the transform runs identically streaming or not.
 
 import type { Transform } from "stream";
 import type { Provider } from "../types";
@@ -63,11 +63,11 @@ export interface TransformCtx {
    *  transforms that clamp max_tokens (e.g. the Anthropic max-tokens hook). */
   maxOutputTokens?: number | null;
   /** The RAW upstream key selected for this attempt (null when the provider
-   *  has none configured) — the exact same key `ctx.headers`'s auth header
+   *  has none configured) - the exact same key `ctx.headers`'s auth header
    *  (if any) was derived from via `applyAuthHeaders`, and the exact same
    *  value the adapter's build phase receives as `BuildCtx.apiKey`. A
    *  transform that needs the key itself (e.g. to compute a signature,
-   *  mirroring what a bespoke build method does with `ctx.apiKey` — see
+   *  mirroring what a bespoke build method does with `ctx.apiKey` - see
    *  provider-adapters.md) reads it here instead of parsing it back out of a
    *  header. Never log or echo this value. */
   apiKey?: string | null;
@@ -78,20 +78,20 @@ export interface TransformCtx {
   // A REQUEST transform may rewrite the outbound URL + headers (not just the
   // body) by editing these directly.
   //
-  // `headers` is the FULL mutable header table for this attempt — the engine
+  // `headers` is the FULL mutable header table for this attempt - the engine
   // builds it BEFORE running the request stages (client headers first, so
-  // they form the base; then the gateway's own values — host, auth from the
-  // selected key, provider.extraHeaders, content-type/accept defaults — are
+  // they form the base; then the gateway's own values - host, auth from the
+  // selected key, provider.extraHeaders, content-type/accept defaults - are
   // layered on top and WIN on collision, since a client can't be trusted to
   // set its own auth). A request transform edits this table the same way it
   // edits the body: `ctx.headers["x-foo"] = "bar"` to set, `delete
   // ctx.headers["x-foo"]` to remove. The engine reads the table back after
   // the request stages run and hands it to the adapter's build phase as the
-  // default header set — the builder may itself still rewrite/override it.
+  // default header set - the builder may itself still rewrite/override it.
   // Freshly rebuilt per attempt (never carried over a retry/hop), so a
   // rewrite can't leak across attempts. Optional only because a handful of
   // TransformCtx call sites (unit tests, the SSE-only stream path) have no
-  // header table to hand a transform — always present on the real
+  // header table to hand a transform - always present on the real
   // request/response path.
   /** Full mutable outbound header table for this attempt (see above). */
   headers?: Record<string, string>;
@@ -110,23 +110,23 @@ export interface TransformCtx {
   // for one request. Request hooks write; response hooks read. The object
   // reference is preserved when attemptCtx spreads route.xctx, so both sides
   // see the same bag. Keyed by transform name to avoid collisions.
-  /** Shared state bag — request hooks write, response/stream hooks read. */
+  /** Shared state bag - request hooks write, response/stream hooks read. */
   state?: Record<string, unknown>;
 }
 
 // `label`/`blurb`/`group` are OPTIONAL display metadata on EVERY transform
-// shape below (tagged and untagged alike) — never read by the engine or the
+// shape below (tagged and untagged alike) - never read by the engine or the
 // pipeline itself, only surfaced by the read-only "resolved transforms"
 // preview (src/admin/routes/resolved-transforms.ts, rendered by
 // <DefaultTransformsPanel> in the web UI) so an operator sees a human name
 // instead of the bare stage `name`. A stage with no `label` falls back to a
-// humanized form of `name` in the UI; there is no requirement to set these —
+// humanized form of `name` in the UI; there is no requirement to set these -
 // they exist purely for a friendlier display, matching the label/blurb every
 // TransformDef in the user-configurable library already carries (see
 // formats/transforms/registry.ts). `group` clusters multiple stages that
 // always run together as one conceptual unit (e.g. the four Anthropic request
 // hooks) under a single collapsible row in the UI instead of four separate
-// ones — set the SAME `group` string on every stage that belongs together;
+// ones - set the SAME `group` string on every stage that belongs together;
 // stages with no `group` (or a `group` no sibling shares) render individually.
 export interface TransformMeta {
   /** Short human-readable name, e.g. "Prompt-cache breakpoints". Falls back
@@ -155,7 +155,7 @@ export interface StreamTransform extends TransformMeta {
 }
 
 // ===========================================================================
-// Tagged transforms — the typed, self-describing authoring API
+// Tagged transforms - the typed, self-describing authoring API
 // ===========================================================================
 //
 // A tagged transform declares:
@@ -167,7 +167,7 @@ export interface StreamTransform extends TransformMeta {
 // tagged clientFmt runs pre-conversion; tagged providerFmt runs post-conversion;
 // a response/stream tagged providerFmt runs pre-bridge; tagged clientFmt runs
 // post-bridge. A tag matching neither format is skipped. Authors never do this
-// bookkeeping — they call onRequest/onResponse/onStreamEvent with a format and a
+// bookkeeping - they call onRequest/onResponse/onStreamEvent with a format and a
 // typed handler, and the engine places + type-erases everything.
 
 export interface TaggedRequestTransform extends TransformMeta {
@@ -203,7 +203,7 @@ export type AnyStreamTransform = StreamTransform | TaggedStreamTransform;
 
 // A request transform for `format`. `apply` receives the typed request body for
 // that format and returns it (mutate + return, or return a new object). `meta`
-// is optional display-only info (label/blurb/group — see TransformMeta above);
+// is optional display-only info (label/blurb/group - see TransformMeta above);
 // omit it freely, it has no effect on behavior.
 export function onRequest<F extends WireFmt>(
   format: F,
@@ -221,7 +221,7 @@ export function onRequest<F extends WireFmt>(
 }
 
 // A buffered-response transform for `format`. `apply` receives the typed
-// response body for that format. `meta` — see onRequest.
+// response body for that format. `meta` - see onRequest.
 export function onResponse<F extends WireFmt>(
   format: F,
   name: string,
@@ -240,7 +240,7 @@ export function onResponse<F extends WireFmt>(
 // A streaming-response transform for `format`. `handle` is called once per
 // parsed SSE event with the typed event; return the (edited) event, or null to
 // drop it. The SSE framing/parse/serialize is handled by SseEventTransform.
-// `meta` — see onRequest.
+// `meta` - see onRequest.
 export function onStreamEvent<F extends WireFmt>(
   format: F,
   name: string,
@@ -305,7 +305,7 @@ const pair = (from: WireFmt, to: WireFmt): FmtPair => `${from}->${to}`;
 
 // Request body converters, from -> to. Only the convertible pairs appear.
 // responses<->messages has no DIRECT converter (Responses only ever bridges
-// to/from Chat) — chatRequestToMessages/messagesRequestToChat compose with
+// to/from Chat) - chatRequestToMessages/messagesRequestToChat compose with
 // the responses<->chat pair below to cover it in two hops instead of
 // duplicating the Responses<->Anthropic mapping from scratch.
 const REQUEST_CONVERTERS: Partial<Record<FmtPair, BodyXform>> = {
@@ -340,8 +340,8 @@ const RESPONSE_CONVERTERS: Partial<Record<FmtPair, BodyXform>> = {
 
 // Streaming SSE bridge CHAINS, providerFmt -> clientFmt. Each entry is an
 // ORDERED list of Transform factories run as separate pipeline stages (the
-// engine already pipes route.stream as a sequence — see streamConvert in
-// engine.ts — so a two-hop bridge is just two stages, not a single composed
+// engine already pipes route.stream as a sequence - see streamConvert in
+// engine.ts - so a two-hop bridge is just two stages, not a single composed
 // Transform). Every direct pair is a one-element chain; responses<->messages
 // is the two-element chain that reuses the chat<->messages and
 // chat<->responses bridges instead of a bespoke responses<->messages SSE
@@ -384,7 +384,7 @@ export function streamBridgeChain(
   return STREAM_BRIDGES[pair(from, to)] ?? null;
 }
 
-// Thinking extraction is no longer applied here — it's a format-tagged default
+// Thinking extraction is no longer applied here - it's a format-tagged default
 // (see formats/thinking + formats/transforms/defaults), placed
 // pre-bridge by buildTransformPlan like any other tagged stage.
 
@@ -404,7 +404,7 @@ function fmtStage(
 // conversion, given the format each side is in on each side of the bridge:
 //   - pre:      tagged stages whose format == `preFmt` (run before conversion)
 //   - post:     tagged stages whose format == `postFmt` (run after conversion)
-//   - untagged: legacy stages with no format — placed post when a conversion
+//   - untagged: legacy stages with no format - placed post when a conversion
 //               exists (historical), but when preFmt === postFmt (no conversion)
 //               they merge into the pre bucket so their original position among
 //               tagged stages is preserved (otherwise untagged family defaults
@@ -427,15 +427,15 @@ function splitByFormat<T extends object>(
       else untagged.push(s);
     } else if (fmt === preFmt) pre.push(s);
     else if (fmt === postFmt) post.push(s);
-    // else: tagged for a format this hop never produces — skip.
+    // else: tagged for a format this hop never produces - skip.
   }
   return { pre, post, untagged };
 }
 
 // Compose the ordered transform stages for one attempt.
 //
-// `extra` are the pipeline's custom stages — thinking defaults, adapter
-// transforms, and model-config transforms — each either format-tagged or
+// `extra` are the pipeline's custom stages - thinking defaults, adapter
+// transforms, and model-config transforms - each either format-tagged or
 // untagged. Placement is by (phase, format) relative to the wire conversion:
 //
 //   request  (client → provider):
@@ -449,7 +449,7 @@ function splitByFormat<T extends object>(
 // tagged the client format runs pre-conversion; tagged the provider format runs
 // post-conversion. Untagged stages keep the historical post placement (model
 // transforms). Thinking defaults are tagged the PROVIDER format, so they land in
-// the pre-bridge response/stream slot — reading provider-native fields exactly
+// the pre-bridge response/stream slot - reading provider-native fields exactly
 // as the old standalone applyThinking/thinkingStream did.
 //
 // Optional observer, invoked once per stage as the plan is composed. Lets the
@@ -484,7 +484,7 @@ export function buildTransformPlan(
   // Response stage: provider -> client.
   const respFn = convert ? respConverter(providerFmt, clientFmt) : identity;
   // Stream bridge CHAIN: provider -> client (null when no conversion needed;
-  // usually one factory, responses<->messages is two — see streamBridgeChain).
+  // usually one factory, responses<->messages is two - see streamBridgeChain).
   const bridgeChain = convert
     ? streamBridgeChain(providerFmt, clientFmt)
     : null;
@@ -541,7 +541,7 @@ export function buildTransformPlan(
 
 // Apply an ordered list of body transforms, threading the context. A throwing
 // transform aborts the chain (caller decides how to handle). `onApply` (when
-// given) fires per stage with whether it changed the body — used for the
+// given) fires per stage with whether it changed the body - used for the
 // per-transformation trace log.
 export function applyBodyTransforms(
   transforms: Array<RequestTransform | ResponseTransform>,

@@ -14,12 +14,12 @@ import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
 class QwenCloudAdapter extends OpenAICompatibleAdapter {
   // The Anthropic-format endpoint lives at a sibling path to compatible-mode:
-  // <origin>/apps/anthropic — not under <origin>/compatible-mode/v1.
+  // <origin>/apps/anthropic - not under <origin>/compatible-mode/v1.
   // ctx.baseUrl is just the origin (e.g. https://token-plan...aliyuncs.com)
   // since the /compatible-mode/v1 prefix is carried in ctx.basePath; so we
   // can append to ctx.baseUrl directly.
   //
-  // Alibaba documents /apps/anthropic as the ANTHROPIC_BASE_URL — a BASE the
+  // Alibaba documents /apps/anthropic as the ANTHROPIC_BASE_URL - a BASE the
   // client appends the Messages path to, not an endpoint itself. Verified live
   // on both regions: POST /apps/anthropic/v1/messages -> 401 (auth reached) on
   // each, while the bare /apps/anthropic -> 404 on cn-beijing. Both hosts route
@@ -36,7 +36,7 @@ export const qwencloud = new QwenCloudAdapter({
   id: "qwencloud",
   label: "QwenCloud Token Plan",
   blurb:
-    "Alibaba QwenCloud Token Plan subscription — OpenAI-compatible and Anthropic-compatible endpoints.",
+    "Alibaba QwenCloud Token Plan subscription - OpenAI-compatible and Anthropic-compatible endpoints.",
   brand: "qwen",
   docsUrl: "https://help.aliyun.com/",
   defaults: {
@@ -58,7 +58,7 @@ export const qwencloud = new QwenCloudAdapter({
       key: "apiKeys",
       label: "API key",
       required: true,
-      hint: "One per line — rotated round-robin.",
+      hint: "One per line - rotated round-robin.",
     },
     {
       key: "baseUrl",
@@ -73,7 +73,7 @@ export const qwencloud = new QwenCloudAdapter({
 });
 
 // Same product, mainland China region. Identical path layout (including the
-// /apps/anthropic sibling), so it reuses QwenCloudAdapter — only the host differs.
+// /apps/anthropic sibling), so it reuses QwenCloudAdapter - only the host differs.
 //
 // Inference base URL: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
 // Anthropic-format endpoint: https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic
@@ -81,7 +81,7 @@ export const qwencloudCn = new QwenCloudAdapter({
   id: "qwencloud-cn",
   label: "QwenCloud Token Plan (CN)",
   blurb:
-    "Alibaba QwenCloud Token Plan subscription, mainland China region — OpenAI-compatible and Anthropic-compatible endpoints.",
+    "Alibaba QwenCloud Token Plan subscription, mainland China region - OpenAI-compatible and Anthropic-compatible endpoints.",
   brand: "qwen",
   docsUrl: "https://help.aliyun.com/zh/model-studio/token-plan-overview",
   defaults: {
@@ -103,7 +103,7 @@ export const qwencloudCn = new QwenCloudAdapter({
       key: "apiKeys",
       label: "API key",
       required: true,
-      hint: "One per line — rotated round-robin.",
+      hint: "One per line - rotated round-robin.",
     },
     {
       key: "baseUrl",

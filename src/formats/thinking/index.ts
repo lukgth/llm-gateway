@@ -1,4 +1,4 @@
-// Thinking / reasoning extraction — barrel.
+// Thinking / reasoning extraction - barrel.
 //
 // Everything the rest of the app needs to pull inline <thinking>/<reasoning>
 // blocks out of upstream responses and surface them as native reasoning fields:
@@ -7,7 +7,7 @@
 //   - chat-stream.ts      SseThinkingTransform (streaming, Chat SSE)
 //   - messages-stream.ts  AnthropicThinkingTransform (streaming, Messages SSE)
 //   - transforms.ts       defaultThinkingResponse / defaultThinkingStream
-//                         (tagged all-provider pipeline defaults — the seam
+//                         (tagged all-provider pipeline defaults - the seam
 //                         that wires converter.ts/chat-stream.ts/
 //                         messages-stream.ts into every route)
 //   - tags.ts             the single shared tag vocabulary every scanner builds on

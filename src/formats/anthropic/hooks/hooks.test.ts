@@ -1,6 +1,6 @@
 // Anthropic request-hook tests: thinking-config normalization, max_tokens
 // clamp, the composed stack, and that it fires on the converted (chat->messages)
-// body — plus hosted-tool pass-through.
+// body - plus hosted-tool pass-through.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

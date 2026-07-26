@@ -2,14 +2,14 @@ import { OpenAICompatibleAdapter } from "../base";
 import { WireKind } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
-// xAI — Grok models, OpenAI-compatible chat endpoint (api.x.ai/v1/…, same
-// origin+/v1 convention as openai.ts — no basePath needed).
+// xAI - Grok models, OpenAI-compatible chat endpoint (api.x.ai/v1/…, same
+// origin+/v1 convention as openai.ts - no basePath needed).
 class XaiAdapter extends OpenAICompatibleAdapter {}
 
 export const xai = new XaiAdapter({
   id: "xai",
   label: "xAI",
-  blurb: "Grok models from xAI — OpenAI-compatible.",
+  blurb: "Grok models from xAI - OpenAI-compatible.",
   brand: "xai",
   docsUrl: "https://docs.x.ai/",
   defaults: {

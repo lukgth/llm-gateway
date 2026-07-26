@@ -2,7 +2,7 @@
 //
 // Quirks are declarative per-provider behaviors (required headers, thinking
 // defaults, capability overrides). They are applied at provider-create and
-// model-import time only — never on the request hot path — so they cannot
+// model-import time only - never on the request hot path - so they cannot
 // regress streaming or format conversion.
 
 import {

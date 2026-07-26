@@ -162,15 +162,15 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
   });
 
   // Live test: goes through the resolved adapter's testProvider() seam (default:
-  // GET {baseUrl}{basePath}{modelsPath} with the key's auth — see
+  // GET {baseUrl}{basePath}{modelsPath} with the key's auth - see
   // ProviderAdapter.testProvider; a bespoke provider can override this, see
   // example-custom.ts). With no body, uses the SAME live rotation/health state
-  // a real chat request would (pickKeyForTest) — including a full round-robin
-  // advance — so the reported key isn't a fake stand-in; back-to-back test
+  // a real chat request would (pickKeyForTest) - including a full round-robin
+  // advance - so the reported key isn't a fake stand-in; back-to-back test
   // clicks cycle the pool exactly like traffic would. No model context (a
   // provider-level test isn't scoped to one). An explicit `key` in the body
   // (the per-key Test button in the Keys tab) bypasses pickKeyForTest entirely
-  // and sends exactly that key — it must be one of the provider's own
+  // and sends exactly that key - it must be one of the provider's own
   // configured keys (enabled or disabled), never an arbitrary caller-supplied
   // string.
   r.post("/providers/:id/test", requireAdmin, async (req, res) => {
@@ -198,7 +198,7 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
     }
   });
 
-  // Per-provider usage report — the same adapter async keyUsage() query as the
+  // Per-provider usage report - the same adapter async keyUsage() query as the
   // dashboard, scoped to one provider (the Keys tab awaits this).
   r.get("/providers/:id/usage", requireAdmin, async (req, res) => {
     const provider = getProvider(db, String(req.params.id));
@@ -221,12 +221,12 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
     }
   });
 
-  // The FULL resolved default transform stack for this provider — see
+  // The FULL resolved default transform stack for this provider - see
   // resolved-transforms.ts's header comment for exactly what's composed and
   // in what order. Read-only: this is a preview of what the engine already
   // does, not a config surface (nothing here is ever written back). Optional
   // ?upstreamId=<id> layers that specific imported model's own transforms on
-  // top, exactly as engine.ts's buildChain does for a live request — omit it
+  // top, exactly as engine.ts's buildChain does for a live request - omit it
   // to see the provider-level defaults every model starts from.
   r.get("/providers/:id/transforms/resolved", requireAdmin, (req, res) => {
     const provider = getProvider(db, String(req.params.id));
@@ -280,14 +280,14 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
           : {},
       // Normalized here (not just at persist-time in createProvider/updateProvider)
       // so an ad-hoc pre-create probe composes the SAME URL a saved provider
-      // would — a trailing slash or missing leading slash from a caller no
+      // would - a trailing slash or missing leading slash from a caller no
       // longer produces a malformed request (double slashes, or a suffix glued
       // on with no separator) that the persisted path wouldn't have shown.
       basePath: normBasePath(str(b.basePath)),
       modelsPath: str(b.modelsPath) ?? "/v1/models",
       proxy: b.proxy == null ? null : str(b.proxy),
       // Leave unset (not defaulted to "openai") when the caller doesn't pin a
-      // dialect — the wizard never sends one, and fetchUpstreamModels() probes
+      // dialect - the wizard never sends one, and fetchUpstreamModels() probes
       // the richer Anthropic dialect first in that case, falling back to
       // OpenAI's bare shape. Only pin here when the caller is explicit.
       format:
@@ -339,11 +339,11 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
         return res
           .status(400)
           .json({ error: { message: "upstreamId is required" } });
-      // Store ONLY the caller's own transforms — family/adapter defaults are no
+      // Store ONLY the caller's own transforms - family/adapter defaults are no
       // longer baked into the stored config (see docs/transforms-api.md § The
       // default provider transform stack). They still apply to every request
       // as an always-on base layer, recomputed live in engine.ts's buildChain,
-      // and are visible read-only via GET /providers/:id/transforms/resolved —
+      // and are visible read-only via GET /providers/:id/transforms/resolved -
       // so a fresh import shows the same effective behavior as before, it's
       // just not copied into this row's editable JSON anymore.
       const transforms = parseTransformConfig(b.transforms);
@@ -406,7 +406,7 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
             // Existing row => update, new row => create. Checked up front so the
             // response can distinguish the two (upsert alone can't tell us).
             const had = !!getProviderModel(db, providerId, upstreamId);
-            // Store ONLY the caller's own transforms — family/adapter defaults
+            // Store ONLY the caller's own transforms - family/adapter defaults
             // are applied live at request time, not baked into the row. See the
             // single-model POST above and docs/transforms-api.md.
             upsertProviderModel(db, {
@@ -521,7 +521,7 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
   });
 
   // Probe ONE imported model via the adapter's testModel() seam (currently a
-  // dummy stub on every adapter until one wires a real request — see
+  // dummy stub on every adapter until one wires a real request - see
   // ProviderAdapter.testModel). The Imported Models table's per-row "Test"
   // button.
   r.post("/providers/:id/models/:mid/test", requireAdmin, async (req, res) => {

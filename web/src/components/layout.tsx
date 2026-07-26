@@ -86,7 +86,7 @@ const NavItem = React.memo(function NavItem({
 }) {
   // Compute active state ourselves rather than via NavLink's className
   // callback: this node is rendered through Radix's <Slot> (TooltipTrigger
-  // asChild), and Slot can't merge a *function* className — it would stringify
+  // asChild), and Slot can't merge a *function* className - it would stringify
   // it, dropping every real class and collapsing the flex layout. A plain
   // string className merges correctly.
   const resolved = useResolvedPath(item.to);
@@ -108,7 +108,7 @@ const NavItem = React.memo(function NavItem({
     >
       {/* Dim the icon with element opacity (not a color alpha) so the stroked
           SVG doesn't double-up alpha at self-intersections. The label keeps its
-          color alpha above — flat text has no overlap to worry about. */}
+          color alpha above - flat text has no overlap to worry about. */}
       <item.icon
         className={cn(
           "h-4 w-4 shrink-0 transition-opacity duration-200",
@@ -131,7 +131,7 @@ const NavItem = React.memo(function NavItem({
     </NavLink>
   );
 
-  // The trigger stays mounted in the same tree whether or not it's collapsed —
+  // The trigger stays mounted in the same tree whether or not it's collapsed -
   // swapping between a bare node and a wrapped one would remount the NavLink and
   // kill the opacity transition. Only the tooltip content is gated on collapsed.
   return (
@@ -386,7 +386,7 @@ export function Layout() {
     <TooltipProvider>
       <div className="flex h-screen w-screen overflow-hidden">
         <Sidebar />
-        {/* min-w-0: this is a row-flex item next to Sidebar — without it, the
+        {/* min-w-0: this is a row-flex item next to Sidebar - without it, the
             default min-width:auto lets any unshrinkable descendant (e.g. an
             unwrapped PageHeader) push this column wider than the viewport,
             which gets silently clipped by overflow-hidden above instead of

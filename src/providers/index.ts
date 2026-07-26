@@ -1,4 +1,4 @@
-// Providers — barrel export (registry + adapter base + quirks + catalog types).
+// Providers - barrel export (registry + adapter base + quirks + catalog types).
 export {
   listProviderTemplates,
   getProviderTemplate,

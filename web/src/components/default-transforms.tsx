@@ -1,4 +1,4 @@
-// Read-only preview of a provider's DEFAULT transform stack — what applies to
+// Read-only preview of a provider's DEFAULT transform stack - what applies to
 // every request through this provider automatically, before any per-model
 // customization. Fetches GET /api/providers/:id/transforms/resolved (see
 // src/admin/routes/resolved-transforms.ts and docs/transforms-api.md § "The
@@ -7,7 +7,7 @@
 // Deliberately NON-EDITABLE: this is a window onto engine.ts's actual
 // composition order (builtin all-provider hooks -> this adapter's own
 // transforms -> the provider family's declared defaults), not a config
-// surface — editing what a model does differently from its family default
+// surface - editing what a model does differently from its family default
 // still happens in TransformEditor (the model's OWN transforms), which this
 // panel sits above, clearly separated, so "what always happens" and "what
 // I've customized" never look like the same kind of thing.
@@ -17,10 +17,10 @@
 // toggles the whole card open/closed, `bare` drops the outer chrome for a
 // caller that already renders its own heading (the Imported Models
 // row-expander). Inside, stages are grouped two ways to stay compact:
-//   1. by phase (Request / Response / Stream) — always.
+//   1. by phase (Request / Response / Stream) - always.
 //   2. within a phase, consecutive stages sharing the same `source` AND
 //      `group` (see ResolvedTransformStage.group) collapse into ONE row with
-//      their own small disclosure, instead of one row per stage — e.g. the
+//      their own small disclosure, instead of one row per stage - e.g. the
 //      four Anthropic request hooks read as "Anthropic request
 //      normalization (4)" until expanded.
 
@@ -50,17 +50,17 @@ const PHASE_LABEL: Record<"request" | "response" | "stream", string> = {
   stream: "Stream",
 };
 
-// Smooth height animation for every <CollapsibleContent> in this file —
+// Smooth height animation for every <CollapsibleContent> in this file -
 // tw-animate-css's collapsible-down/up keyframes key off the
 // --radix-collapsible-content-height custom property Radix sets automatically,
 // so this is a drop-in className, not a hand-rolled transition. Same
-// duration + S-curve as the sidebar's own nav-group collapse (layout.tsx) —
+// duration + S-curve as the sidebar's own nav-group collapse (layout.tsx) -
 // it's the identical grid-height motion, just Radix-driven here.
 const COLLAPSIBLE_CONTENT =
   "overflow-hidden duration-250 ease-sidebar data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up";
 
 // Builtin/adapter stages carry only a raw stage name when no `label` was set
-// at the declaration site (e.g. "anthropic:thinking-signature") — humanize
+// at the declaration site (e.g. "anthropic:thinking-signature") - humanize
 // the suffix after the LAST colon for display; the full name still shows as
 // a title attribute so it's never fully hidden.
 function humanizeStageName(name: string): string {
@@ -96,7 +96,7 @@ function ParamChips({ params }: { params: Record<string, unknown> }) {
   );
 }
 
-// A single stage's content (label + source badge + blurb + params) — shared
+// A single stage's content (label + source badge + blurb + params) - shared
 // between a standalone row and a row nested inside an expanded group.
 function StageBody({ stage }: { stage: ResolvedTransformStage }) {
   return (
@@ -124,7 +124,7 @@ function StageBody({ stage }: { stage: ResolvedTransformStage }) {
   );
 }
 
-// A single, ungrouped stage — one compact row.
+// A single, ungrouped stage - one compact row.
 function StageRow({ stage }: { stage: ResolvedTransformStage }) {
   return (
     <div
@@ -136,7 +136,7 @@ function StageRow({ stage }: { stage: ResolvedTransformStage }) {
   );
 }
 
-// Multiple stages sharing a `group` — one collapsible row, closed by default,
+// Multiple stages sharing a `group` - one collapsible row, closed by default,
 // with a count badge and a combined title so the group reads as one
 // conceptual unit ("Anthropic request normalization (4)") until expanded.
 function StageGroupRow({ stages }: { stages: ResolvedTransformStage[] }) {
@@ -192,7 +192,7 @@ function StageGroupRow({ stages }: { stages: ResolvedTransformStage[] }) {
   );
 }
 
-// Cluster consecutive stages by (source, group) — a `group` is only ever
+// Cluster consecutive stages by (source, group) - a `group` is only ever
 // meaningful within the same source (family/model stages don't set one), and
 // consecutive-only keeps the original pipeline order intact (no reordering,
 // just visual folding of adjacent same-group stages).
@@ -259,7 +259,7 @@ export function DefaultTransformsPanel({
    *  (shows what's overridden), same as a live request would resolve them. */
   upstreamId?: string;
   bare?: boolean;
-  /** Whether the (non-bare) card starts expanded. Default collapsed — this
+  /** Whether the (non-bare) card starts expanded. Default collapsed - this
    *  panel is a reference an operator checks occasionally, not something
    *  that needs to dominate the page on every load. */
   defaultOpen?: boolean;
@@ -304,7 +304,7 @@ export function DefaultTransformsPanel({
     </p>
   ) : !data || total === 0 ? (
     <p className="px-4 py-3 text-xs text-muted-foreground">
-      This provider has no default transforms — requests forward as converted,
+      This provider has no default transforms - requests forward as converted,
       with no automatic body changes.
     </p>
   ) : (
@@ -342,7 +342,7 @@ export function DefaultTransformsPanel({
 
   if (bare) {
     // Nested inside an already-expanded parent that renders its OWN "Default
-    // transforms" heading right above this (the imported-model row) — the
+    // transforms" heading right above this (the imported-model row) - the
     // trigger text here deliberately doesn't repeat that label, just the
     // count, so the two don't read as duplicate headings stacked on top of
     // each other. A second layer of card chrome is unnecessary here too, but

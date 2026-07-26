@@ -1,4 +1,4 @@
-// Provider — an upstream LLM endpoint the gateway routes to, plus the wire-format
+// Provider - an upstream LLM endpoint the gateway routes to, plus the wire-format
 // and endpoint vocabulary shared across routing.
 
 export type AuthScheme = "bearer" | "xapikey" | "both" | "passthrough";
@@ -20,7 +20,7 @@ export const PROVIDER_FORMATS: ProviderFormat[] = ["anthropic", "openai"];
 // path). A provider declares which kinds it accepts (`endpoints`); the adapter
 // assembles the actual URL path for each kind from the origin + basePath, with an
 // optional per-kind override for non-standard layouts (`endpointPaths`). This is
-// the single endpoint vocabulary — identical to the engine's WireFmt.
+// the single endpoint vocabulary - identical to the engine's WireFmt.
 export type WireKind = "chat" | "messages" | "responses";
 
 // Named members so code reads `WireKind.Chat` instead of the bare "chat" string
@@ -62,7 +62,7 @@ export interface Provider {
    * Generic-adapter selector for providers with NO catalogId: "anthropic" picks
    * the generic Anthropic adapter, "openai" (or null) the generic OpenAI one.
    * null when the provider is adapter-backed (catalogId set) or `nativeConversion`
-   * is on — in both cases the format is derived/irrelevant, not stored. Never the
+   * is on - in both cases the format is derived/irrelevant, not stored. Never the
    * source of truth for an adapter's own format (that's the adapter's nativeFmt).
    */
   format: ProviderFormat | null;

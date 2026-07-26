@@ -14,7 +14,7 @@
 //   ≤4.5 (Sonnet/Opus)     NO        required         OK       summarized
 //
 // Models whose display defaults to "omitted" get `display: "summarized"`
-// injected so thinking content is always returned — unless the client
+// injected so thinking content is always returned - unless the client
 // explicitly set display already.
 //
 // Runs AFTER sanitize-request (effort is already rescued) and BEFORE
@@ -49,7 +49,7 @@ export function normalizeThinkingMode(
 
   ensureThinkingWhenEffort(body);
 
-  // Fable 5 / Mythos 5 — adaptive always on, disabled not supported.
+  // Fable 5 / Mythos 5 - adaptive always on, disabled not supported.
   // Display defaults to "omitted" upstream.
   if (FABLE.test(model) || MYTHOS.test(model)) {
     forceAdaptive(body);
@@ -57,7 +57,7 @@ export function normalizeThinkingMode(
     return body;
   }
 
-  // Mythos Preview — adaptive default, disabled not supported,
+  // Mythos Preview - adaptive default, disabled not supported,
   // enabled+budget still accepted. Display defaults to "omitted".
   if (MYTHOS_PREVIEW.test(model)) {
     disabledToAdaptive(body);
@@ -65,7 +65,7 @@ export function normalizeThinkingMode(
     return body;
   }
 
-  // Opus 4.7+ / 5+ — only adaptive works; enabled is rejected.
+  // Opus 4.7+ / 5+ - only adaptive works; enabled is rejected.
   // Display defaults to "omitted".
   if (OPUS_47_PLUS.test(model)) {
     enabledToAdaptive(body);
@@ -73,7 +73,7 @@ export function normalizeThinkingMode(
     return body;
   }
 
-  // Sonnet 5+ — adaptive default, can be disabled, enabled is rejected.
+  // Sonnet 5+ - adaptive default, can be disabled, enabled is rejected.
   // Display defaults to "omitted".
   if (SONNET_5_PLUS.test(model)) {
     enabledToAdaptive(body);
@@ -81,20 +81,20 @@ export function normalizeThinkingMode(
     return body;
   }
 
-  // Opus 4.6 / Sonnet 4.6 — both adaptive and enabled accepted (enabled
+  // Opus 4.6 / Sonnet 4.6 - both adaptive and enabled accepted (enabled
   // deprecated). Display defaults to "summarized" (no injection needed).
   if (OPUS_46.test(model) || SONNET_46.test(model)) {
     return body;
   }
 
-  // Haiku / older models (≤4.5) — no adaptive support.
+  // Haiku / older models (≤4.5) - no adaptive support.
   // Display defaults to "summarized" (no injection needed).
   if (HAIKU.test(model)) {
     return adaptiveToEnabled(body);
   }
 
   // Any other Claude model (older sonnet/opus 4.5, 3.x, etc.)
-  // or non-Claude models — downgrade adaptive to enabled.
+  // or non-Claude models - downgrade adaptive to enabled.
   if (/claude/i.test(model)) {
     return adaptiveToEnabled(body);
   }
@@ -103,7 +103,7 @@ export function normalizeThinkingMode(
 }
 
 // If output_config.effort is set but thinking is absent, inject adaptive
-// thinking — effort without thinking is a no-op on the Anthropic API.
+// thinking - effort without thinking is a no-op on the Anthropic API.
 function ensureThinkingWhenEffort(body: AnthropicMessagesRequest): void {
   if (body.thinking && typeof body.thinking === "object") return;
   const oc = body.output_config;
@@ -111,7 +111,7 @@ function ensureThinkingWhenEffort(body: AnthropicMessagesRequest): void {
   body.thinking = { type: "adaptive" };
 }
 
-// Force adaptive — used for models where thinking is always on.
+// Force adaptive - used for models where thinking is always on.
 // Converts any thinking config to adaptive; strips budget_tokens.
 function forceAdaptive(
   body: AnthropicMessagesRequest,
@@ -134,7 +134,7 @@ function forceAdaptive(
   return body;
 }
 
-// Convert disabled to adaptive — for models where disabled is not supported
+// Convert disabled to adaptive - for models where disabled is not supported
 // but enabled+budget is still accepted.
 function disabledToAdaptive(
   body: AnthropicMessagesRequest,
@@ -147,7 +147,7 @@ function disabledToAdaptive(
   return body;
 }
 
-// Convert enabled to adaptive — for models that reject enabled but accept
+// Convert enabled to adaptive - for models that reject enabled but accept
 // adaptive. Preserves disabled (turning thinking off is valid on these models).
 function enabledToAdaptive(
   body: AnthropicMessagesRequest,
@@ -161,7 +161,7 @@ function enabledToAdaptive(
   return body;
 }
 
-// Convert adaptive to enabled — for older models that don't support adaptive.
+// Convert adaptive to enabled - for older models that don't support adaptive.
 // Strips output_config.effort which these models also reject.
 function adaptiveToEnabled(
   body: AnthropicMessagesRequest,
@@ -179,7 +179,7 @@ function adaptiveToEnabled(
 }
 
 // For models whose API defaults to display: "omitted", inject
-// display: "summarized" so thinking content is always returned — unless
+// display: "summarized" so thinking content is always returned - unless
 // the client explicitly set display already or thinking is disabled.
 function defaultDisplay(body: AnthropicMessagesRequest): void {
   const t = body.thinking as ThinkingConfig | undefined;

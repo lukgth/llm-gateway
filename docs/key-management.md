@@ -1,6 +1,6 @@
 # Key Management
 
-Reference for the structured provider key system — per-key metadata,
+Reference for the structured provider key system - per-key metadata,
 batch operations, URL import, and background polling.
 
 ---
@@ -18,14 +18,14 @@ table. Keys are **never** stored on the `providers` table directly (the legacy
 | `id` | `string` | 8-char hex random identifier |
 | `providerId` | `string` | FK → `providers.id` (CASCADE delete) |
 | `credential` | `string` | The raw API key (e.g. `sk-abc123…`) |
-| `credHash` | `string` | SHA-256 hex prefix (32 chars) of `credential` — same algorithm used by KeyHealthStore for health tracking and affinity |
+| `credHash` | `string` | SHA-256 hex prefix (32 chars) of `credential` - same algorithm used by KeyHealthStore for health tracking and affinity |
 | `enabled` | `boolean` | Whether the key participates in round-robin rotation |
 | `metadata` | `Record<string, string>` | Arbitrary key-value pairs (uuid, email, tier, etc.) |
 | `label` | `string \| null` | Optional human-readable name |
 | `createdAt` | `string` | ISO-8601 timestamp |
 | `updatedAt` | `string` | ISO-8601 timestamp |
 
-Uniqueness is enforced by `(provider_id, cred_hash)` — adding a duplicate
+Uniqueness is enforced by `(provider_id, cred_hash)` - adding a duplicate
 credential to the same provider is a no-op.
 
 ### `KeyCount`
@@ -83,7 +83,7 @@ to `true`.
 }
 ```
 
-All fields are optional — only provided fields are changed.
+All fields are optional - only provided fields are changed.
 
 ### Batch Operations
 
@@ -91,7 +91,7 @@ All fields are optional — only provided fields are changed.
 POST /api/providers/:id/keys/batch
 ```
 
-Atomic transaction — all operations succeed or none do. Max **5,000** total
+Atomic transaction - all operations succeed or none do. Max **5,000** total
 operations per call.
 
 #### Request body
@@ -130,7 +130,7 @@ All arrays are optional. Duplicates in `add` are silently skipped.
 
 ### Batch Testing (WebSocket)
 
-Testing many keys' connectivity is a WebSocket job, not a REST call — one
+Testing many keys' connectivity is a WebSocket job, not a REST call - one
 `batch-test` message queues up to 200 keys at concurrency 5, and results
 stream back per-key (tagged with their request index) instead of waiting on
 N individual `POST /providers/:id/test` round-trips. This is what the Keys
@@ -203,7 +203,7 @@ formats (auto-detected).
 
 ### Format 1: JSON String Array
 
-The simplest format — an array of credential strings.
+The simplest format - an array of credential strings.
 
 ```json
 ["sk-key-alpha", "sk-key-beta", "sk-key-gamma"]
@@ -245,7 +245,7 @@ Full control over per-key metadata, labels, and enabled state.
 |-------|------|----------|-------------|
 | `credential` | `string` | **yes** | The raw API key |
 | `key` | `string` | alt | Alias for `credential` (either works) |
-| `metadata` | `Record<string, string>` | no | Arbitrary key-value pairs — merged with `defaultMetadata` (per-key values win) |
+| `metadata` | `Record<string, string>` | no | Arbitrary key-value pairs - merged with `defaultMetadata` (per-key values win) |
 | `label` | `string` | no | Human-readable identifier |
 | `enabled` | `boolean` | no | Defaults to `true` if omitted |
 
@@ -333,7 +333,7 @@ is the **source of truth**:
 
 - Keys in the response that don't exist locally are **added**
 - Keys in the response that exist but are disabled are **re-enabled**
-- Local keys not in the response are **disabled** (not deleted) — health data,
+- Local keys not in the response are **disabled** (not deleted) - health data,
   affinity, and metadata are preserved
 - Keys that reappear in a later poll are **re-enabled** automatically
 
@@ -363,7 +363,7 @@ it.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `pollUrl` | `string` | — | **Required.** URL to fetch keys from |
+| `pollUrl` | `string` | - | **Required.** URL to fetch keys from |
 | `pollHeaders` | `Record<string, string>` | `{}` | Headers attached to every poll request (e.g. auth tokens) |
 | `pollIntervalSec` | `number` | `300` | Minimum 30 seconds |
 | `enabled` | `boolean` | `true` | Pause/resume without deleting config |
@@ -378,7 +378,7 @@ it.
 ### Error handling
 
 - Poll failures are logged and stored in `lastSyncError`, but polling
-  continues on the next interval — one transient failure doesn't stop the
+  continues on the next interval - one transient failure doesn't stop the
   service
 - The poll timer is `unref()`'d so it doesn't prevent Node.js from exiting
   during graceful shutdown
@@ -412,7 +412,7 @@ buffered responses, 429s, and other error responses can all update usage.
 
 ## Per-Key Metadata
 
-Metadata is a `Record<string, string>` — flat string key-value pairs attached
+Metadata is a `Record<string, string>` - flat string key-value pairs attached
 to each key. There is no enforced schema; use whatever keys make sense for
 your organization.
 
@@ -425,7 +425,7 @@ your organization.
 | `tier` | `enterprise` | Tag keys by subscription level |
 | `region` | `us-east-1` | Geographic affinity tagging |
 | `source` | `auto-import` | Track how the key was added |
-| `expires` | `2025-12-31` | Soft expiration hint (gateway doesn't auto-disable — your poll source should handle expiry) |
+| `expires` | `2025-12-31` | Soft expiration hint (gateway doesn't auto-disable - your poll source should handle expiry) |
 
 Metadata is stored as JSON in the `provider_keys` table and is returned on all
 key list/detail endpoints. The gateway resolves metadata for the exact key
@@ -464,6 +464,6 @@ and model affinity data carries over seamlessly.
 ## Gateway API Key Security
 
 Gateway API keys (used by clients to authenticate with the gateway) are stored
-as SHA-256 hashes only. The full plaintext key is returned exactly once — at
-creation time — and is never persisted or retrievable afterwards. There is no
+as SHA-256 hashes only. The full plaintext key is returned exactly once - at
+creation time - and is never persisted or retrievable afterwards. There is no
 "reveal" or "copy full key" endpoint.

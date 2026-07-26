@@ -1,4 +1,4 @@
-// AnthropicThinkingTransform tests — inline <thinking> tag extraction on a
+// AnthropicThinkingTransform tests - inline <thinking> tag extraction on a
 // native /v1/messages SSE stream. Had no dedicated test file before (only
 // exercised indirectly via engine-level streaming tests). Covers: block
 // splitting, index remapping around tool_use, the signature_delta emission
@@ -197,7 +197,7 @@ test("emits a signature_delta with the synthetic signature before closing a synt
 
 test("no empty thinking block is emitted when a chunk contains multiple <thinking> tag opens", async () => {
   // A single text_delta containing two complete thinking tags plus trailing
-  // content — exercises the old blockStarts>1 path that used to emit an
+  // content - exercises the old blockStarts>1 path that used to emit an
   // empty {thinking:"",signature:""} placeholder block.
   const raw = await runTransform(new AnthropicThinkingTransform(), [
     sseEvent("message_start", { type: "message_start", message: {} }),
@@ -245,7 +245,7 @@ test("no empty thinking block is emitted when a chunk contains multiple <thinkin
     assert.notEqual((s.data.delta as { signature: string }).signature, "");
   }
   // The concatenated reasoning text from both tags still reaches the client
-  // (folded into whichever thinking block(s) got opened) — nothing is lost.
+  // (folded into whichever thinking block(s) got opened) - nothing is lost.
   const allReasoning = events
     .filter(
       (e) =>
@@ -329,14 +329,14 @@ test("tool_use blocks keep contiguous remapped indices around an inserted thinki
       (e.data.content_block as { type?: string })?.type === "tool_use",
   )!;
   // The thinking block took index 0, so the remapped tool_use must be index 1
-  // (contiguous — not the raw upstream index, which also happened to be 1
+  // (contiguous - not the raw upstream index, which also happened to be 1
   // here, but the mapping must be deliberate, not coincidental).
   assert.equal(toolStart.data.index, 1);
 });
 
 test("real upstream-emitted thinking blocks (not inline-tag-extracted) pass through untouched, signature intact", async () => {
   // The upstream ITSELF emits a native thinking content_block (no inline
-  // <thinking> tag involved) — this transform must not touch its signature.
+  // <thinking> tag involved) - this transform must not touch its signature.
   const raw = await runTransform(new AnthropicThinkingTransform(), [
     sseEvent("message_start", { type: "message_start", message: {} }),
     sseEvent("content_block_start", {
@@ -367,7 +367,7 @@ test("real upstream-emitted thinking blocks (not inline-tag-extracted) pass thro
       e.event === "content_block_delta" &&
       (e.data.delta as { type?: string })?.type === "signature_delta",
   );
-  // Exactly the one REAL signature_delta from upstream — the transform must
+  // Exactly the one REAL signature_delta from upstream - the transform must
   // not inject a second synthetic one for a block it didn't synthesize.
   assert.equal(sigDeltas.length, 1);
   assert.equal(

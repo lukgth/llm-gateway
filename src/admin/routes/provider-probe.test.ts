@@ -1,4 +1,4 @@
-// testProviderModel()/makeLogStage() debug-tracing seam — verifies the
+// testProviderModel()/makeLogStage() debug-tracing seam - verifies the
 // logStage plumbing added so probeEndpoint() prints the same per-stage XFORM
 // trace a real request gets: gated on settings.debugLogging, undefined (no
 // tracing, zero cost) when db/logger are omitted or the setting is off, wired
@@ -12,11 +12,11 @@
 //
 // IMPORTANT: none of these tests monkey-patch process.stdout.write. node:test's
 // own reporter defers writing completed tests' TAP output to stdout, and if a
-// test patches process.stdout.write — even briefly, even correctly restored in
-// a finally block — any of the reporter's pending writes for EARLIER,
+// test patches process.stdout.write - even briefly, even correctly restored in
+// a finally block - any of the reporter's pending writes for EARLIER,
 // already-finished tests that happen to fire while the patch is active get
 // silently swallowed instead of reaching the terminal (repro'd: those tests
-// vanish from the run summary entirely — not fail, just never reported, and
+// vanish from the run summary entirely - not fail, just never reported, and
 // the process still exits 0). Spy on Logger.prototype.transform instead,
 // which is call-count/argument observable without touching the global stream.
 
@@ -60,7 +60,7 @@ function withServer(
 
 // Spy on Logger.prototype.transform for the duration of `fn`, returning the
 // calls observed. Restores the original method even if `fn` throws. Safe to
-// use across an await boundary (unlike patching process.stdout.write — see
+// use across an await boundary (unlike patching process.stdout.write - see
 // the file-level doc comment above).
 async function spyOnTransform(
   fn: () => Promise<void>,
@@ -110,7 +110,7 @@ test("makeLogStage: returns a callback that logs via Logger.transform when debug
 
 test("testProviderModel: db/logger given but debugLogging off -> no console tracing", async () => {
   const db = freshDb();
-  // A real (if unhelpful) local listener — a genuine unreachable-address
+  // A real (if unhelpful) local listener - a genuine unreachable-address
   // probe risks an uncaught DNS/connection-refused exception escaping the
   // adapter in a way this test doesn't want to depend on. 500 makes
   // probeEndpoint() report a clean failure with no upstream body to parse.
@@ -258,7 +258,7 @@ test("rawRequest: a redirect loop stops at MAX_REDIRECTS and returns the last re
       method: "GET",
       headers: {},
     });
-    // Never hangs, never throws — settles on a 301 after a bounded hop count.
+    // Never hangs, never throws - settles on a 301 after a bounded hop count.
     assert.equal(result.status, 301);
     assert.ok(hops <= 6, `expected a bounded hop count, got ${hops}`);
   } finally {
@@ -290,7 +290,7 @@ test("rawRequest: a redirect with no Location header returns the redirect respon
 // during the TCP+TLS handshake) surfaced in the UI as a bare, undiagnosable
 // "Failed (0)". Three things were wrong, one test each below:
 //   1. a connection dropped MID-BODY emits 'error' on the RESPONSE, which had
-//      no handler — the promise never settled and Node saw an unhandled
+//      no handler - the promise never settled and Node saw an unhandled
 //      stream error,
 //   2. a null status was coerced to 0 by `?? 0` in the transports, inventing
 //      an HTTP status that never existed instead of reporting the real cause,
@@ -363,7 +363,7 @@ test("rawRequest: a deterministic non-2xx is NOT retried", async () => {
       method: "GET",
       headers: {},
     });
-    // A 401 is a real answer — retrying only doubles the wait for the same result.
+    // A 401 is a real answer - retrying only doubles the wait for the same result.
     assert.equal(result.status, 401);
     assert.equal(attempts, 1);
   } finally {

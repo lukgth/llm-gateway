@@ -35,7 +35,7 @@ export interface WsPong {
   type: "pong";
 }
 
-// Batch key testing — mirrors src/ws/schema.ts's WsBatchTest. A parallel
+// Batch key testing - mirrors src/ws/schema.ts's WsBatchTest. A parallel
 // message family (not a topic subscribe/push, not a one-shot request):
 // the server streams one progress event per completed key, in whatever
 // order they finish, followed by a single terminal "done".
@@ -80,7 +80,7 @@ export interface WsError {
   code?: number;
 }
 
-// One per completed key, streamed as results land — `index` is the key's
+// One per completed key, streamed as results land - `index` is the key's
 // position in the request's `keyIds` array, stable regardless of
 // completion order.
 export interface WsBatchTestProgress {
@@ -99,7 +99,7 @@ export interface WsBatchTestDone {
 }
 
 // Fatal setup failure (unknown provider/key, duplicate batch id already
-// running) — NOT an individual key's test failing (that's a normal
+// running) - NOT an individual key's test failing (that's a normal
 // WsBatchTestProgress with result.ok === false).
 export interface WsBatchTestError {
   type: "batch-test-error";

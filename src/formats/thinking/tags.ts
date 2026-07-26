@@ -1,4 +1,4 @@
-// The thinking/reasoning tag vocabulary — defined in ONE place.
+// The thinking/reasoning tag vocabulary - defined in ONE place.
 //
 // Both the non-streaming converter (converter.ts) and the streaming parser
 // (stream.ts) recognize the same set of tags. Keeping the pattern here means the

@@ -231,7 +231,7 @@ test("defaultTransformsForCatalog resolves by id", () => {
 test("every Anthropic-native catalog adapter inherits the SAME family default stack", () => {
   // anthropic.ts, claude-code.ts, and the generic anthropic-compatible.ts
   // all declare quirks.defaultTransforms = ANTHROPIC_DEFAULT_TRANSFORMS (see that
-  // constant's doc comment in catalog/anthropic-compatible.ts) — a new family-wide
+  // constant's doc comment in catalog/anthropic-compatible.ts) - a new family-wide
   // default only needs to be added in ONE place and every one of these three
   // picks it up automatically. Asserts both the CONTENT (every family member
   // gets prompt caching + tool-arg sanitize) and the IDENTITY (literally the

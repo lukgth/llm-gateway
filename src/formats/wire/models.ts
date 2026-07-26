@@ -1,6 +1,6 @@
 // Wire types for the model-list endpoints (GET /v1/models).
 //
-// Two RAW upstream shapes exist in the wild — the parse targets of the
+// Two RAW upstream shapes exist in the wild - the parse targets of the
 // fetchModelList() primitive:
 //
 //   OpenAI    { object:"list", data:[{ id, object:"model", created, owned_by }] }
@@ -75,6 +75,6 @@ export interface UpstreamModel {
   created?: string;
   /** Anthropic-style capability listing (omitted when the upstream has none). */
   capabilities?: ModelCapabilities;
-  /** The original upstream entry, verbatim — for power users / debugging. */
+  /** The original upstream entry, verbatim - for power users / debugging. */
   raw?: Record<string, unknown>;
 }

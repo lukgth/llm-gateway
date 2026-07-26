@@ -6,7 +6,7 @@ import {
 import { WireKind } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
-// OpenRouter — aggregates many providers behind one OpenAI-compatible API.
+// OpenRouter - aggregates many providers behind one OpenAI-compatible API.
 // Note the /api path prefix in the base URL.
 //
 // Key usage: GET https://openrouter.ai/api/v1/key. Monetary fields are USD;
@@ -108,7 +108,7 @@ class OpenRouterAdapter extends OpenAICompatibleAdapter {
       return {
         windows: [],
         unavailable: true,
-        message: "Key disabled — usage not queried.",
+        message: "Key disabled - usage not queried.",
       };
     }
 
@@ -240,7 +240,7 @@ class OpenRouterAdapter extends OpenAICompatibleAdapter {
 export const openrouter = new OpenRouterAdapter({
   id: "openrouter",
   label: "OpenRouter",
-  blurb: "Unified access to hundreds of models — OpenAI-compatible.",
+  blurb: "Unified access to hundreds of models - OpenAI-compatible.",
   brand: "openrouter",
   docsUrl: "https://openrouter.ai/docs",
   defaults: {

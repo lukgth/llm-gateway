@@ -260,7 +260,7 @@ test("anthropic-cache skips thinking blocks when marking the last message", () =
 test("anthropic-cache is a no-op on an OpenAI Chat-shaped body (role:tool)", () => {
   // anthropic-cache is now also an unconditional Anthropic-FAMILY default (see
   // ANTHROPIC_DEFAULT_TRANSFORMS), applied regardless of the resolved hop
-  // format — so it needs its own shape guard for the case an operator pins a
+  // format - so it needs its own shape guard for the case an operator pins a
   // provider endpoint away from Messages. `role:"tool"` never appears in a
   // genuine Anthropic Messages body (Anthropic uses tool_result CONTENT
   // BLOCKS instead), so this is an unambiguous OpenAI signal.
@@ -275,7 +275,7 @@ test("anthropic-cache is a no-op on an OpenAI Chat-shaped body (role:tool)", () 
       ],
     },
   );
-  // system was left as the original STRING — proof the transform didn't even
+  // system was left as the original STRING - proof the transform didn't even
   // begin its normal system -> block-array rewrite, let alone mark anything.
   assert.equal(body.system, "sys");
 });

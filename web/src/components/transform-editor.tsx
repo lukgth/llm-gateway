@@ -1,7 +1,7 @@
 // Per-model transform editor. Pick transforms from the library (GET
 // /api/transforms), configure their params from the declared spec, order them,
 // and remove them. Emits ModelTransformConfig[]. Used by the imported-model
-// editor. Purely controlled — the parent owns the value.
+// editor. Purely controlled - the parent owns the value.
 
 import { useEffect, useState } from "react";
 import { Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
@@ -173,7 +173,7 @@ export function TransformEditor({
             <SelectContent>
               {lib.map((d) => (
                 <SelectItem key={d.id} value={d.id}>
-                  {d.label} — {d.blurb}
+                  {d.label} - {d.blurb}
                 </SelectItem>
               ))}
             </SelectContent>

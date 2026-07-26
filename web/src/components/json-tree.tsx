@@ -8,7 +8,7 @@
 import { useCallback } from "react";
 import { JsonView } from "react-json-view-lite";
 
-// Class map — every key points at one of our own `jt-*` classes so none of the
+// Class map - every key points at one of our own `jt-*` classes so none of the
 // library's default styling leaks in.
 const style = {
   container: "jt-container",

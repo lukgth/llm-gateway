@@ -1,17 +1,17 @@
 // Per-provider imported-models page (/providers/:id/imported).
 //
-// Imported models are the building blocks a chain references — they are NOT
+// Imported models are the building blocks a chain references - they are NOT
 // exposed on /v1/models. This page is built for fast management:
 //   - a quick "add upstream ID" bar (no sheet round-trip)
-//   - inline row-expand editing (metadata + transforms) — no context switch
+//   - inline row-expand editing (metadata + transforms) - no context switch
 //   - multi-select + bulk delete
 //   - a "used by" column linking to the exposed models that reference each one
 //   - the "import from upstream" discovery sheet (bulk pick many at once)
 //
 // Split across sibling files by concern:
-//   add-model-dialog.tsx — AddModelDialog (quick add-by-id)
-//   model-row.tsx         — ModelRow (collapsed summary + inline editor)
-//   import-sheet.tsx      — ImportSheet (upstream discovery + bulk import)
+//   add-model-dialog.tsx - AddModelDialog (quick add-by-id)
+//   model-row.tsx         - ModelRow (collapsed summary + inline editor)
+//   import-sheet.tsx      - ImportSheet (upstream discovery + bulk import)
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -181,7 +181,7 @@ export default function ImportedModels() {
       />
 
       <Card className="gap-0 p-0">
-        {/* Bulk actions + search — integrated as the table's own toolbar strip
+        {/* Bulk actions + search - integrated as the table's own toolbar strip
             rather than a separate floating bar above the card. */}
         <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
           {selected.size > 0 && (
@@ -205,7 +205,7 @@ export default function ImportedModels() {
             widths={["10%", "60%", "50%", "25%", "25%", "25%", "20%", "40%"]}
           />
         ) : items.length === 0 ? (
-          <EmptyState msg="No imported models yet — add one above or import from upstream" />
+          <EmptyState msg="No imported models yet - add one above or import from upstream" />
         ) : filtered.length === 0 ? (
           <EmptyState msg="No imported models match the search" />
         ) : (
@@ -231,7 +231,7 @@ export default function ImportedModels() {
                 <TableHead className="w-24 text-right">Max out</TableHead>
                 <TableHead
                   className="w-28 text-right"
-                  title="This model's own custom transforms. Provider defaults (e.g. prompt caching) always apply on top and aren't counted here — expand a row to see them."
+                  title="This model's own custom transforms. Provider defaults (e.g. prompt caching) always apply on top and aren't counted here - expand a row to see them."
                 >
                   Custom
                 </TableHead>

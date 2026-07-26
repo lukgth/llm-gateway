@@ -1,9 +1,9 @@
-// API DTOs — mirror the backend's src/shared/types.ts shapes.
+// API DTOs - mirror the backend's src/shared/types.ts shapes.
 
 export type AuthScheme = "bearer" | "xapikey" | "both" | "passthrough";
 export type ProviderFormat = "anthropic" | "openai";
 
-// Endpoint KINDS a provider accepts (not paths — the adapter assembles the path).
+// Endpoint KINDS a provider accepts (not paths - the adapter assembles the path).
 export type WireKind = "chat" | "messages" | "responses";
 export const WIRE_KINDS: WireKind[] = ["chat", "messages", "responses"];
 
@@ -145,7 +145,7 @@ export interface ProviderKeyUsageWindow {
   used: number;
   limit: number;
   unit: UsageUnit;
-  /** When this window's counter RESETS (refills) — absent for a one-shot
+  /** When this window's counter RESETS (refills) - absent for a one-shot
    *  balance that doesn't roll over (e.g. a prepaid credit grant). */
   resetsAt?: string;
 }
@@ -163,13 +163,13 @@ export interface ProviderKeyUsage {
   };
   windows: ProviderKeyUsageWindow[];
   /** ISO timestamp of the most recent proxied request that used this key
-   *  (any status — a 429 still counts). Drives the usage dashboard's
+   *  (any status - a 429 still counts). Drives the usage dashboard's
    *  last-used sort + green highlight. Absent if never used. */
   lastUsedAt?: string;
-  /** When the KEY ITSELF becomes invalid — distinct from a window's
+  /** When the KEY ITSELF becomes invalid - distinct from a window's
    *  resetsAt, which refills rather than expiring. */
   expiresAt?: string;
-  /** Provider can't report usage for this key — UI shows "Unavailable". */
+  /** Provider can't report usage for this key - UI shows "Unavailable". */
   unavailable?: boolean;
   /** Optional free-text note for the key (tier, rate-limit, error detail). */
   message?: string;
@@ -368,7 +368,7 @@ export interface TransformDefInfo {
 
 // --- Resolved transform stack (read-only preview of what a provider does) ----
 // Mirrors src/admin/routes/resolved-transforms.ts's ResolvedTransforms exactly.
-// GET /api/providers/:id/transforms/resolved — see docs/transforms-api.md
+// GET /api/providers/:id/transforms/resolved - see docs/transforms-api.md
 // § "The default provider transform stack".
 
 export type TransformSource = "builtin" | "family" | "adapter" | "model";
@@ -378,14 +378,14 @@ export interface ResolvedTransformStage {
   name: string;
   source: TransformSource;
   phase: ResolvedPhase;
-  /** Human label — falls back to a humanized `name` in the UI when absent. */
+  /** Human label - falls back to a humanized `name` in the UI when absent. */
   label?: string;
   blurb?: string;
   params?: Record<string, unknown>;
   /** Siblings (same phase+source) sharing a `group` string cluster under one
    *  collapsible row instead of showing individually. */
   group?: string;
-  /** True for a `family` stage a model's own config overrides — shown
+  /** True for a `family` stage a model's own config overrides - shown
    *  separately in `overridden`, not in the live request/response/stream lists. */
   overridden?: boolean;
 }
@@ -448,7 +448,7 @@ export interface Model {
   responsesNative: boolean;
   type: string;
   capabilities: ModelCapabilities;
-  /** True for official Anthropic aliases — capabilities are pinned server-side. */
+  /** True for official Anthropic aliases - capabilities are pinned server-side. */
   capabilitiesLocked: boolean;
   providers: ModelProviderLink[];
   createdAt: string;
@@ -460,7 +460,7 @@ export interface Model {
   } | null;
 }
 
-// Stock reference pricing for well-known models — GET /api/model-pricing/defaults(/:id).
+// Stock reference pricing for well-known models - GET /api/model-pricing/defaults(/:id).
 // Never authoritative; a picker in the model editor copies a match into the
 // model's own (operator-editable) `pricing` fields above.
 export interface DefaultModelPricing {
@@ -517,7 +517,7 @@ export interface RequestLog {
   stream: boolean;
   error: string | null;
   hasDebug: boolean;
-  /** Transient gateway throttle 503 (whole chain rate-limited) — badged amber,
+  /** Transient gateway throttle 503 (whole chain rate-limited) - badged amber,
    *  not counted as an error. Absent/false for every other row. */
   throttled?: boolean;
   /** Epoch ms when the soonest rate-limited key frees up (throttle rows only). */
@@ -549,7 +549,7 @@ export interface KeyStat {
 export interface DashboardStats {
   requestsToday: number;
   requestsErrorToday: number;
-  /** Gateway throttle 503s today (whole chain temporarily rate-limited) —
+  /** Gateway throttle 503s today (whole chain temporarily rate-limited) -
    *  transient, excluded from requestsErrorToday and the error rate. */
   throttledToday: number;
   tokensToday: number;
@@ -686,7 +686,7 @@ export interface ProviderTestResult {
   ms: number;
   error?: string;
   sample?: string;
-  /** Masked form (head…tail) of the API key this test attempt actually sent —
+  /** Masked form (head…tail) of the API key this test attempt actually sent -
    *  picked via the same rotation/health algorithm live traffic uses. Absent
    *  when the provider has no keys configured. */
   keyMask?: string;

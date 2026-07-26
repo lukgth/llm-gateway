@@ -1,17 +1,17 @@
-// Stock default pricing for well-known models across providers — a reference
+// Stock default pricing for well-known models across providers - a reference
 // table an operator can use to pre-fill a model's Prompt/Completion/Cached
 // rates instead of looking them up by hand. Mirrors the shape of
 // formats/anthropic/stock-models.ts (a static array + a tolerant lookup by
 // alias), and the wire shape of repo/pricing.ts's ModelPricing so the admin
 // UI/API can drop a matched entry straight into the same form fields.
 //
-// This is a REFERENCE only — it is never read by the request path or
+// This is a REFERENCE only - it is never read by the request path or
 // computeCostUsd. An operator (or the model editor's "Use default" button)
 // copies a match into the model's own `model_pricing` row via upsertPricing;
 // nothing here is authoritative until it's been copied in.
 //
 // Sourced from each provider's public pricing page; verify before relying on
-// it for billing-critical decisions, and expect drift — providers change
+// it for billing-critical decisions, and expect drift - providers change
 // prices without notice more often than this table gets updated.
 
 export interface DefaultModelPricing {
@@ -24,7 +24,7 @@ export interface DefaultModelPricing {
   brand: string;
   promptPer1m: number;
   completionPer1m: number;
-  /** Omitted when the provider publishes no cache-hit discount rate — the
+  /** Omitted when the provider publishes no cache-hit discount rate - the
    *  model editor's own placeholder ("defaults to prompt rate") already
    *  covers that case, so this table doesn't need to repeat promptPer1m here. */
   cachedPer1m?: number;
@@ -90,7 +90,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     cachedPer1m: 0.5,
   },
   {
-    // Standard pricing (post Aug 31 2026 introductory window) — the durable
+    // Standard pricing (post Aug 31 2026 introductory window) - the durable
     // rate, so a stock reference doesn't silently go stale the day the promo
     // ends. See the source doc's note for the $2/$10 introductory rate.
     id: "claude-sonnet-5",
@@ -186,7 +186,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
   // --- xAI / Grok -----------------------------------------------------------
   // https://docs.x.ai/developers/pricing (short-context tier; long-context
   // >=200k prompt tokens roughly doubles input/output and drops cached to
-  // $0.30 — not modeled here, this is the standard-tier rate).
+  // $0.30 - not modeled here, this is the standard-tier rate).
   {
     id: "grok-4.5",
     label: "Grok 4.5",
@@ -210,7 +210,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
 
 // Full reference list, for a picker UI. Function form (not the raw const)
 // matches this app's other catalog-listing seams (e.g. listProviderTemplates,
-// listTransformDefs) — a stable read accessor, even though today it's a
+// listTransformDefs) - a stable read accessor, even though today it's a
 // simple array copy.
 export function listDefaultModelPricing(): DefaultModelPricing[] {
   return DEFAULT_MODEL_PRICING;

@@ -18,14 +18,14 @@ import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
 // Kimi models are pinned to temperature 1.
 //
-// Matched on the UPSTREAM model id (ctx.upstreamModel — the id actually sent to
+// Matched on the UPSTREAM model id (ctx.upstreamModel - the id actually sent to
 // this provider), not the exposed alias: an alias can be named anything, so
 // keying off it would both miss real kimi-* hops and fire on non-Kimi ones.
 // Falls back to the body's own `model` for the handful of TransformCtx call
 // sites that carry no upstreamModel (unit tests, the SSE-only stream path).
 //
 // Runs on the request stage, so it applies to every wire kind this provider
-// serves — chat and messages alike — and after format conversion, so it sets
+// serves - chat and messages alike - and after format conversion, so it sets
 // the field on the body actually going upstream.
 const forceKimiTemperature: RequestTransform = {
   name: "moonshot-kimi-temperature",
@@ -48,12 +48,12 @@ class MoonshotAdapter extends OpenAICompatibleAdapter {
     return [...super.requestTransforms(p), forceKimiTemperature];
   }
 
-  // The Anthropic-format endpoint is a sibling of /v1 — <origin>/anthropic,
+  // The Anthropic-format endpoint is a sibling of /v1 - <origin>/anthropic,
   // not <origin>/v1/anthropic. ctx.baseUrl is just the origin (the /v1 prefix
   // is carried in ctx.basePath), so append directly to it.
   //
   // `/anthropic` is the ANTHROPIC_BASE_URL Moonshot documents, i.e. a BASE that
-  // the client appends the Messages path to — the bare path is not itself an
+  // the client appends the Messages path to - the bare path is not itself an
   // endpoint. Verified against the live host: POST /anthropic -> 404, POST
   // /anthropic/v1/messages -> 401 (auth reached), and a nonsense path -> 404,
   // so this host routes before it authenticates and that 404 is a real miss.
@@ -67,7 +67,7 @@ export const moonshot = new MoonshotAdapter({
   id: "moonshot",
   label: "Moonshot Kimi",
   blurb:
-    "Moonshot AI Kimi — OpenAI-compatible and Anthropic-compatible endpoints.",
+    "Moonshot AI Kimi - OpenAI-compatible and Anthropic-compatible endpoints.",
   brand: "kimi",
   docsUrl: "https://platform.moonshot.cn/docs",
   defaults: {
@@ -90,13 +90,13 @@ export const moonshot = new MoonshotAdapter({
       label: "API key",
       placeholder: "sk-…",
       required: true,
-      hint: "One per line — rotated round-robin.",
+      hint: "One per line - rotated round-robin.",
     },
     {
       key: "baseUrl",
       label: "Base URL",
       editable: true,
-      hint: "Default: https://api.moonshot.cn — use https://api.moonshot.ai for the international endpoint.",
+      hint: "Default: https://api.moonshot.cn - use https://api.moonshot.ai for the international endpoint.",
     },
   ],
   quirks: {

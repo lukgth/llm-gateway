@@ -6,7 +6,7 @@ import {
 import { WireKind } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
-// DeepSeek — OpenAI-compatible API.
+// DeepSeek - OpenAI-compatible API.
 // Balance endpoint: GET https://platform.deepseek.com/api/user/balance
 // Returns { is_available, balance_infos: [{ currency, total_balance, granted_balance, topped_up_balance }] }
 // total_balance is a decimal string (e.g. "110.00").
@@ -35,7 +35,7 @@ class DeepSeekAdapter extends OpenAICompatibleAdapter {
       return {
         windows: [],
         unavailable: true,
-        message: "Key disabled — usage not queried.",
+        message: "Key disabled - usage not queried.",
       };
     }
 
@@ -107,7 +107,7 @@ class DeepSeekAdapter extends OpenAICompatibleAdapter {
       windows: [],
       message: available
         ? balanceLine
-        : `${balanceLine} — insufficient for API calls`,
+        : `${balanceLine} - insufficient for API calls`,
     };
   }
 }
@@ -115,7 +115,7 @@ class DeepSeekAdapter extends OpenAICompatibleAdapter {
 export const deepseek = new DeepSeekAdapter({
   id: "deepseek",
   label: "DeepSeek",
-  blurb: "DeepSeek chat & reasoner models — OpenAI-compatible.",
+  blurb: "DeepSeek chat & reasoner models - OpenAI-compatible.",
   brand: "deepseek",
   docsUrl: "https://api-docs.deepseek.com/",
   defaults: {

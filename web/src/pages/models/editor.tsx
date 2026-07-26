@@ -1,4 +1,4 @@
-// Model editor — a routed page (/models/new, /models/:id).
+// Model editor - a routed page (/models/new, /models/:id).
 //
 // The fallback chain is too large for a modal, so the editor is a full page with
 // section tabs (Basics · Capabilities · Chain). Per-model request/response
@@ -92,7 +92,7 @@ export default function ModelEditor() {
   >({});
   const [fetchingIdx, setFetchingIdx] = useState<number | null>(null);
   // The provider's imported-model catalog, cached per provider id. This is the
-  // curated source a chain references — offered first in the upstream picker.
+  // curated source a chain references - offered first in the upstream picker.
   const [catalog, setCatalog] = useState<Record<string, ProviderModel[]>>({});
   const [catalogLoading, setCatalogLoading] = useState<Set<string>>(new Set());
   // Per-hop success/error hit counts, keyed by "providerId:upstreamModel".
@@ -155,7 +155,7 @@ export default function ModelEditor() {
     };
   }, [id, isNew, hydrate]);
 
-  // Per-hop hit counts for the Chain tab — best-effort, doesn't block the form.
+  // Per-hop hit counts for the Chain tab - best-effort, doesn't block the form.
   useEffect(() => {
     if (isNew || !id) return;
     api
@@ -244,7 +244,7 @@ export default function ModelEditor() {
     [],
   );
 
-  // "Use default" — look up a stock reference rate for the current alias and
+  // "Use default" - look up a stock reference rate for the current alias and
   // fill the three pricing fields. Never overwrites silently: this only runs
   // on an explicit click, and the operator still has to hit Save for it to
   // take effect (matches the doc'd "picker copies into the editable form"
@@ -299,7 +299,7 @@ export default function ModelEditor() {
       next.splice(to, 0, row);
       return next;
     });
-  // Pointer-based, Y-only drag (see hook doc) — the row can't drift
+  // Pointer-based, Y-only drag (see hook doc) - the row can't drift
   // horizontally, and `overIndex` drives a highlighted drop-target slot
   // instead of just dimming the row being dragged.
   const { dragIndex, overIndex, registerRow, handleProps, rowStyle } =
@@ -466,8 +466,8 @@ export default function ModelEditor() {
           <div className="rounded-md border border-dashed p-3">
             <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
               <p className="text-xs font-medium text-muted-foreground">
-                Pricing — USD per 1M tokens. Leave blank to skip — unconfigured
-                models render as `—` on dashboards.
+                Pricing - USD per 1M tokens. Leave blank to skip - unconfigured
+                models render as `-` on dashboards.
               </p>
               <Button
                 type="button"
@@ -493,7 +493,7 @@ export default function ModelEditor() {
                   step="0.01"
                   value={promptPer1m}
                   onChange={(e) => setPromptPer1m(e.target.value)}
-                  placeholder="—"
+                  placeholder="-"
                 />
               </Field>
               <Field label="Completion (output)">
@@ -502,7 +502,7 @@ export default function ModelEditor() {
                   step="0.01"
                   value={completionPer1m}
                   onChange={(e) => setCompletionPer1m(e.target.value)}
-                  placeholder="—"
+                  placeholder="-"
                 />
               </Field>
               <Field label="Cached">
@@ -511,7 +511,7 @@ export default function ModelEditor() {
                   step="0.01"
                   value={cachedPer1m}
                   onChange={(e) => setCachedPer1m(e.target.value)}
-                  placeholder="— defaults to prompt rate"
+                  placeholder="- defaults to prompt rate"
                 />
               </Field>
             </div>
@@ -553,7 +553,7 @@ export default function ModelEditor() {
 
           {chain.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-              No providers in chain — add one so requests can route
+              No providers in chain - add one so requests can route
             </div>
           ) : (
             <div className="no-scrollbar overflow-x-auto rounded-lg border border-border">
@@ -569,7 +569,7 @@ export default function ModelEditor() {
                 </span>
                 <span
                   className="text-right"
-                  title="Failed hits — non-2xx status, including timeouts and bad requests"
+                  title="Failed hits - non-2xx status, including timeouts and bad requests"
                 >
                   Errors
                 </span>
@@ -581,7 +581,7 @@ export default function ModelEditor() {
                     (p) => p.id === row.providerId,
                   );
                   // Options are the enabled providers, PLUS this row's own
-                  // provider when it's been since disabled — so a chain hop
+                  // provider when it's been since disabled - so a chain hop
                   // pointing at a now-disabled provider still shows its name
                   // (marked "(disabled)") instead of rendering blank and
                   // silently dropping its target on save. New rows can still
@@ -602,7 +602,7 @@ export default function ModelEditor() {
                         "relative grid min-w-220 grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_6.5rem_10rem_3rem_3.5rem_3.5rem_3.25rem] items-center gap-3 bg-card px-3 py-2.5 text-sm",
                         dragging
                           ? // Floats above the list, locked to vertical motion
-                            // only (rowStyle only ever sets translateY) —
+                            // only (rowStyle only ever sets translateY) -
                             // elevated + slightly rounded so it visibly
                             // detaches from the flat row list beneath it.
                             "z-10 scale-[1.01] rounded-md shadow-lg ring-1 ring-border"
@@ -686,7 +686,7 @@ export default function ModelEditor() {
                           !(catalog[row.providerId] ?? []).some(
                             (m) => m.upstreamId === row.upstreamModel,
                           )
-                            ? "New ID — imported into this provider's catalog on save."
+                            ? "New ID - imported into this provider's catalog on save."
                             : undefined
                         }
                       >
@@ -707,7 +707,7 @@ export default function ModelEditor() {
                               : "Pick or type an ID"
                           }
                           searchPlaceholder="Filter imported models…"
-                          emptyText="No imported models — type an ID or fetch from upstream"
+                          emptyText="No imported models - type an ID or fetch from upstream"
                           allowCustom
                           mono
                           className="h-8 text-xs"
@@ -789,7 +789,7 @@ export default function ModelEditor() {
                                   ? "text-destructive"
                                   : "text-muted-foreground",
                               )}
-                              title={`${fmtNum(stat?.errors ?? 0)} failed hits — non-2xx status, including timeouts and bad requests`}
+                              title={`${fmtNum(stat?.errors ?? 0)} failed hits - non-2xx status, including timeouts and bad requests`}
                             >
                               {fmtNum(stat?.errors ?? 0)}
                             </div>

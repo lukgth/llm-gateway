@@ -456,7 +456,7 @@ export function KeyManager({
           onChange={(e) => setBulk(e.target.value)}
           rows={2}
           placeholder={
-            "Paste one or many keys — newline or comma separated\nsk-…, sk-…"
+            "Paste one or many keys - newline or comma separated\nsk-…, sk-…"
           }
           className="font-mono text-xs"
         />
@@ -599,7 +599,7 @@ const KeyRow = memo(function KeyRow({
               {testResult
                 ? testResult.ok
                   ? `Reachable · ${testResult.ms}ms`
-                  : `Failed${testResult.status ? ` (${testResult.status})` : ""}${testResult.error ? ` — ${testResult.error}` : ""}`
+                  : `Failed${testResult.status ? ` (${testResult.status})` : ""}${testResult.error ? ` - ${testResult.error}` : ""}`
                 : "Send a test request with this key"}
             </TooltipContent>
           </Tooltip>

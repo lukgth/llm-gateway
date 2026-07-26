@@ -1,5 +1,5 @@
 // Single source of truth for "which branded family does this catalog id
-// belong to" — used to group both catalog TEMPLATES (add-provider wizard's
+// belong to" - used to group both catalog TEMPLATES (add-provider wizard's
 // pick step) and live provider ROWS (the Providers page) by vendor, with a
 // matching icon. Add a provider to the backend catalog
 // (src/providers/catalog/<name>.ts + registry.ts) and it appears grouped
@@ -7,7 +7,7 @@
 // the catch-all "Custom" group `groupByFamily` always appends last.
 //
 // Deliberately excludes the generic escape-hatch adapters (openai-compatible,
-// anthropic-compatible, proxy) — those SHOULD land in "Custom", they aren't a
+// anthropic-compatible, proxy) - those SHOULD land in "Custom", they aren't a
 // vendor family.
 
 export interface ProviderFamily {
@@ -50,7 +50,7 @@ export interface FamilyGroup<T> {
 
 /**
  * Groups `items` by PROVIDER_FAMILIES, in family display order, then appends
- * a trailing "Custom" group (brand: null) for anything unclaimed — generic
+ * a trailing "Custom" group (brand: null) for anything unclaimed - generic
  * escape-hatch adapters (openai-compatible, anthropic-compatible, proxy) and
  * any provider not yet added to PROVIDER_FAMILIES above.
  */

@@ -2,9 +2,9 @@
 //
 // Anthropic requires `max_tokens`, and a request whose max_tokens exceeds the
 // model's real output ceiling is wasteful (and some upstreams 400). We clamp to
-// the hop's effective ceiling — which comes from OUR OWN config
+// the hop's effective ceiling - which comes from OUR OWN config
 // (link ?? imported-model ?? exposed-model), threaded in via
-// TransformCtx.maxOutputTokens — not a hardcoded per-model table.
+// TransformCtx.maxOutputTokens - not a hardcoded per-model table.
 //
 // Ordering note: this runs BEFORE thinking-config (which gets the final say
 // and may raise max_tokens to accommodate budget_tokens). If the ceiling

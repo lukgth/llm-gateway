@@ -37,7 +37,7 @@ test("rejects other statuses and providers", () => {
   assert.equal(matches({ catalogId: "anthropic" }), false);
 });
 
-test("is no longer model-gated — any Claude Code model with this 429 matches", () => {
+test("is no longer model-gated - any Claude Code model with this 429 matches", () => {
   // The predicate used to require Sonnet 4.6; that gate was removed, so the
   // long-context credits 429 is now recognised for any Claude Code model.
   assert.equal(matches({ upstreamModel: "claude-opus-4-6" }), true);
@@ -58,7 +58,7 @@ test("rejects a non-rate-limit error type even with the credits message", () => 
   );
 });
 
-test("matches by substring — trailing wording and the 'Extra usage' variant", () => {
+test("matches by substring - trailing wording and the 'Extra usage' variant", () => {
   // Detection is substring-based so a minor upstream tweak (extra trailing text,
   // or the older phrasing) still triggers the credit rotation.
   assert.equal(

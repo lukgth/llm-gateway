@@ -230,7 +230,7 @@ test("newapi.keyUsage: GET /api/usage/token with Bearer auth, capped quota", asy
   assert.equal(w.limit, 1002076 / 1_000_000);
   assert.equal(w.unit, "dollars");
   assert.ok(!w.label.includes("unlimited"));
-  // A credit grant is a one-shot balance, not a refilling window — no
+  // A credit grant is a one-shot balance, not a refilling window - no
   // resetsAt on the window at all.
   assert.equal(w.resetsAt, undefined);
   // expires_at: 0 -> the provider reports no expiry -> field omitted.
@@ -259,7 +259,7 @@ test("newapi.keyUsage: expires_at > 0 -> reported as key-level expiresAt, not a 
     ),
   );
   assert.equal(res.expiresAt, new Date(1786735990 * 1000).toISOString());
-  // The window itself still has no resetsAt — expiry is the KEY's lifetime,
+  // The window itself still has no resetsAt - expiry is the KEY's lifetime,
   // not a per-window refill cycle.
   assert.equal(res.windows[0].resetsAt, undefined);
 });
@@ -285,7 +285,7 @@ test("newapi.keyUsage: unlimited_quota -> finite JSON-safe sentinel limit, label
   );
   const w = res.windows[0];
   assert.equal(w.used, 2076 / 1_000_000);
-  // Never Infinity — JSON.stringify(Infinity) => null, which breaks the
+  // Never Infinity - JSON.stringify(Infinity) => null, which breaks the
   // wire response and the frontend's used/limit math.
   assert.ok(Number.isFinite(w.limit));
   assert.ok(w.limit > w.used);
@@ -790,7 +790,7 @@ test("glm.keyUsage: GET /api/monitor/usage/quota/limit (a sibling of basePath, n
       });
     }),
   );
-  // Not "https://api.z.ai/api/coding/paas/v4/api/monitor/…" — this endpoint
+  // Not "https://api.z.ai/api/coding/paas/v4/api/monitor/…" - this endpoint
   // is NOT under basePath, so it must be built from the bare origin.
   assert.equal(seenUrl, "https://api.z.ai/api/monitor/usage/quota/limit");
   assert.equal(seenHeaders.authorization, "Bearer sk-secret");
@@ -832,7 +832,7 @@ test("glm.keyUsage: TIME_LIMIT (MCP tool usage) maps to a requests window with u
   assert.equal(mcp.used, 37);
   assert.equal(mcp.limit, 100);
   assert.equal(mcp.unit, "requests");
-  // TIME_LIMIT is a monthly period, not a countdown — no resetsAt upstream.
+  // TIME_LIMIT is a monthly period, not a countdown - no resetsAt upstream.
   assert.equal(mcp.resetsAt, undefined);
   const fiveHour = res.windows.find((w) => w.id === "tokens-5h")!;
   assert.equal(fiveHour.used, 0);
@@ -880,7 +880,7 @@ test("glm.keyUsage: TOKENS_LIMIT (5h + weekly prompt quota) has no absolute tota
   assert.equal(weekly.used, 52);
   assert.equal(weekly.limit, 100);
   assert.equal(weekly.resetsAt, new Date(1786195345975).toISOString());
-  // Message carries ONLY the plan — no percentage notes folded in.
+  // Message carries ONLY the plan - no percentage notes folded in.
   assert.equal(res.message, "Plan: Lite");
 });
 
@@ -926,7 +926,7 @@ test("glm.keyUsage: weekly Prompts window only appears when the upstream actuall
   );
   assert.equal(res.windows.length, 2);
   const fiveHour = res.windows.find((w) => w.id === "tokens-5h")!;
-  assert.equal(fiveHour.used, 0); // defaulted — no 5h entry in this response
+  assert.equal(fiveHour.used, 0); // defaulted - no 5h entry in this response
   const weekly = res.windows.find((w) => w.id === "tokens-weekly")!;
   assert.equal(weekly.label, "Prompts (weekly)");
   assert.equal(weekly.used, 18);
@@ -950,7 +950,7 @@ test("glm.keyUsage: unrecognized TOKENS_LIMIT unit/number is still surfaced as a
     ),
   );
   // The guaranteed 5h window (defaulted, no matching entry) plus the
-  // unrecognized one — no weekly window since none was returned.
+  // unrecognized one - no weekly window since none was returned.
   assert.equal(res.windows.length, 2);
   assert.equal(
     res.windows.some((w) => w.id === "tokens-weekly"),
@@ -983,7 +983,7 @@ test("glm.keyUsage: `level` surfaces as the ONLY key message, title-cased", asyn
               usage: 100,
             },
           ],
-          // Upstream may send any casing ("lite", "PRO", …) — must normalize.
+          // Upstream may send any casing ("lite", "PRO", …) - must normalize.
           level: "PRO",
         },
         success: true,

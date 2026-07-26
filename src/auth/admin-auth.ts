@@ -109,12 +109,12 @@ export function initAdminAuth(
     ]);
   } else if (!envPassword) {
     // A hash is stored but config.json carries no password. The password is
-    // unrecoverable from the hash — tell the operator how to reset instead of
+    // unrecoverable from the hash - tell the operator how to reset instead of
     // silently booting into a dashboard they may be locked out of.
     printPasswordBox([
       "Admin password: using the one stored in the database.",
       'If you have lost it, set "adminPassword" in config.json',
-      "and restart — it overrides the stored one.",
+      "and restart - it overrides the stored one.",
     ]);
   }
 

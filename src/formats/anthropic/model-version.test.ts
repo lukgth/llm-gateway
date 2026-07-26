@@ -2,7 +2,7 @@
 //
 // isModelPost45 is the ONE regex that decides "newer than 4.5". It's correctness-
 // critical: prefill.ts (modelNeedsPrefillFix) uses it to decide whether a trailing
-// assistant turn needs a synthetic user "continue" turn — matching a 4.5 model by
+// assistant turn needs a synthetic user "continue" turn - matching a 4.5 model by
 // mistake would corrupt a valid request, and missing a 4.6 model would let a 400
 // through. These pin the boundary in both directions.
 

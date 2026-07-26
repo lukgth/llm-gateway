@@ -6,7 +6,7 @@
 //   - responses tools[]{name,parameters,…}; function_call / function_call_output items
 //
 // The web-tool machinery needs to READ and WRITE tool definitions (and read a
-// model's tool calls back out) regardless of which format a hop speaks — a Claude
+// model's tool calls back out) regardless of which format a hop speaks - a Claude
 // model served by an OpenAI-type provider needs the exact same web-tool injection
 // as a native Anthropic hop. This module is the single place that knows the three
 // shapes, so both the web-tool loop and any tagged transform edit tools through

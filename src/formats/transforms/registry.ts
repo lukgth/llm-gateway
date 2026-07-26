@@ -251,7 +251,7 @@ const LIBRARY: TransformDef[] = [
     id: "system-prepend",
     label: "Prepend system text",
     blurb:
-      "Prepend a fixed system instruction (works for Anthropic system + chat system message). The text is yours — not any client-impersonation prompt.",
+      "Prepend a fixed system instruction (works for Anthropic system + chat system message). The text is yours - not any client-impersonation prompt.",
     phases: REQUEST,
     params: [
       {

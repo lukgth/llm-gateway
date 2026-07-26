@@ -14,17 +14,17 @@ test("contextWindowLimit gates ONLY Claude Code Sonnet 4.6 on the messages route
     contextWindowLimit("claude-code", "claude-sonnet-4-6", url),
     SONNET_46_BASE_WINDOW,
   );
-  // Not Sonnet 4.6 — no gate (Opus 4.6 1M, Sonnet 4.5, Opus, Haiku, etc.).
+  // Not Sonnet 4.6 - no gate (Opus 4.6 1M, Sonnet 4.5, Opus, Haiku, etc.).
   assert.equal(contextWindowLimit("claude-code", "claude-opus-4-6", url), null);
   assert.equal(
     contextWindowLimit("claude-code", "claude-sonnet-4-5", url),
     null,
   );
   assert.equal(contextWindowLimit("claude-code", "claude-sonnet-5", url), null);
-  // Not Claude Code — no gate.
+  // Not Claude Code - no gate.
   assert.equal(contextWindowLimit("anthropic", "claude-sonnet-4-6", url), null);
   assert.equal(contextWindowLimit(null, "claude-sonnet-4-6", url), null);
-  // Not the messages route (cross-format hop to /chat/completions) — no gate.
+  // Not the messages route (cross-format hop to /chat/completions) - no gate.
   assert.equal(
     contextWindowLimit(
       "claude-code",

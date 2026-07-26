@@ -55,7 +55,7 @@ test("classification is header-driven, not keyed on the requested model", () => 
   assert.equal(classify({ status: 500 }).scope, "global");
 });
 
-test("base window exhaustion is global — with the BASE reset, not 7d_oi's", () => {
+test("base window exhaustion is global - with the BASE reset, not 7d_oi's", () => {
   // 5h rejected (15m reset) AND 7d_oi rejected (1h reset). The GLOBAL cooldown
   // must track the base 5h window, and a SEPARATE Fable reset is reported so the
   // caller can layer a premium-only cooldown on top.

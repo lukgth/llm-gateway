@@ -13,7 +13,7 @@
 import { isModelPost45 } from "./model-version";
 
 // The set of Claude models WITHOUT assistant-prefill support is exactly the
-// post-4.5 set (4.6+, any major >= 5, and the Fable/Mythos lines) — so we reuse
+// post-4.5 set (4.6+, any major >= 5, and the Fable/Mythos lines) - so we reuse
 // the single shared version check instead of duplicating its regex here.
 export const modelNeedsPrefillFix = (model: string) => isModelPost45(model);
 
@@ -36,7 +36,7 @@ function extractToolUseIds(content: unknown): string[] {
 }
 
 // Build the trailing `user` message to append. If the assistant turn carried
-// `tool_use` blocks, the API requires matching `tool_result` blocks — we send
+// `tool_use` blocks, the API requires matching `tool_result` blocks - we send
 // a minimal "continue" result for each. Otherwise a plain text nudge.
 export function buildContinueUserMessage(content: unknown): {
   role: "user";
@@ -57,7 +57,7 @@ export function buildContinueUserMessage(content: unknown): {
 }
 
 // A message in either the Anthropic (/v1/messages) or OpenAI
-// (/v1/chat/completions) shape — both use { role, content }.
+// (/v1/chat/completions) shape - both use { role, content }.
 interface LikeMessage {
   role?: unknown;
   content?: unknown;

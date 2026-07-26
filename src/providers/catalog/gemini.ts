@@ -30,7 +30,7 @@ export const gemini = new GeminiAdapter({
       label: "API key",
       placeholder: "AIza…",
       required: true,
-      hint: "One per line — rotated round-robin.",
+      hint: "One per line - rotated round-robin.",
     },
   ],
   quirks: {

@@ -1,7 +1,7 @@
 // Token counting for request bodies and response usage extraction.
 //
 // Used by the gateway's context-window enforcement and per-key usage-limit
-// middleware. Uses a coarse chars/4 heuristic — imprecise per-request but
+// middleware. Uses a coarse chars/4 heuristic - imprecise per-request but
 // stable across every model the gateway serves, and accurate enough in
 // aggregate for quota enforcement. Exact token counts reported by the
 // upstream (when available) are reconciled after the response arrives; see
@@ -28,7 +28,7 @@ const PER_MSG_OVERHEAD = 4;
 //   - array of { type:'tool_use', input }               (Anthropic)
 //   - array of { type:'tool_result', content }          (Anthropic)
 //   - array of { type:'image_url', image_url:{url} }    (OpenAI vision)
-//   - any unknown shape — falls back to JSON.stringify
+//   - any unknown shape - falls back to JSON.stringify
 function countContent(content: unknown): number {
   if (content == null) return 0;
   if (typeof content === "string") return countTextTokens(content);
@@ -51,7 +51,7 @@ function countContent(content: unknown): number {
       // Anthropic tool_result.content can itself be a string or array of parts.
       total += countContent(p.content);
     } else {
-      // Unknown part (image url, file, etc.) — count its JSON form so we
+      // Unknown part (image url, file, etc.) - count its JSON form so we
       // don't silently drop non-text payloads from the tally.
       total += countTextTokens(JSON.stringify(p));
     }
@@ -166,14 +166,14 @@ export function readMaxOutputTokens(
 // Works across Anthropic, OpenAI Chat, and OpenAI Responses shapes.
 // Returns {} when no usage info is present (e.g. passthrough / streaming).
 //
-// `input` is the TOTAL input tokens including cached — the same convention
+// `input` is the TOTAL input tokens including cached - the same convention
 // OpenAI's `prompt_tokens` uses. Anthropic reports cached tokens separately
 // (cache_read_input_tokens) and its `input_tokens` excludes them, so this
 // function adds them back to normalise to one convention.
 //
 // `cached` is the subset of `input` that were prompt-cache hits, surfaced
 // separately for cost visibility. `computeCostUsd` subtracts `cached` from
-// `input` to derive the uncached billable portion — so `input` MUST include
+// `input` to derive the uncached billable portion - so `input` MUST include
 // cached tokens or the subtraction double-counts.
 export function readResponseUsage(body: unknown): {
   input?: number;
@@ -185,7 +185,7 @@ export function readResponseUsage(body: unknown): {
   if (!u || typeof u !== "object") return {};
   const o = u as Record<string, unknown>;
   const out: { input?: number; output?: number; cached?: number } = {};
-  // OpenAI Chat: prompt_tokens already includes cached — use as-is.
+  // OpenAI Chat: prompt_tokens already includes cached - use as-is.
   if (typeof o.prompt_tokens === "number") out.input = o.prompt_tokens;
   if (typeof o.completion_tokens === "number") out.output = o.completion_tokens;
   // Anthropic / Responses: input_tokens + output_tokens.

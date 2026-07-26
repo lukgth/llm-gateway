@@ -1,4 +1,4 @@
-// WebSocket server — attaches to the existing http.Server, handles upgrade
+// WebSocket server - attaches to the existing http.Server, handles upgrade
 // auth via the same admin token, and routes messages through the hub.
 
 import { WebSocketServer, type WebSocket } from "ws";

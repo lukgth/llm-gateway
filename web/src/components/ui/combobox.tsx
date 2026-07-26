@@ -61,7 +61,7 @@ export function Combobox({
           role="combobox"
           aria-expanded={open}
           className={cn(
-            // Shared control surface — matches Button / Input / Select / Textarea.
+            // Shared control surface - matches Button / Input / Select / Textarea.
             // 13px (text-[0.8125rem]) keeps controls in scale with the 12px content.
             "flex h-8 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-input bg-transparent px-3 py-2 text-[0.8125rem] transition-colors outline-none",
             "placeholder:text-muted-foreground",

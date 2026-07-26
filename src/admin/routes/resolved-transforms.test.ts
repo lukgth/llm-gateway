@@ -1,9 +1,9 @@
-// resolveProviderTransforms() tests — verifies the resolved-transforms preview
+// resolveProviderTransforms() tests - verifies the resolved-transforms preview
 // (GET /providers/:id/transforms/resolved) composes the SAME layers, in the
 // SAME order, that engine.ts's buildRoute()/buildChain() actually apply at
 // request time: builtin defaults -> family defaults -> adapter transforms ->
 // the model's own overrides. Pure/DB-agnostic (Provider + optional
-// ownTransforms in, no DB) — see the module's own header comment for the full
+// ownTransforms in, no DB) - see the module's own header comment for the full
 // design rationale.
 
 import { test } from "node:test";
@@ -107,7 +107,7 @@ test("a model's own transform overrides the matching family default (same id+pha
   const requestFamilyAndModel = r.request.filter(
     (s) => s.source === "family" || s.source === "model",
   );
-  // Only ONE anthropic-cache stage survives in the live list — the model's.
+  // Only ONE anthropic-cache stage survives in the live list - the model's.
   const cacheStages = requestFamilyAndModel.filter((s) =>
     s.name.endsWith(":anthropic-cache"),
   );

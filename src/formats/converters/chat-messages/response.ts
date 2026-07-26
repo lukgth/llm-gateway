@@ -35,7 +35,7 @@ export function chatResponseToMessages(
   // S1: OpenAI reasoning_content -> leading Anthropic thinking block.
   // `signature` is required shape (real Anthropic thinking blocks always
   // carry one) but this text came from an OpenAI-shaped provider, so there's
-  // no genuine signature to attach — see SYNTHETIC_THINKING_SIGNATURE's doc
+  // no genuine signature to attach - see SYNTHETIC_THINKING_SIGNATURE's doc
   // comment. Every request that forwards this upstream runs
   // stripUnsupportedThinking first, which converts it back to plain text.
   const reasoning = extractReasoningText(msg);

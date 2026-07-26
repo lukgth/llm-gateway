@@ -1,16 +1,16 @@
-// Add-Provider wizard — a stepped dialog that turns a catalog template into a
+// Add-Provider wizard - a stepped dialog that turns a catalog template into a
 // configured, tested provider (and optionally imports its upstream models).
 //
 // Steps: Pick → Configure → Test → Import. The catalog pre-fills wire format,
 // endpoints, auth scheme and required headers so the user usually only supplies
 // a name + API key. Everything the wizard writes goes through the normal
-// createProvider / createModel APIs — no special backend path.
+// createProvider / createModel APIs - no special backend path.
 //
 // Split across sibling files by step:
-//   pick-step.tsx    — PickStep (choose a catalog template)
-//   config-step.tsx  — ConfigStep (name/baseUrl/keys + Advanced)
-//   test-step.tsx    — TestStep (connectivity result)
-//   import-step.tsx  — ImportStep (bulk-select upstream models)
+//   pick-step.tsx    - PickStep (choose a catalog template)
+//   config-step.tsx  - ConfigStep (name/baseUrl/keys + Advanced)
+//   test-step.tsx    - TestStep (connectivity result)
+//   import-step.tsx  - ImportStep (bulk-select upstream models)
 
 import { useEffect, useState } from "react";
 import {
@@ -123,7 +123,7 @@ export function AddProviderDialog({
       nativeConversion: tpl.defaults.nativeConversion ?? false,
       extraHeaders,
       catalogId: tpl.id,
-      // basePath REPLACES the implicit "/v1" prefix (see resolvedUrlPreview) —
+      // basePath REPLACES the implicit "/v1" prefix (see resolvedUrlPreview) -
       // seeded from the template (e.g. Gemini ships "/v1beta/openai") but
       // editable in Advanced for a non-standard deployment (self-hosted gateway,
       // reverse proxy under a path prefix, etc).
@@ -188,7 +188,7 @@ export function AddProviderDialog({
         const chosen = (probe?.models ?? []).filter((m) => selected.has(m.id));
         const { created } = await importModelsForProvider(provider.id, chosen);
         toast.success(
-          `${provider.name} added — ${created} model${created === 1 ? "" : "s"} imported`,
+          `${provider.name} added - ${created} model${created === 1 ? "" : "s"} imported`,
         );
       } else {
         toast.success(`${provider.name} added`);

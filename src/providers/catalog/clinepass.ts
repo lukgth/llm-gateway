@@ -7,7 +7,7 @@ import { WireKind } from "../../types";
 import type { ProviderKeyUsageWindow } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
-// ClinePass — Cline's flat-rate subscription ($9.99/month).
+// ClinePass - Cline's flat-rate subscription ($9.99/month).
 // Base URL: https://api.cline.bot  Base path: /api/v1
 // Auth: Authorization: Bearer <key>
 // Chat-only (OpenAI-compatible).
@@ -46,7 +46,7 @@ class ClinePassAdapter extends OpenAICompatibleAdapter {
       return {
         windows: [],
         unavailable: true,
-        message: "Key disabled — usage not queried.",
+        message: "Key disabled - usage not queried.",
       };
     }
 
@@ -125,7 +125,7 @@ class ClinePassAdapter extends OpenAICompatibleAdapter {
 export const clinepass = new ClinePassAdapter({
   id: "clinepass",
   label: "ClinePass",
-  blurb: "Cline flat-rate subscription — OpenAI-compatible chat endpoint.",
+  blurb: "Cline flat-rate subscription - OpenAI-compatible chat endpoint.",
   brand: "cline",
   docsUrl: "https://cline.bot/",
   defaults: {
@@ -147,7 +147,7 @@ export const clinepass = new ClinePassAdapter({
       key: "apiKeys",
       label: "API key",
       required: true,
-      hint: "One per line — rotated round-robin.",
+      hint: "One per line - rotated round-robin.",
     },
     {
       key: "baseUrl",

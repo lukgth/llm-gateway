@@ -60,7 +60,7 @@ export function messagesRequestToChat(
     const m = mRaw as { role?: string; content?: unknown };
     const role = m.role === "assistant" ? "assistant" : "user";
 
-    // Split out tool_result blocks — these become their own role:'tool' msgs.
+    // Split out tool_result blocks - these become their own role:'tool' msgs.
     if (Array.isArray(m.content)) {
       const blocks = m.content as AnthropicBlock[];
       const results = blocks.filter((b) => b.type === "tool_result");
@@ -106,10 +106,10 @@ export function messagesRequestToChat(
   if (typeof body.user === "string") out.user = body.user;
 
   // R8: carry an effort hint through. Priority order:
-  //   1. output_config.effort  — explicit Anthropic effort
-  //   2. reasoning_effort      — Chat-style flat field
-  //   3. reasoning.effort      — Responses-style nested field
-  //   4. thinking.type         — Anthropic thinking config (adaptive/enabled)
+  //   1. output_config.effort  - explicit Anthropic effort
+  //   2. reasoning_effort      - Chat-style flat field
+  //   3. reasoning.effort      - Responses-style nested field
+  //   4. thinking.type         - Anthropic thinking config (adaptive/enabled)
   const oc = body.output_config as { effort?: unknown } | undefined;
   const reasoning = body.reasoning as { effort?: unknown } | undefined;
   const thinking = body.thinking as
@@ -142,7 +142,7 @@ export function messagesRequestToChat(
   // Signal the thinking-disabled intent through a gateway-internal field so
   // only providers that support the `thinking` toggle (DeepSeek, GLM) surface
   // it. Forwarding `thinking` unconditionally would 400 on OpenAI and most
-  // other providers — the "openai-hooks" default consumes `_thinking_disabled`
+  // other providers - the "openai-hooks" default consumes `_thinking_disabled`
   // and builds the provider-native `thinking` shape; the generic path strips it
   // before any unsupporting upstream sees it.
   if (thinking && typeof thinking === "object") {
@@ -416,7 +416,7 @@ function normalizeAnthropicMessages(
       } else if (!sawToolUse) {
         kept.push(b);
       }
-      // else: text/other after tool_use — dropped.
+      // else: text/other after tool_use - dropped.
     }
     msg.content = kept;
   }

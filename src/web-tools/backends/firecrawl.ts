@@ -1,4 +1,4 @@
-// Firecrawl web provider — search + fetch.
+// Firecrawl web provider - search + fetch.
 //
 // Keyless by default (the public API works without a key from allowed IPs); an
 // optional API key is sent when configured. Implements the SearchProvider

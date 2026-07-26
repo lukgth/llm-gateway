@@ -2,12 +2,12 @@
 //
 // Why this exists: a host that publishes AAAA records is unreachable over v6
 // from a box that HAS a v6 address but no working v6 route. The OS resolver
-// can't know the route is dead — glibc's RFC 6724 sorting returns the AAAA
+// can't know the route is dead - glibc's RFC 6724 sorting returns the AAAA
 // first, Node follows it, and the request hangs until the timeout while curl
 // on the same box succeeds (curl has always raced both families).
 //
 // These tests stub dns.lookup rather than hitting the network, because the
-// interesting input — a MIXED v4/v6 result set with v6 first — is exactly what
+// interesting input - a MIXED v4/v6 result set with v6 first - is exactly what
 // a CI box or a dev machine without IPv6 will never produce naturally. Testing
 // against real DNS on such a host passes vacuously: there are no AAAA records
 // to mis-order, so the assertion proves nothing.
@@ -95,7 +95,7 @@ test("ipv4FirstLookup: IPv6 is REMOVED from a dual-stack result, not just sorted
 test("ipv4FirstLookup: all IPv4 addresses are kept so Happy Eyeballs can race them", async () => {
   await withStubbedDns(MIXED, async () => {
     const { addresses } = await lookup({ all: true });
-    // Filtering the family must not collapse to a single address — one dead IP
+    // Filtering the family must not collapse to a single address - one dead IP
     // within the chosen family still has to be survivable.
     assert.equal(addresses?.length, 2);
   });
@@ -111,7 +111,7 @@ test("ipv4FirstLookup: single-result form returns an IPv4 address", async () => 
 
 test("ipv4FirstLookup: an explicit family pin is honored, not reordered", async () => {
   await withStubbedDns(MIXED, async () => {
-    // family:6 is the caller's deliberate choice — overriding it would make
+    // family:6 is the caller's deliberate choice - overriding it would make
     // the preference impossible to opt out of.
     const { addresses, address } = await lookup({ family: 6, all: true });
     const got = addresses ?? (address ? [{ address, family: 6 }] : []);

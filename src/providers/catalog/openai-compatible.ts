@@ -10,7 +10,7 @@ class OpenAICompatibleGenericAdapter extends OpenAICompatibleAdapter {}
 export const openaiCompatible = new OpenAICompatibleGenericAdapter({
   id: "openai-compatible",
   label: "OpenAI-compatible",
-  blurb: "Any endpoint speaking the OpenAI chat format — bring your own URL.",
+  blurb: "Any endpoint speaking the OpenAI chat format - bring your own URL.",
   brand: "openai",
   defaults: {
     format: "openai",
@@ -26,12 +26,12 @@ export const openaiCompatible = new OpenAICompatibleGenericAdapter({
       placeholder: "http://localhost:8000",
       required: true,
       editable: true,
-      hint: "Origin (and optional path prefix) — the gateway appends /v1/…",
+      hint: "Origin (and optional path prefix) - the gateway appends /v1/…",
     },
     {
       key: "apiKeys",
       label: "API key",
-      hint: "Optional — leave blank for keyless local servers.",
+      hint: "Optional - leave blank for keyless local servers.",
     },
   ],
   quirks: {

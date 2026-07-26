@@ -1,8 +1,8 @@
 // Typed SSE per-event transform.
 //
-// A reusable Node Transform that owns the tedious SSE plumbing — buffering bytes
+// A reusable Node Transform that owns the tedious SSE plumbing - buffering bytes
 // across chunk boundaries, splitting on the `\n\n` event delimiter, parsing the
-// `data:` payload as JSON, and re-serializing — so a transform author only writes
+// `data:` payload as JSON, and re-serializing - so a transform author only writes
 // a typed `(event, ctx) => event | null` handler. Returning null drops the event;
 // the `[DONE]` sentinel and non-JSON events pass through untouched.
 //
@@ -15,7 +15,7 @@ import type { TransformCtx } from "../pipeline";
 import { SseFrameReader, parseSseData } from "./frame";
 
 // One parsed SSE event handed to the handler. `event` is the value of the SSE
-// `event:` line (Anthropic uses it; OpenAI does not) — preserved on re-emit.
+// `event:` line (Anthropic uses it; OpenAI does not) - preserved on re-emit.
 export type SseEventHandler = (
   data: Record<string, unknown>,
   ctx: TransformCtx,
@@ -59,7 +59,7 @@ export class SseEventTransform extends Transform {
   // keepalive blocks, [DONE], and non-JSON payloads through verbatim.
   private emitEvent(raw: string): void {
     const { data: dataStr } = parseSseData(raw);
-    // No data payload (comment/keepalive) — pass the block through unchanged.
+    // No data payload (comment/keepalive) - pass the block through unchanged.
     if (dataStr === null) {
       this.push(raw + "\n\n");
       return;
@@ -72,7 +72,7 @@ export class SseEventTransform extends Transform {
     try {
       data = JSON.parse(dataStr) as Record<string, unknown>;
     } catch {
-      // Not JSON — pass through untouched.
+      // Not JSON - pass through untouched.
       this.push(raw + "\n\n");
       return;
     }

@@ -147,7 +147,7 @@ test("default fetchModels throws on a non-2xx upstream", async () => {
 });
 
 test("example-custom fetchModels returns a rich, hand-built UpstreamModel[]", async () => {
-  // No network — the example builds the list directly (headline use case).
+  // No network - the example builds the list directly (headline use case).
   const p = prov({});
   const res = await exampleCustom.fetchModels(ctx(p));
   assert.deepEqual(
@@ -159,7 +159,7 @@ test("example-custom fetchModels returns a rich, hand-built UpstreamModel[]", as
   assert.equal(large.contextWindow, 1_000_000);
   assert.equal(large.maxOutputTokens, 128_000);
   assert.equal(large.capabilities?.thinking.supported, true);
-  // The minimal entry carries only an id — everything else blank.
+  // The minimal entry carries only an id - everything else blank.
   assert.equal(res[2].displayName, undefined);
   assert.equal(res[2].capabilities, undefined);
 });
@@ -274,7 +274,7 @@ test("normalizeModels dispatches on the result tag", () => {
 });
 
 test("fetchModelList uses an injected transport instead of global fetch", async () => {
-  // Global fetch would throw if touched — proves the transport override is used.
+  // Global fetch would throw if touched - proves the transport override is used.
   globalThis.fetch = (() => {
     throw new Error("global fetch must not be called");
   }) as unknown as typeof fetch;

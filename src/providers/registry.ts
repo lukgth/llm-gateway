@@ -11,17 +11,17 @@
 //      or `new AnthropicCompatibleAdapter({...})`. Subclass when it needs:
 //        - custom body transforms (override requestTransforms/responseTransforms,
 //          see ./catalog/claude-code.ts), or
-//        - a fully custom outbound request — override chatCompletions/messages/
+//        - a fully custom outbound request - override chatCompletions/messages/
 //          responses(ctx: BuildCtx): BuiltRequest to rewrite the URL (signed /
 //          custom host), headers (bespoke auth from ctx.apiKey), and/or body
 //          (envelopes, extra fields). The default builder forwards verbatim.
 //   2. Add the instance to ADAPTERS below.
 // It appears in the wizard immediately (via .toTemplate()) and routes through
-// its adapter — no engine changes needed.
+// its adapter - no engine changes needed.
 //
 // `./catalog/` holds only the 24 stock provider entries themselves; this file
 // (registry.ts), base/, quirks.ts, and types.ts are infrastructure and stay
-// at the top level of providers/ — kept apart so "add a provider" always
+// at the top level of providers/ - kept apart so "add a provider" always
 // means "add one file to catalog/", never touching the machinery around it.
 
 import type {

@@ -11,7 +11,7 @@ import { WireKind } from "../../types";
 import { CC_VERSION } from "../../formats/anthropic/subscription/billing";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
-// Alibaba DashScope Coding Plan — the subscription sold for coding agents
+// Alibaba DashScope Coding Plan - the subscription sold for coding agents
 // (Claude Code, Qwen Code, Cline), keyed with an `sk-sp-…` credential that is
 // distinct from a pay-as-you-go Model Studio key.
 //
@@ -40,8 +40,8 @@ const CLAUDE_CODE_UA = `claude-cli/${CC_VERSION} (external, cli)`;
 
 class DashScopeCodingAdapter extends OpenAICompatibleAdapter {
   // The Anthropic-format endpoint is a sibling of /v1: <origin>/apps/anthropic.
-  // That bare path is the documented ANTHROPIC_BASE_URL — a BASE the client
-  // appends the Messages path to — so the real endpoint is
+  // That bare path is the documented ANTHROPIC_BASE_URL - a BASE the client
+  // appends the Messages path to - so the real endpoint is
   // /apps/anthropic/v1/messages (verified: bare path 404s, this one 401s).
   // ctx.baseUrl is just the origin, since /v1 is carried in ctx.basePath.
   override messages(ctx: BuildCtx): BuiltRequest {
@@ -60,7 +60,7 @@ class DashScopeCodingAdapter extends OpenAICompatibleAdapter {
   // makes it a property of the adapter rather than of persisted state.
   //
   // Still merged UNDER ctx.headers' own auth/host, and a deliberate
-  // provider-level `user-agent` in extraHeaders still wins — see withUa.
+  // provider-level `user-agent` in extraHeaders still wins - see withUa.
   private withUa(headers: Record<string, string>): Record<string, string> {
     // Case-insensitive check: a caller-set UA under any casing must not end up
     // duplicated (node emits every distinct key, so "User-Agent" + "user-agent"
@@ -90,14 +90,14 @@ export const dashscopeCoding = new DashScopeCodingAdapter({
   id: "dashscope-coding",
   label: "DashScope Coding Plan",
   blurb:
-    "Alibaba DashScope Coding Plan subscription — OpenAI-compatible and Anthropic-compatible endpoints, sends the Claude Code user-agent.",
+    "Alibaba DashScope Coding Plan subscription - OpenAI-compatible and Anthropic-compatible endpoints, sends the Claude Code user-agent.",
   brand: "qwen",
   docsUrl: "https://www.alibabacloud.com/help/en/model-studio/coding-plan",
   defaults: {
     baseUrl: "https://coding.dashscope.aliyuncs.com",
     basePath: "/v1",
     modelsPath: "/models",
-    // No /v1/responses on this host (404) — offering it would route traffic to
+    // No /v1/responses on this host (404) - offering it would route traffic to
     // an endpoint that doesn't exist.
     endpoints: [WireKind.Chat, WireKind.Messages],
     authScheme: "bearer",
@@ -116,13 +116,13 @@ export const dashscopeCoding = new DashScopeCodingAdapter({
       label: "API key",
       placeholder: "sk-sp-…",
       required: true,
-      hint: "Coding Plan key (sk-sp-…), not a pay-as-you-go Model Studio key. One per line — rotated round-robin.",
+      hint: "Coding Plan key (sk-sp-…), not a pay-as-you-go Model Studio key. One per line - rotated round-robin.",
     },
     {
       key: "baseUrl",
       label: "Base URL",
       editable: true,
-      hint: "Default: https://coding.dashscope.aliyuncs.com — use https://coding-intl.dashscope.aliyuncs.com for the international region.",
+      hint: "Default: https://coding.dashscope.aliyuncs.com - use https://coding-intl.dashscope.aliyuncs.com for the international region.",
     },
   ],
   quirks: {

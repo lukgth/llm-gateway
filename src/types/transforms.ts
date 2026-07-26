@@ -30,7 +30,7 @@ export interface ParamSpec {
   hint?: string;
 }
 
-// The UI-facing description of a library transform (no build fn — that's backend).
+// The UI-facing description of a library transform (no build fn - that's backend).
 // `phases` lists which phases the transform may be used in (body-shape ops work
 // in both request and response).
 export interface TransformDefInfo {

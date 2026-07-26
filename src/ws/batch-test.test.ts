@@ -232,7 +232,7 @@ test("runBatchTest: cancellation stops dispatching new tests early", async () =>
       catalogId: "openai",
       authScheme: "bearer",
       // Concurrency is fixed at 5 inside runBatchTest, so only the first
-      // wave (up to 5) should dispatch before we flip cancelled — proving
+      // wave (up to 5) should dispatch before we flip cancelled - proving
       // isCancelled() is actually polled between dispatches, not just at
       // the top of the whole run.
     });

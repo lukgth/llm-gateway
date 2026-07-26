@@ -9,17 +9,17 @@
 //   - the web-tool loop               (runOneTurnAttempt uses the same route)
 //
 // Order matters:
-//   1. thinking-signature — normalize/strip thinking-block signatures (structural
+//   1. thinking-signature - normalize/strip thinking-block signatures (structural
 //                          body-shape fix; runs first so every hook after this
 //                          sees a body with no `thinking`-typed content blocks)
-//   2. max-tokens       — clamp to the hop ceiling, re-reconcile budget
-//   3. prefill          — append a trailing user turn if the convo ends assistant
-//   4. sanitize-request — rescue effort from non-standard fields into
+//   2. max-tokens       - clamp to the hop ceiling, re-reconcile budget
+//   3. prefill          - append a trailing user turn if the convo ends assistant
+//   4. sanitize-request - rescue effort from non-standard fields into
 //                          output_config.effort, then strip every top-level
 //                          field not in the Anthropic allowlist
-//   5. thinking-mode    — per-model thinking type normalization (adaptive ↔
+//   5. thinking-mode    - per-model thinking type normalization (adaptive ↔
 //                          enabled, forced adaptive for Fable/Mythos, etc.)
-//   6. thinking-config  — normalize thinking + hoist system; may raise
+//   6. thinking-config  - normalize thinking + hoist system; may raise
 //                          max_tokens (gets the final say on the ceiling);
 //                          strips output_config.effort on Haiku
 //
@@ -58,7 +58,7 @@ function modelOf(body: { model?: unknown }, ctx: TransformCtx): string {
 // These are an ALL-PROVIDER request default: the engine adds them to every
 // route, and buildTransformPlan places a "messages"-tagged request stage where
 // the body is in Messages shape. To exactly reproduce the historical behavior
-// (they fired only when the PROVIDER emitted Messages — `requestHooksForFmt`
+// (they fired only when the PROVIDER emitted Messages - `requestHooksForFmt`
 // keyed on providerFmt), each hook is additionally gated on
 // `ctx.providerFmt === "messages"`, so the pre-conversion case (a client sending
 // Messages to a non-Messages provider) stays a no-op. Placed post-conversion for
@@ -66,18 +66,18 @@ function modelOf(body: { model?: unknown }, ctx: TransformCtx): string {
 // before. Ordering among them matters (see below); every stage is self-guarded
 // and a no-op when its trigger is absent.
 //
-//   1. thinking-signature — normalize/strip thinking-block signatures
-//   2. max-tokens       — clamp to the hop ceiling, re-reconcile budget
-//   3. prefill          — append a trailing user turn if the convo ends assistant
-//   4. sanitize-request — rescue effort, strip non-Anthropic fields
-//   5. thinking-mode    — per-model thinking type normalization
-//   6. thinking-config  — normalize thinking + hoist system, may raise max_tokens
+//   1. thinking-signature - normalize/strip thinking-block signatures
+//   2. max-tokens       - clamp to the hop ceiling, re-reconcile budget
+//   3. prefill          - append a trailing user turn if the convo ends assistant
+//   4. sanitize-request - rescue effort, strip non-Anthropic fields
+//   5. thinking-mode    - per-model thinking type normalization
+//   6. thinking-config  - normalize thinking + hoist system, may raise max_tokens
 // Cache-control limiting occurs later at the final Anthropic adapter boundary.
 function messagesOnly(ctx: TransformCtx): boolean {
   return ctx.providerFmt === "messages";
 }
 
-// Shared `group` for all six hooks below — see TransformMeta's doc comment
+// Shared `group` for all six hooks below - see TransformMeta's doc comment
 // in formats/pipeline.ts: siblings with the same `group` collapse into one
 // row in the resolved-transforms UI instead of showing as six. These hooks
 // always run together, in this fixed order, on every Messages-shaped hop, so
@@ -88,8 +88,8 @@ const GROUP = "anthropic-hooks";
 
 export function defaultAnthropicRequestHooks(): TaggedRequestTransform[] {
   return [
-    // 1. Runs FIRST: every `thinking` content block the request carries —
-    // real or gateway-synthesized — gets normalized to a signature-free
+    // 1. Runs FIRST: every `thinking` content block the request carries -
+    // real or gateway-synthesized - gets normalized to a signature-free
     // `text` block before anything else inspects the body.
     onRequest(
       "messages",
@@ -99,7 +99,7 @@ export function defaultAnthropicRequestHooks(): TaggedRequestTransform[] {
       {
         label: "Thinking-signature normalization",
         blurb:
-          "Rewrites every thinking block to signature-free text before anything else inspects the body — a fallback-chain retry can route the same conversation to a different Anthropic-compatible provider that can't validate another provider's signature.",
+          "Rewrites every thinking block to signature-free text before anything else inspects the body - a fallback-chain retry can route the same conversation to a different Anthropic-compatible provider that can't validate another provider's signature.",
         group: GROUP,
       },
     ),
@@ -118,7 +118,7 @@ export function defaultAnthropicRequestHooks(): TaggedRequestTransform[] {
         group: GROUP,
       },
     ),
-    // 3. Prefill fix — structural, no interaction with the fields below.
+    // 3. Prefill fix - structural, no interaction with the fields below.
     onRequest(
       "messages",
       "anthropic:prefill",
@@ -129,7 +129,7 @@ export function defaultAnthropicRequestHooks(): TaggedRequestTransform[] {
       {
         label: "Trailing-turn prefill fix",
         blurb:
-          "Appends a trailing user turn (with tool_result blocks if needed) when the conversation ends on assistant — a Claude 4.6+ prefill requirement.",
+          "Appends a trailing user turn (with tool_result blocks if needed) when the conversation ends on assistant - a Claude 4.6+ prefill requirement.",
         group: GROUP,
       },
     ),
@@ -152,7 +152,7 @@ export function defaultAnthropicRequestHooks(): TaggedRequestTransform[] {
         group: GROUP,
       },
     ),
-    // 5. Per-model thinking type normalization — converts the thinking
+    // 5. Per-model thinking type normalization - converts the thinking
     // config into a shape the target model accepts (e.g. enabled→adaptive
     // for Opus 4.7+/Sonnet 5+, adaptive→enabled for ≤4.5/Haiku, forced
     // adaptive for Fable/Mythos). Runs before thinking-config so budget
@@ -167,13 +167,13 @@ export function defaultAnthropicRequestHooks(): TaggedRequestTransform[] {
       {
         label: "Thinking-mode normalization",
         blurb:
-          "Transforms the thinking config into the shape the target model supports — e.g. enabled→adaptive for Opus 4.7+, adaptive→enabled for older models.",
+          "Transforms the thinking config into the shape the target model supports - e.g. enabled→adaptive for Opus 4.7+, adaptive→enabled for older models.",
         group: GROUP,
       },
     ),
     // 6. Runs LAST: normalize thinking config (adaptive→enabled on Haiku,
     // budget_tokens floor), hoist system turns, and reconcile budget vs
-    // max_tokens. Gets the final say on max_tokens — may raise it above
+    // max_tokens. Gets the final say on max_tokens - may raise it above
     // the ceiling max-tokens imposed if budget demands it. Also strips
     // output_config.effort on Haiku (which rejects it).
     onRequest(
@@ -193,7 +193,7 @@ export function defaultAnthropicRequestHooks(): TaggedRequestTransform[] {
   ];
 }
 
-// Response sanitization — ensures every response returned to a Messages client
+// Response sanitization - ensures every response returned to a Messages client
 // contains only valid Anthropic Messages API fields. Tagged "messages" so it
 // runs post-bridge (when clientFmt is messages). Gated on clientFmt to be a
 // no-op when the client is chat/responses.

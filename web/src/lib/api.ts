@@ -121,7 +121,7 @@ export const api = {
     req<Provider>(`/api/providers/${id}`, json("PUT", input)),
   deleteProvider: (id: string) =>
     req<void>(`/api/providers/${id}`, { method: "DELETE" }),
-  // `key` tests that exact key (bypassing the live rotation pick) — used by
+  // `key` tests that exact key (bypassing the live rotation pick) - used by
   // the per-key Test button in the Keys tab; omit it for the provider-level
   // "Test connection" button, which lets pickKeyForTest choose live.
   testProvider: (id: string, key?: string) =>
@@ -131,7 +131,7 @@ export const api = {
     ),
   upstreamModels: (id: string) =>
     req<UpstreamModelsResponse>(`/api/providers/${id}/upstream-models`),
-  // The full resolved default transform stack — read-only, never edited from
+  // The full resolved default transform stack - read-only, never edited from
   // here. Omit `upstreamId` for the provider-level defaults every imported
   // model starts from; pass it to layer that specific model's own transforms
   // on top, exactly as a live request would (see docs/transforms-api.md).
@@ -298,7 +298,7 @@ export const api = {
   listTransforms: () => req<TransformDefInfo[]>("/api/transforms"),
 
   // stock default pricing (reference table for the model editor's "Use
-  // default" affordance — never authoritative, see docs/wire-types.md)
+  // default" affordance - never authoritative, see docs/wire-types.md)
   listDefaultPricing: () =>
     req<DefaultModelPricing[]>("/api/model-pricing/defaults"),
   defaultPricingFor: (idOrAlias: string) =>

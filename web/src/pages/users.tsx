@@ -62,7 +62,7 @@ export default function Users() {
               widths={["50%", "70%", "60%", "35%", "20%"]}
             />
           ) : items.length === 0 ? (
-            <EmptyState msg="No users yet — optional, for organizing keys" />
+            <EmptyState msg="No users yet - optional, for organizing keys" />
           ) : (
             <Table>
               <TableHeader>
@@ -81,10 +81,10 @@ export default function Users() {
                       {u.name}
                     </TableCell>
                     <TableCell className="max-w-[16rem] truncate text-muted-foreground">
-                      {u.email ?? "—"}
+                      {u.email ?? "-"}
                     </TableCell>
                     <TableCell className="max-w-[28rem] truncate text-muted-foreground">
-                      {u.notes ?? "—"}
+                      {u.notes ?? "-"}
                     </TableCell>
                     <TableCell>
                       <Badge variant={u.enabled ? "success" : "warning"}>

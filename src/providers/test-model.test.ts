@@ -1,10 +1,10 @@
-// probeEndpoint()/testModel() seam tests — verifies the contract this session
+// probeEndpoint()/testModel() seam tests - verifies the contract this session
 // added: a testModel() override hands probeEndpoint() a body TYPED to the wire
 // kind's own request schema, and probeEndpoint() runs it through the FULL
-// live-request stack for that kind — builtin defaults -> family defaults
+// live-request stack for that kind - builtin defaults -> family defaults
 // (minus anything ctx.ownTransforms overrides) -> THIS adapter's own
 // requestTransforms() -> ctx.ownTransforms -> THIS adapter's own build method
-// (chatCompletions/messages/responses — never sending anything itself) ->
+// (chatCompletions/messages/responses - never sending anything itself) ->
 // ctx.request() -> the same full stack's response side (success only).
 
 import { test } from "node:test";
@@ -42,7 +42,7 @@ const provider = (): Provider =>
   }) as unknown as Provider;
 
 // A fake ctx.request() that records what it was sent and returns a canned
-// response — lets a test assert on the EXACT built request without a network
+// response - lets a test assert on the EXACT built request without a network
 // call, and control the upstream reply to exercise success/failure paths.
 function fakeCtx(
   overProbe: Partial<TestModelCtx> = {},
@@ -171,16 +171,16 @@ test("probeEndpoint: the adapter's OWN build method shapes the request (not a ve
 
 // A second adapter whose request transform edits ctx.headers directly (full
 // upstream header control on the probe path, same as a live request) instead
-// of the body — proves probeEndpoint() seeds xctx.headers from ctx.headers
+// of the body - proves probeEndpoint() seeds xctx.headers from ctx.headers
 // (so the transform sees the SAME auth header ctx.apiKey was applied from)
-// and that the EDITED table — not the original ctx.headers — reaches both
+// and that the EDITED table - not the original ctx.headers - reaches both
 // the build phase and the actual outbound request.
 class HeaderEditingAdapter extends OpenAICompatibleAdapter {
   requestTransforms(): AnyRequestTransform[] {
     return [
       onRequest("chat", "rewrite-auth", (body, ctx) => {
         // The auth header the route built is already visible here, derived
-        // from the SAME key as ctx.apiKey — the parity contract.
+        // from the SAME key as ctx.apiKey - the parity contract.
         if (ctx.headers!["authorization"] !== `Bearer ${ctx.apiKey}`) {
           throw new Error("ctx.headers auth header doesn't match ctx.apiKey");
         }
@@ -292,7 +292,7 @@ test("probeEndpoint: ctx.logStage (when set) traces the declared plan and each s
   // Per-apply entries (with a boolean `changed`) for the same two stages,
   // proving both the request AND response passes were actually traced, not
   // just declared. `changed` is reference-identity (applyBodyTransforms:
-  // `next !== out`) — stamp-request/stamp-response mutate the body in place
+  // `next !== out`) - stamp-request/stamp-response mutate the body in place
   // and return the same reference, so it's `false` here, same as it would be
   // for any in-place mutation on a live request's trace.
   assert.ok(
@@ -318,8 +318,8 @@ test("probeEndpoint: with no ctx.logStage, tracing is skipped entirely (default,
 
 // Regression coverage: a PLAIN OpenAICompatibleAdapter subclass with NO
 // override at any layer (no requestTransforms/responseTransforms, no
-// quirks.defaultTransforms) — e.g. deepseek/gemini/glm/openrouter/the generic
-// openai-compatible catalog entry — used to trace NOTHING via probeEndpoint(),
+// quirks.defaultTransforms) - e.g. deepseek/gemini/glm/openrouter/the generic
+// openai-compatible catalog entry - used to trace NOTHING via probeEndpoint(),
 // because probeEndpoint() only ever composed `this.transforms(...)` (the
 // adapter's own bag). Only example-custom.ts (which declares its own
 // requestTransforms/responseTransforms) ever showed a stage. probeEndpoint()
@@ -353,7 +353,7 @@ test("probeEndpoint: a bare adapter with zero overrides still traces the builtin
   const result = await bare.testModel(ctx);
   assert.equal(result.ok, true);
   // The builtin <thinking> extraction default (response, tagged "chat") is the
-  // one all-provider default that applies to every chat-format probe — this
+  // one all-provider default that applies to every chat-format probe - this
   // is exactly the stage that was silently missing before this fix.
   assert.ok(
     events.some((e) => e.dir === "resp" && e.name === "thinking:chat"),

@@ -1,11 +1,11 @@
-// Streaming thinking/reasoning parser — the cross-format state machine.
+// Streaming thinking/reasoning parser - the cross-format state machine.
 //
 // Non-streaming responses can scan the whole body for closed blocks at once.
 // Streaming can't: a single block may be split across many chunks (the opening
 // tag itself can be split mid-tag). StreamingThinkingParser takes one content
 // delta at a time and returns the content/reasoning split for it. Both the
 // OpenAI chat transform (./chat-stream.ts) and the Anthropic messages
-// transform (./messages-stream.ts) drive this parser — all three live together
+// transform (./messages-stream.ts) drive this parser - all three live together
 // here since they're the same same-format inline-tag-extraction concern,
 // just applied per wire format.
 
@@ -232,7 +232,7 @@ export class StreamingThinkingParser {
 
   // End of stream: emit any held-over carry as best-effort content/reasoning.
   // Partial closing tags (e.g. trailing `</` or `</th`) inside a thinking
-  // block are discarded — they are incomplete markup, not real reasoning.
+  // block are discarded - they are incomplete markup, not real reasoning.
   flush(): ThinkingDelta {
     if (!this.carry)
       return { content: "", reasoning: "", reasoningDetails: [] };
@@ -241,7 +241,7 @@ export class StreamingThinkingParser {
     if (this.state === "content") {
       return { content: carry, reasoning: "", reasoningDetails: [] };
     }
-    // Thinking state — emit carry as a final reasoning chunk, but first
+    // Thinking state - emit carry as a final reasoning chunk, but first
     // strip any partial closing tags (e.g. `</`, `</th`, `</thinki`).
     const partial = this.partialCloseTag(carry);
     if (partial > 0) {

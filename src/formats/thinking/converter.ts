@@ -24,7 +24,7 @@ const THINKING_RE = new RegExp(
 const UNCLOSED_OPEN_TAG_RE = new RegExp(OPEN_TAG_SRC, "gi");
 
 // A reasoning_details entry produced by the gateway. OpenAI-style shape. This is
-// the shared definition — the streaming parser (./stream) imports it from here.
+// the shared definition - the streaming parser (./stream) imports it from here.
 export interface ReasoningDetailEntry {
   type: "reasoning.text";
   text: string;
@@ -45,7 +45,7 @@ function codeBlockRanges(text: string): Array<[number, number]> {
   let i = 0;
 
   while (i < text.length) {
-    // Always check triple backticks first — they are fence delimiters
+    // Always check triple backticks first - they are fence delimiters
     // whether we're inside a fence or not.
     if (
       text[i] === "`" &&
@@ -116,7 +116,7 @@ function looksLikeExample(fullText: string, matchStart: number): boolean {
   const lineStart = fullText.lastIndexOf("\n", matchStart - 1) + 1;
   const textBeforeOnLine = fullText.slice(lineStart, matchStart).trimEnd();
 
-  // Strip thinking open/close tags — prior blocks' tags are not prose.
+  // Strip thinking open/close tags - prior blocks' tags are not prose.
   const cleaned = textBeforeOnLine
     .replace(new RegExp(THINKING_RE.source, "gi"), "")
     .replace(new RegExp(CLOSE_TAG_SRC, "gi"), "")
@@ -204,7 +204,7 @@ export class ThinkingConverter {
   // Thinking tags inside fenced code blocks (```) are ignored. A block that is
   // empty or whitespace-only after trimming (`<thinking></thinking>`, or a
   // model that opens and immediately closes the tag) is DROPPED, not kept as
-  // an empty string — every downstream consumer (buildReasoningDetails, the
+  // an empty string - every downstream consumer (buildReasoningDetails, the
   // chat/responses/messages emitters) assumes a non-empty block, and an empty
   // one would surface as a genuinely empty reasoning/thinking block on the
   // wire, which real providers never emit and some clients reject outright.
@@ -215,7 +215,7 @@ export class ThinkingConverter {
   // Same as parseThinking, but keeps empty-after-trim blocks (as "") instead
   // of dropping them. Callers that only need to know WHETHER a closed tag
   // matched at all (to decide between "strip the tag" and "leave text alone")
-  // must use this — `parseThinking(text).length` alone can't distinguish "no
+  // must use this - `parseThinking(text).length` alone can't distinguish "no
   // closed tag" from "a closed tag with nothing inside it", and conflating
   // the two would leave an empty `<thinking></thinking>` pair un-stripped in
   // the output (see splitThinking / applyToAnthropicMessage).
@@ -237,7 +237,7 @@ export class ThinkingConverter {
   // Remove every thinking/reasoning block from `text` and trim the
   // leftover whitespace so the answer doesn't start with a blank line.
   // Also strips unclosed opening tags that models leave behind when they
-  // get "stuck" — preventing raw <thinking>/<reasoning> tags from leaking
+  // get "stuck" - preventing raw <thinking>/<reasoning> tags from leaking
   // into the displayed content.
   // Thinking tags inside fenced code blocks (```) are preserved.
   stripThinking(text?: string): string {
@@ -274,7 +274,7 @@ export class ThinkingConverter {
   // [original, []] untouched.  Also strips unclosed opening tags that
   // models leave behind when they get "stuck" in a thinking block.
   private splitThinking(text: string): [string, string[]] {
-    // Branch on the RAW match count (empty blocks included) — a lone
+    // Branch on the RAW match count (empty blocks included) - a lone
     // `<thinking></thinking>` pair must still be stripped from the text even
     // though it contributes no block to the filtered result.
     const raw = this.parseThinkingRaw(text);
@@ -338,7 +338,7 @@ export class ThinkingConverter {
       if (!blocks.length) continue;
 
       // If the upstream already supplied reasoning_content, fold it in as the
-      // leading block so nothing is lost — but don't duplicate identical text.
+      // leading block so nothing is lost - but don't duplicate identical text.
       if (typeof msg.reasoning_content === "string" && msg.reasoning_content) {
         if (blocks[0] !== msg.reasoning_content) {
           blocks.unshift(msg.reasoning_content);
@@ -445,13 +445,13 @@ export class ThinkingConverter {
         continue;
       }
 
-      // Branch on the RAW match count (empty blocks included) — a lone
+      // Branch on the RAW match count (empty blocks included) - a lone
       // `<thinking></thinking>` pair must still be stripped from the text
       // even though it contributes no emitted thinking block (see the
       // parity fix in splitThinking() above).
       const raw = this.parseThinkingRaw(b.text);
       if (!raw.length) {
-        // No closed blocks — strip unclosed opening tags so raw
+        // No closed blocks - strip unclosed opening tags so raw
         // <thinking>/<reasoning> tags don't leak into the output.
         const cleaned = b.text.replace(UNCLOSED_OPEN_TAG_RE, "");
         if (cleaned !== b.text) {
@@ -463,7 +463,7 @@ export class ThinkingConverter {
       }
       const blocks = raw.filter((t) => t !== "");
       if (!blocks.length) {
-        // Every matched tag was empty — strip them all, nothing to emit.
+        // Every matched tag was empty - strip them all, nothing to emit.
         b.text = this.stripThinking(b.text);
         if (b.text) newContent.push(b);
         touched = true;
@@ -474,11 +474,11 @@ export class ThinkingConverter {
       // REQUIRED shape (real Anthropic thinking blocks always carry one, and
       // some clients/SDKs reject a block that's missing it on echo-back) but
       // this text came from an inline <thinking> tag, not a real Anthropic
-      // response, so there is no genuine signature to attach — see
+      // response, so there is no genuine signature to attach - see
       // SYNTHETIC_THINKING_SIGNATURE's doc comment. Every REQUEST that
       // forwards a thinking block upstream also runs stripUnsupportedThinking
       // (formats/converters/thinking-signature.ts) first, which converts
-      // every thinking block — this synthetic one included — back to plain
+      // every thinking block - this synthetic one included - back to plain
       // text, so the placeholder is never actually round-tripped anywhere
       // that would need it to be a real signature.
       for (const text of blocks) {

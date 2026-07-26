@@ -31,7 +31,7 @@ export function registerUsageRoutes(ctx: RouteCtx): void {
     });
   });
 
-  // Per-(key, model, provider) breakdown for today — answers "this key using
+  // Per-(key, model, provider) breakdown for today - answers "this key using
   // gpt-5.5 resolved to which provider and how many tokens".
   r.get("/usage/breakdown", requireAdmin, (_req, res) =>
     res.json({ rows: fullBreakdownToday(db) }),
@@ -42,7 +42,7 @@ export function registerUsageRoutes(ctx: RouteCtx): void {
     res.json({ rows: breakdownForKey(db, String(req.params.id)) }),
   );
 
-  // "If a user uses model X, what provider did it resolve to?" — per-provider
+  // "If a user uses model X, what provider did it resolve to?" - per-provider
   // token/request totals for a model (today).
   r.get("/usage/models/:model", requireAdmin, (req, res) =>
     res.json({

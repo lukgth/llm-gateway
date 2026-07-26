@@ -1,4 +1,4 @@
-// Transform library — barrel export.
+// Transform library - barrel export.
 export {
   TRANSFORM_LIBRARY,
   getTransformDef,

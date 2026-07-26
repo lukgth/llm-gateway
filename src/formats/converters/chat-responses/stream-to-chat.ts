@@ -1,12 +1,12 @@
 // Streaming bridge: Responses SSE -> Chat Completions SSE.
 //
-// The inverse of stream-from-chat.ts's StreamingResponsesBridgeTransform —
+// The inverse of stream-from-chat.ts's StreamingResponsesBridgeTransform -
 // needed so a chat/messages CLIENT streaming against a responses-NATIVE
 // provider gets back chat-shaped SSE chunks (paired with
 // requestFromChatCompletions() for the request side). Reads the same
 // `response.*` event vocabulary that class emits and reduces it back to
 // `chat.completion.chunk` deltas: text deltas -> delta.content, reasoning
-// deltas -> delta.reasoning_content (Chat's own streaming reasoning field —
+// deltas -> delta.reasoning_content (Chat's own streaming reasoning field -
 // see the thinking pipeline), function_call_arguments deltas ->
 // delta.tool_calls[].function.arguments, response.completed -> the terminal
 // chunk (finish_reason + usage) + [DONE].
@@ -34,7 +34,7 @@ export class StreamingResponsesToChatBridgeTransform extends Transform {
   private sentRole = false;
   // Responses output_index -> the Chat tool_calls[] index it's streamed as
   // (Chat tool_calls are positionally indexed within ONE message, Responses
-  // output items are indexed within the whole response — these two index
+  // output items are indexed within the whole response - these two index
   // spaces aren't the same, so a mapping is needed rather than reusing the
   // Responses index directly).
   private toolCallIndex = new Map<number, number>();
@@ -167,7 +167,7 @@ export class StreamingResponsesToChatBridgeTransform extends Transform {
         break;
       }
       // response.output_item.done / content_part.* / text.done /
-      // reasoning_text.done — purely structural close events on the Responses
+      // reasoning_text.done - purely structural close events on the Responses
       // side; Chat's SSE has no equivalent framing (a Chat stream just stops
       // sending deltas for a field), so there's nothing to emit for them.
     }

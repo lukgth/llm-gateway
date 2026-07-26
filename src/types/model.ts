@@ -1,4 +1,4 @@
-// Model — a gateway-exposed alias with an ordered provider fallback chain.
+// Model - a gateway-exposed alias with an ordered provider fallback chain.
 
 import type { ModelCapabilities } from "./capabilities";
 

@@ -7,7 +7,7 @@ import { JsonTree } from "@/components/json-tree";
 import { cn } from "@/lib/utils";
 
 export function fmtLatency(ms: number | null): string {
-  if (ms == null) return "—";
+  if (ms == null) return "-";
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
 }
@@ -22,10 +22,10 @@ export function StatusBadge({
   if (status == null)
     return (
       <Badge variant="secondary" className={cn("tabular-nums")}>
-        —
+        -
       </Badge>
     );
-  // A gateway throttle 503 is a transient rate-limit, not a failure — badge it
+  // A gateway throttle 503 is a transient rate-limit, not a failure - badge it
   // amber ("warning") with a label, so it never reads as a red 5xx error.
   if (throttled)
     return (
@@ -99,7 +99,7 @@ export function DebugPanel({
           </span>
         ) : !json ? (
           <span className="font-mono text-[0.7rem] text-muted-foreground">
-            — not captured —
+            - not captured -
           </span>
         ) : (
           <JsonTree json={json} />

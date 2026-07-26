@@ -1,4 +1,4 @@
-// Batch key testing — the async job body behind the "batch-test" WS
+// Batch key testing - the async job body behind the "batch-test" WS
 // message. Kept separate from the hub so the concurrency/validation logic
 // is testable without a live socket (see batch-test.test.ts).
 
@@ -9,7 +9,7 @@ import { testSavedProvider } from "../admin/routes/provider-probe";
 import { runWithConcurrency } from "../utils/concurrency";
 import type { TestProviderResult } from "../providers/base/types";
 
-// Bandwidth/abuse guards — mirrors the frontend's pre-existing hand-rolled
+// Bandwidth/abuse guards - mirrors the frontend's pre-existing hand-rolled
 // worker-pool constant (provider-key-manager.tsx's old testAll), now
 // enforced server-side since this is the actual fan-out point.
 export const MAX_BATCH_KEYS = 200;
@@ -29,7 +29,7 @@ export interface BatchTestDone {
 export interface BatchTestCallbacks {
   onProgress: (progress: BatchTestProgress) => void;
   onDone: (done: BatchTestDone) => void;
-  /** Polled between dispatches — a closed socket stops new tests early. */
+  /** Polled between dispatches - a closed socket stops new tests early. */
   isCancelled: () => boolean;
 }
 

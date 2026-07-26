@@ -5,11 +5,11 @@ import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 class OllamaLocalAdapter extends OpenAICompatibleAdapter {}
 class OllamaCloudAdapter extends OpenAICompatibleAdapter {}
 
-// Ollama (local) — self-hosted Ollama instance, OpenAI-compatible.
+// Ollama (local) - self-hosted Ollama instance, OpenAI-compatible.
 export const ollama = new OllamaLocalAdapter({
   id: "ollama",
   label: "Ollama",
-  blurb: "Self-hosted Ollama instance — local open-weight models.",
+  blurb: "Self-hosted Ollama instance - local open-weight models.",
   brand: "ollama",
   defaults: {
     baseUrl: "http://localhost:11434",
@@ -25,7 +25,7 @@ export const ollama = new OllamaLocalAdapter({
       placeholder: "http://localhost:11434",
       required: true,
       editable: true,
-      hint: "Your Ollama instance origin — the gateway appends /v1/chat/completions.",
+      hint: "Your Ollama instance origin - the gateway appends /v1/chat/completions.",
     },
     {
       key: "apiKeys",
@@ -38,11 +38,11 @@ export const ollama = new OllamaLocalAdapter({
   },
 });
 
-// Ollama Cloud — hosted Ollama API.
+// Ollama Cloud - hosted Ollama API.
 export const ollamaCloud = new OllamaCloudAdapter({
   id: "ollama-cloud",
   label: "Ollama Cloud",
-  blurb: "Ollama Cloud — hosted open models via the OpenAI-compatible API.",
+  blurb: "Ollama Cloud - hosted open models via the OpenAI-compatible API.",
   brand: "ollama",
   defaults: {
     baseUrl: "https://ollama.com",

@@ -128,7 +128,7 @@ import type { ForwardContext } from "./engine-support/types";
 // A Claude Code long-context usage-credits 429 rotates to a different key
 // WITHOUT spending a normal retry attempt (it's the key's subscription plan,
 // not a fault). This bounds that free rotation so a pathological pool can't spin
-// forever — in practice the loop stops much sooner, the moment every enabled key
+// forever - in practice the loop stops much sooner, the moment every enabled key
 // has returned the credits 429. Hit the cap → fail the provider over cleanly.
 const MAX_CREDIT_ROTATIONS = 100;
 
@@ -167,14 +167,14 @@ export class ForwardingEngine {
   }
 
   // Health-aware key pick using the SAME live rotation/health state a real
-  // request would get (this.keyHealth is shared with the forward() path) —
+  // request would get (this.keyHealth is shared with the forward() path) -
   // for the admin "Test connection" probe, so the reported key isn't a fake
   // stand-in but the actual next-in-line pick (skips cooling-down/auth-failed
   // keys, honors model affinity). Like a real select(), this DOES advance the
-  // round-robin cursor — a test click consumes a rotation slot exactly like a
+  // round-robin cursor - a test click consumes a rotation slot exactly like a
   // real request would, so back-to-back tests cycle through the pool instead
   // of always reporting the same key. It does NOT call recordSuccess/
-  // recordFailure/markAuthFailed — the probe itself does its own HTTP call and
+  // recordFailure/markAuthFailed - the probe itself does its own HTTP call and
   // reports its own status, not through the key-health feedback loop. Returns
   // null only when the provider has no keys at all.
   pickKeyForTest(
@@ -185,12 +185,12 @@ export class ForwardingEngine {
     return this.keyHealth.select(providerId, keys, model, new Set());
   }
 
-  // A key just got a real auth failure (401/403) from upstream — it's dead,
+  // A key just got a real auth failure (401/403) from upstream - it's dead,
   // not just cooling down. Beyond keyHealth's in-memory/health-table flag
   // (which only affects THIS process's rotation), persistently disable the
   // provider_keys row so it drops out of `listEnabledCredentials` for every
   // future request AND out of the usage report's `visibleKeys` filter
-  // (src/admin/routes/usage-report.ts skips `!enabled` keys) — the operator
+  // (src/admin/routes/usage-report.ts skips `!enabled` keys) - the operator
   // re-enables it manually once the credential is fixed/rotated.
   private disableDeadKey(
     providerId: string,
@@ -294,7 +294,7 @@ export class ForwardingEngine {
 
     // nativeConversion: the provider accepts all three wire formats and converts
     // to its model internally. The per-hop endpoint chooses WHICH format the
-    // gateway hands it — the gateway still converts client -> picked format, then
+    // gateway hands it - the gateway still converts client -> picked format, then
     // the provider does the rest. "Auto" (no per-link endpoint) forwards the
     // client's own format + path unchanged (no gateway conversion).
     const endpointPlan: EndpointRoute = provider.nativeConversion
@@ -336,16 +336,16 @@ export class ForwardingEngine {
     // (placed by buildTransformPlan relative to the wire conversion) or untagged
     // (placed post, historical). Sources, in order:
     //   1. default transforms: the all-provider registry (anthropic hooks,
-    //      thinking) — declared in formats/transforms/defaults, each format-
+    //      thinking) - declared in formats/transforms/defaults, each format-
     //      tagged so it lands in the right slot for this hop.
     //   2. family transforms: the provider family's library-backed defaults
-    //      (e.g. anthropic-cache), minus anything the model overrides — runs
+    //      (e.g. anthropic-cache), minus anything the model overrides - runs
     //      BEFORE the adapter's own stack so e.g. prompt-caching breakpoints
     //      are in place before an adapter-specific stage (like the
     //      claude-code hooks) inspects/rewrites the body.
     //   3. adapter transforms: the provider adapter's own tagged/untagged
     //      stages (e.g. claude-code's no-op framework).
-    //   4. model transforms: the model's own overrides/additions — last, so an
+    //   4. model transforms: the model's own overrides/additions - last, so an
     //      operator's explicit per-model customization always has the final
     //      say over both the family default and the adapter's stack.
     const defaults = collectDefaults({
@@ -413,7 +413,7 @@ export class ForwardingEngine {
     // Firecrawl-backed web tools: if enabled and this request asks for the hosted
     // web_search / web_fetch tools, hand the whole request to the agent loop (which
     // the gateway runs itself) instead of a single proxied turn. Detection is
-    // format-agnostic (tool defs in Messages OR Chat shape — a Claude model behind
+    // format-agnostic (tool defs in Messages OR Chat shape - a Claude model behind
     // an OpenAI-type client), so both Messages and Chat clients qualify; the loop
     // works in Messages shape internally and emits back in the client's format.
     // Responses clients (`input`, not `messages`) fall through to the normal proxy.
@@ -510,7 +510,7 @@ export class ForwardingEngine {
       // a healthy one within this request (bounded by the key count).
       const providerKeys = listEnabledCredentials(this.db, entry.provider.id);
       // Every configured key for this provider is disabled (auth-failed or
-      // manually turned off) — NOT the same as a genuinely keyless provider
+      // manually turned off) - NOT the same as a genuinely keyless provider
       // (0 keys ever configured), which intentionally forwards the client's
       // own auth (see buildHeaders). Attempting anyway here would silently
       // leak the client's credentials upstream to a provider that expects
@@ -561,7 +561,7 @@ export class ForwardingEngine {
         Math.min(usable || 1, providerKeys.length || 1),
       );
       // `tried` excludes keys from re-selection this request. `creditLess` is the
-      // subset that returned the long-context usage-credits 429 — tracked so we
+      // subset that returned the long-context usage-credits 429 - tracked so we
       // fail the provider over cleanly the instant EVERY enabled key is credit-
       // less, rather than burning all 100 rotations. `sawCreditError` gates the
       // credit-proven marking: a plain success only proves long-context credits
@@ -574,8 +574,8 @@ export class ForwardingEngine {
       // of the attempt budget, fail the provider over once EVERY key lacks it.
       const modelCreditLess = new Set<string>();
       let sawCreditError = false;
-      let normalAttempts = 0; // genuine failures — bounded by `attempts`
-      let creditRotations = 0; // free credit-driven rotations — bounded by cap
+      let normalAttempts = 0; // genuine failures - bounded by `attempts`
+      let creditRotations = 0; // free credit-driven rotations - bounded by cap
       while (true) {
         if (res.headersSent || res.writableEnded) return;
         const pick = this.keyHealth.select(
@@ -611,7 +611,7 @@ export class ForwardingEngine {
           break;
         }
 
-        // Long-context usage-credits 429: NOT a key fault — this key's
+        // Long-context usage-credits 429: NOT a key fault - this key's
         // subscription plan just can't serve this request. Skip it silently (no
         // health penalty, no cooldown, no error log), drop any stale credit-
         // proof, and rotate to another key to find one whose plan works. This
@@ -647,9 +647,9 @@ export class ForwardingEngine {
         }
 
         // Premium-model usage-credits 429: this key's plan has no Fable/Mythos
-        // access. Identical handling to the long-context skip above — silent
+        // access. Identical handling to the long-context skip above - silent
         // rotate, no health penalty/cooldown/log, provider fails over once every
-        // key lacks premium — EXCEPT it never touches the long-context credit
+        // key lacks premium - EXCEPT it never touches the long-context credit
         // proof (a premium-less key can still hold long-context credits). The key
         // stays fully healthy and usable for base models.
         if (pick && result.modelCreditsRequired) {
@@ -685,7 +685,7 @@ export class ForwardingEngine {
               entry.upstreamModel,
             );
             // This key served a request that another key rejected for lack of
-            // long-context credits — its plan is PROVEN to have them, so give it
+            // long-context credits - its plan is PROVEN to have them, so give it
             // durable extra pull in the pool for future long-context traffic.
             if (sawCreditError)
               this.keyHealth.markCreditProven(entry.provider.id, pick.keyHash);
@@ -722,7 +722,7 @@ export class ForwardingEngine {
               // layers a SEPARATE, longer Fable cooldown on top: the base rate
               // limit above frees the key for Opus/Sonnet/Haiku on the base
               // clock, while this keeps only the Fable class blocked to its own
-              // reset (so base traffic isn't starved for days — the bug this
+              // reset (so base traffic isn't starved for days - the bug this
               // whole split fixes).
               if (result.fableCooldownMs !== undefined) {
                 this.keyHealth.markModelCooldown(
@@ -741,7 +741,7 @@ export class ForwardingEngine {
               entry.upstreamModel,
               result.status,
               // Preserve the key's premium (Fable) class evidence whenever a
-              // Fable window drove this 429 — a quota exhaustion isn't proof the
+              // Fable window drove this 429 - a quota exhaustion isn't proof the
               // key can't serve Fable, so don't let it demote the class.
               result.rateLimitScope === "model" ||
                 result.fableCooldownMs !== undefined
@@ -833,7 +833,7 @@ export class ForwardingEngine {
       earliestRetryAt,
       lastReason,
     );
-    // No upstream usage to apply — release the reservation so a failed request
+    // No upstream usage to apply - release the reservation so a failed request
     // doesn't permanently inflate the key's daily counter.
     this.settleUsage(ctx, first?.provider ?? null, {});
     this.recordLog(
@@ -853,7 +853,7 @@ export class ForwardingEngine {
   // future epoch-ms (every exhausted hop was rate-limited, nothing dead), answer
   // 503 + Retry-After so the caller knows this is transient and when to retry;
   // otherwise 502. Returns the status actually sent AND the string to store as
-  // the log row's `error` — for the 503 that's the throttle marker (carrying the
+  // the log row's `error` - for the 503 that's the throttle marker (carrying the
   // retry epoch) so the dashboard/logs can tell a transient throttle from a real
   // 5xx (see request-logs throttleLogError). The status is still returned when
   // headers were already flushed, so the log row reflects intent. Mirrors
@@ -924,15 +924,15 @@ export class ForwardingEngine {
 
     // Fresh per-attempt ctx so a request hook's URL/header rewrites can't leak
     // across retries/hops (route.xctx is shared for the whole request).
-    // `headers` is the FULL mutable table a request transform edits directly —
+    // `headers` is the FULL mutable table a request transform edits directly -
     // built HERE, before any transform runs, so the table a transform sees is
     // the same one that reaches the adapter's build phase: client headers
     // first (the base), then the gateway's own values (host, auth for the
     // selected key, provider.extraHeaders, content-type/accept defaults)
-    // layered on top and winning on collision — a client can't set its own
+    // layered on top and winning on collision - a client can't set its own
     // auth. `apiKey` is the SAME key buildHeaders just derived the auth
     // header from and the build phase will separately receive as
-    // BuildCtx.apiKey — see TransformCtx.headers's/apiKey's doc comments.
+    // BuildCtx.apiKey - see TransformCtx.headers's/apiKey's doc comments.
     const key = pick?.key ?? null;
     const keyMetadata = pick
       ? (getProviderKeyByHash(this.db, provider.id, pick.keyHash)?.metadata ??
@@ -946,7 +946,7 @@ export class ForwardingEngine {
       urlOverride: undefined,
     };
 
-    // Phase 1 — run the request through its ordered transform stages (format
+    // Phase 1 - run the request through its ordered transform stages (format
     // conversion then any adapter-custom stages) and stamp the upstream model
     // id. A request hook may edit attemptCtx.headers in place and/or set
     // attemptCtx.urlOverride to rewrite the outbound request; both are read
@@ -966,16 +966,16 @@ export class ForwardingEngine {
 
       // Default composed URL: a request hook's urlOverride wins, else the
       // origin+basePath+forwardPath composition (string concat, not
-      // `new URL(path, base)`, which drops path prefixes — so Gemini-style
+      // `new URL(path, base)`, which drops path prefixes - so Gemini-style
       // layouts and OpenRouter's `/api` both work).
       const defaultUrl =
         attemptCtx.urlOverride ??
         buildUpstreamUrl(provider, route.forwardPath).toString();
       // The header table as the request stages left it (possibly edited by a
-      // transform) — the default set handed to the adapter's build phase.
+      // transform) - the default set handed to the adapter's build phase.
       const defaultHeaders = attemptCtx.headers!;
 
-      // Phase 2 — the adapter builds the final outbound request from the
+      // Phase 2 - the adapter builds the final outbound request from the
       // converted body, the selected key, and the composed URL + headers. The
       // default builder forwards them verbatim; a bespoke provider may rewrite
       // url/headers/body via the URL parts + resolve() (no `new URL()` needed).
@@ -999,7 +999,7 @@ export class ForwardingEngine {
       });
 
       // JSON.stringify can throw on a BigInt / circular structure a transform or
-      // builder produced — keep it (and the URL parse) inside the guard so the
+      // builder produced - keep it (and the URL parse) inside the guard so the
       // attempt fails over cleanly.
       serialized = Buffer.from(JSON.stringify(built.body), "utf8");
       upstreamUrl = new URL(built.url);
@@ -1009,7 +1009,7 @@ export class ForwardingEngine {
       };
       // Debug capture reflects what the PROVIDER actually received, not the raw
       // client body: re-distill from the converted+built body (Messages/Chat/
-      // Responses — captureRequest branches on shape). Overwrites the up-front
+      // Responses - captureRequest branches on shape). Overwrites the up-front
       // client-body capture (forward()); on failover the last attempt's body
       // wins, matching the provider the log row attributes. Never throws into
       // the attempt. Both recordLog sites (buffered + streaming settle) read
@@ -1103,7 +1103,7 @@ export class ForwardingEngine {
           path: `${upstreamUrl.pathname}${upstreamUrl.search}`,
           headers,
           rejectUnauthorized: provider.tlsVerify,
-          // Always explicit — dispatchAgent returns the proxy agent or the
+          // Always explicit - dispatchAgent returns the proxy agent or the
           // IPv4-first direct one, never undefined (which would silently fall
           // back to Node's global agent and neither prefer v4 nor race families).
           agent: proxyAgent,
@@ -1143,7 +1143,7 @@ export class ForwardingEngine {
           timer = null;
         }
         if (clientGone) {
-          // Nobody is listening — commit so the chain doesn't retry.
+          // Nobody is listening - commit so the chain doesn't retry.
           resolve({
             committed: true,
             status: 499,
@@ -1173,8 +1173,8 @@ export class ForwardingEngine {
   // Turn a classified Claude Code 429 (+ generic header hint) into the concrete
   // cooldown an attempt reports back. The whole point of the scope split (see
   // rate-limit-scope.ts) lands here: a GLOBAL rate limit is cooled on the BASE
-  // clock — scope.baseResetAt when the base window carried a reset, else the
-  // standard Retry-After hint, else a short 60s default — and NEVER inherits the
+  // clock - scope.baseResetAt when the base window carried a reset, else the
+  // standard Retry-After hint, else a short 60s default - and NEVER inherits the
   // Fable 7d_oi reset (which lives only in the representative unified-reset
   // header that parseRateLimitHint would otherwise pick up, wrongly locking base
   // out for days). When that same 429 also maxed 7d_oi, `fableCooldownMs` carries
@@ -1275,7 +1275,7 @@ export class ForwardingEngine {
         };
 
       // Premium-model (Fable/Mythos) usage-credits 429: a plain key with no
-      // premium access. Not a fault, not a rate limit — skip + rotate with no
+      // premium access. Not a fault, not a rate limit - skip + rotate with no
       // penalty (the key still serves base models), same as long-context above.
       if (
         isClaudeCodeModelCreditsError({
@@ -1354,10 +1354,10 @@ export class ForwardingEngine {
 
     captureClaudeUsage();
 
-    // Out of credits (402): NOT a key fault — this key/account just can't
+    // Out of credits (402): NOT a key fault - this key/account just can't
     // serve this model right now (free models still work fine). Skip it
     // silently, same handling as the premium-model usage-credits 429 below:
-    // no health penalty, no disable, no cooldown — just rotate to another
+    // no health penalty, no disable, no cooldown - just rotate to another
     // key so this one isn't picked again for this model this request.
     if (NO_CREDIT_STATUS.has(status)) {
       const errBody = await readErrorBody(upRes, MAX_BUFFER_BYTES);
@@ -1369,7 +1369,7 @@ export class ForwardingEngine {
       };
     }
 
-    // Auth failure (bad/revoked key): don't commit this to the client — the
+    // Auth failure (bad/revoked key): don't commit this to the client - the
     // key is dead, not the request. Read the body (for logging/reason only,
     // never forwarded) and fail this attempt over so forward()'s retry loop
     // can disable the key and pick another one, same as a rate limit.
@@ -1420,7 +1420,7 @@ export class ForwardingEngine {
       return { committed: true, status, error: `upstream ${status}` };
     }
 
-    // 2xx — streaming vs buffered. Conversion decisions use the PROVIDER format
+    // 2xx - streaming vs buffered. Conversion decisions use the PROVIDER format
     // (the shape upstream returns), then we bridge to the client format.
     if (ctx.isStream && isEventStream(headers)) {
       // Streaming settles itself: the real token counts only arrive in the
@@ -1522,7 +1522,7 @@ export class ForwardingEngine {
       sse: true,
     });
 
-    // Unsupported streaming conversion — a format bridge was required but none
+    // Unsupported streaming conversion - a format bridge was required but none
     // exists. End gracefully with a clear note; settle the reservation and log
     // the failure since the normal end-of-pipeline path below won't run.
     if (route.convert && !route.streamBridged) {
@@ -1562,7 +1562,7 @@ export class ForwardingEngine {
     // First stage: a pass-through observer that sniffs token usage out of the
     // PROVIDER-native SSE bytes (before any format bridge mangles field names)
     // without altering the stream. When debug is on it also accumulates the
-    // response text + tool calls — still per-event, never buffering the stream.
+    // response text + tool calls - still per-event, never buffering the stream.
     const usageObserver = new SseUsageObserver({ capture: ctx.debug });
 
     const anthropicClient = route.clientFmt === "messages";
@@ -1663,8 +1663,8 @@ export class ForwardingEngine {
     // streamStages (thinking is the plan's first, pre-bridge stage).
     // headTap (idle watchdog timestamps) runs first, then the usageObserver
     // (must see provider-native bytes before any rewrite), then thinking + bridge
-    // + custom stages, then ping. The tap is a pure passthrough — zero byte change.
-    // The pipeline sink is a PassThrough (`clientSink`), NOT `res` directly —
+    // + custom stages, then ping. The tap is a pure passthrough - zero byte change.
+    // The pipeline sink is a PassThrough (`clientSink`), NOT `res` directly -
     // streamPipeline destroys its final stage on error, and we need `res` to stay
     // writable so we can emit a terminal SSE error event after a mid-stream
     // upstream failure. clientSink is piped to `res` with { end: false } so we
@@ -1700,12 +1700,12 @@ export class ForwardingEngine {
       }
       const e = err as NodeJS.ErrnoException;
       // ERR_STREAM_PREMATURE_CLOSE covers BOTH a client disconnect and an
-      // upstream that closed mid-stream — same code, opposite meaning. Use the
+      // upstream that closed mid-stream - same code, opposite meaning. Use the
       // CLIENT's writable state to tell them apart: if the client is still
       // writable, the UPSTREAM died and the client is waiting, so surface a
       // terminal SSE `event: error` (headers are already 200; we can't change the
       // status, but the client learns the stream ended abnormally instead of
-      // hanging). If the client is gone, it's a routine abort — nothing to write.
+      // hanging). If the client is gone, it's a routine abort - nothing to write.
       const clientGone =
         res.writableEnded ||
         (res as { destroyed?: boolean }).destroyed === true;
@@ -1800,7 +1800,7 @@ export class ForwardingEngine {
     // Run the response through its ordered transform stages. Thinking extraction
     // is now the FIRST stage (a provider-format-tagged default, placed pre-bridge
     // by buildTransformPlan), so it reads provider-native fields before the
-    // format bridge — then the bridge (provider->client) and any custom stages.
+    // format bridge - then the bridge (provider->client) and any custom stages.
     let outBody: unknown = parsed;
     try {
       outBody = applyBodyTransforms(
@@ -1872,7 +1872,7 @@ export class ForwardingEngine {
     // of a silent truncation. To emit after the pipeline tears down we keep `res`
     // OUT of the destroy chain via a PassThrough sink piped with { end: false };
     // a res 'close' propagates a client abort back to the upstream. Non-SSE bodies
-    // (plain proxied responses) keep the simple direct pipe — there's no SSE error
+    // (plain proxied responses) keep the simple direct pipe - there's no SSE error
     // frame to send, and a raw truncation is the correct passthrough behavior.
     if (!isSse) {
       streamPipeline([upRes, res], (err) => {
@@ -1970,7 +1970,7 @@ export class ForwardingEngine {
   // pipeline debited up front (input estimate + reserved max output), then
   // applies the actual total and attributes it to (key, model, provider).
   //
-  // Every committed request calls this exactly once — that's what keeps the
+  // Every committed request calls this exactly once - that's what keeps the
   // three dashboard views (usage counter, request_logs, usage_breakdown) in
   // agreement: they all end up reflecting the same actual token total.
   private settleUsage(
@@ -1980,7 +1980,7 @@ export class ForwardingEngine {
   ): void {
     if (!ctx.apiKey) return;
     // These are raw better-sqlite3 writes; a transient DB error must not escape
-    // — several callers run in stream/end callbacks where a throw would be an
+    // - several callers run in stream/end callbacks where a throw would be an
     // uncaught exception. Accounting drift on a rare write failure is acceptable.
     try {
       // 1) Release the reservation so it can't linger on the daily counter.
@@ -1989,7 +1989,7 @@ export class ForwardingEngine {
       // 2) Apply the actual usage (realized input + output). Missing pieces
       //    already fell back to estimates upstream (streaming observer /
       //    buffered read). `usage.input` is TOTAL input including cached
-      //    (see readResponseUsage's doc comment) — cached tokens are billed
+      //    (see readResponseUsage's doc comment) - cached tokens are billed
       //    at a discounted rate by computeCostUsd below, but they must NOT
       //    count toward the daily quota debit or the dashboard token totals,
       //    or a cache hit would burn quota as if it were a fresh token.
@@ -2058,7 +2058,7 @@ export class ForwardingEngine {
       // to fail an auth-failed/rate-limited key over to a healthy one within
       // this turn, bounded by how many keys it actually has.
       const turnKeys = listEnabledCredentials(this.db, entry.provider.id);
-      // Same "all keys dead" guard as forward() — see its comment. A
+      // Same "all keys dead" guard as forward() - see its comment. A
       // genuinely keyless provider (0 keys ever configured) still routes.
       if (turnKeys.length === 0) {
         const total = countProviderKeys(this.db, entry.provider.id).total;
@@ -2199,7 +2199,7 @@ export class ForwardingEngine {
     // non-streaming, stamp model, then let the adapter build the final request.
     // Fresh per-attempt ctx so a request hook's URL/header rewrites don't leak.
     // `headers` built BEFORE the request stages run (client headers first, the
-    // gateway's own values layered on top and winning) — see attemptOnce's
+    // gateway's own values layered on top and winning) - see attemptOnce's
     // matching comment / TransformCtx.headers's/apiKey's doc comments.
     const attemptCtx: TransformCtx = {
       ...route.xctx,
@@ -2315,7 +2315,7 @@ export class ForwardingEngine {
         };
 
       // Premium-model usage-credits 429 (see the buffered path): skip + rotate,
-      // no penalty — the key just lacks Fable/Mythos access.
+      // no penalty - the key just lacks Fable/Mythos access.
       if (
         isClaudeCodeModelCreditsError({
           status: res.status,
@@ -2424,7 +2424,7 @@ export class ForwardingEngine {
     captureClaudeUsage();
     if (res.status < 200 || res.status >= 300) {
       // Out of credits (402): same silent skip + rotate as the buffered path
-      // and as the premium-model usage-credits 429 above — no health
+      // and as the premium-model usage-credits 429 above - no health
       // penalty, the key still works fine for free models.
       if (NO_CREDIT_STATUS.has(res.status)) {
         return {
@@ -2462,7 +2462,7 @@ export class ForwardingEngine {
         ok: false,
         status: res.status,
         reason: `upstream ${res.status}: ${res.text.slice(0, 300)}`,
-        // Auth failure: the key is dead, not the request — retry this
+        // Auth failure: the key is dead, not the request - retry this
         // provider so the next attempt picks a different (now-disabled-key-
         // excluded) key instead of immediately failing over to the next
         // provider in the chain.
@@ -2519,7 +2519,7 @@ export class ForwardingEngine {
   ): Promise<void> {
     // The loop works in Anthropic Messages shape internally (it inspects
     // tool_use blocks). A Chat-format client sends a chat-shaped body, so convert
-    // it here — the seam the loop's contract expects ("if the client spoke
+    // it here - the seam the loop's contract expects ("if the client spoke
     // chat/responses, the body is handed to us in Messages shape"). The loop
     // still emits back in the client's own format (it keys off the client path).
     if (pathFmt(ctx.clientPath) === "chat") {
@@ -2663,22 +2663,22 @@ export class ForwardingEngine {
   // --- headers --------------------------------------------------------------
   // Key selection + round-robin rotation now live in KeyHealthStore (this.keyHealth).
 
-  // Compose the FULL outbound header table for one attempt — the base a
+  // Compose the FULL outbound header table for one attempt - the base a
   // request transform edits via ctx.headers (see TransformCtx.headers's doc
   // comment) and, after those edits, the default set handed to the adapter's
   // build phase. Two layers, in order:
-  //   1. client passthrough — every inbound header except hop-by-hop ones
+  //   1. client passthrough - every inbound header except hop-by-hop ones
   //      (Connection, Keep-Alive, …) and host/content-length (the gateway
   //      always owns those). `authorization`/`x-api-key` are ALSO dropped
   //      here UNLESS the provider has no gateway-held auth to apply instead
-  //      (authScheme "passthrough", or no key configured at all) — see
+  //      (authScheme "passthrough", or no key configured at all) - see
   //      `forwardClientAuth` below. A client can never smuggle its own auth
   //      past a REAL gateway-held key, but when there is no gateway key the
   //      client's own credentials are the only auth this request has, so
   //      dropping them would send an unauthenticated request instead of
   //      forwarding what the client already provided.
   //   2. the gateway's own values, layered on top and WINNING on collision:
-  //      host, auth (from the selected key, per provider.authScheme — a
+  //      host, auth (from the selected key, per provider.authScheme - a
   //      no-op for "passthrough" or a null key, by design, see
   //      `applyAuthHeaders`), provider.extraHeaders, then content-type/accept
   //      defaults (only if the client didn't already set one).
@@ -2692,7 +2692,7 @@ export class ForwardingEngine {
     const out: Record<string, string> = {};
     const clientHeaders = (req.headers || {}) as Record<string, unknown>;
     // No gateway-held key will be applied for this attempt (passthrough
-    // scheme, or the provider simply has no key configured) — the client's
+    // scheme, or the provider simply has no key configured) - the client's
     // own authorization/x-api-key IS the auth for this request, so it must
     // survive the passthrough loop instead of being silently dropped.
     const forwardClientAuth = provider.authScheme === "passthrough" || !key;

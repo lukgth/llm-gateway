@@ -142,7 +142,7 @@ async function main() {
   }
 
   console.log(`\n=== HTTP GET (as the gateway sends it) ===`);
-  // A v4-only lookup — what the gateway now installs on every direct agent.
+  // A v4-only lookup - what the gateway now installs on every direct agent.
   const v4OnlyLookup = (host, opts, cb) => {
     const callback = typeof opts === "function" ? opts : cb;
     const o = typeof opts === "function" ? {} : (opts || {});
@@ -210,7 +210,7 @@ async function main() {
   401 everywhere            -> transport is fine; the key is the only problem.
   404                       -> wrong path. This provider's model list is at
                                {baseUrl}{basePath}{modelsPath}, e.g.
-                               /compatible-mode/v1/models — NOT /v1/models.
+                               /compatible-mode/v1/models - NOT /v1/models.
   IPv6 ENETUNREACH/timeout  -> dead AAAA route. Note that "default" and
     but "GATEWAY FIX" ok       "autoSelectFamily:true" can BOTH fail here with
                                an empty-message ETIMEDOUT while forced IPv4

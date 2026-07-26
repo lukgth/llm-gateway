@@ -2,7 +2,7 @@
 //
 // Cloudflare tunnels and many proxies/clients drop a connection that's been
 // idle for ~90-100s. When an LLM is "thinking" for a long time, no bytes flow
-// and the connection looks dead — the client times out (often before a single
+// and the connection looks dead - the client times out (often before a single
 // token arrives).
 //
 // This transform sits on the output side of the SSE stream and periodically
@@ -11,7 +11,7 @@
 // bytes keep the TCP connection alive and reset idle timers along the path.
 //
 // Critically, the idle timer is armed immediately (on construction), NOT only
-// after the first upstream chunk — the longest idle gap is usually BEFORE the
+// after the first upstream chunk - the longest idle gap is usually BEFORE the
 // first token, so a timer that only starts on first data would never fire in
 // exactly the case that causes a timeout.
 //
@@ -78,7 +78,7 @@ export class SsePingKeepAlive extends Transform {
 
   private startTimer(): void {
     if (this.finished || this.timer) return;
-    // A single fixed-rate interval that checks idleness on each tick — simpler
+    // A single fixed-rate interval that checks idleness on each tick - simpler
     // and more robust than re-scheduling a one-shot on every chunk (which can
     // race with backpressure).
     this.timer = setInterval(() => {
@@ -90,7 +90,7 @@ export class SsePingKeepAlive extends Transform {
       const ok = this.push(this.pingMessage);
       if (this.idleOnly) this.lastActivity = Date.now();
       if (!ok) {
-        // Backpressure — the client is already receiving data, so a missed
+        // Backpressure - the client is already receiving data, so a missed
         // ping is harmless; the next tick retries.
       }
     }, this.interval);

@@ -2,7 +2,7 @@
 //
 // Driven through the REAL buildTransformPlan/applyBodyTransforms pair that
 // engine.ts's buildRoute uses, rather than calling the transform's apply()
-// directly — so the test also covers the stage actually being wired into the
+// directly - so the test also covers the stage actually being wired into the
 // adapter's plan, not just behaving correctly once reached.
 
 import { test } from "node:test";
@@ -72,7 +72,7 @@ test("a non-kimi model on the same provider is untouched", () => {
 });
 
 test("the match requires the trailing dash, and must be a PREFIX", () => {
-  // "kimi" alone and "akimi-x" must not match — otherwise the rule would creep
+  // "kimi" alone and "akimi-x" must not match - otherwise the rule would creep
   // onto models it was never meant to cover.
   assert.equal(
     run("kimi", { model: "kimi", temperature: 0.3 }).temperature,

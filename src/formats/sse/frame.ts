@@ -1,4 +1,4 @@
-// Shared SSE framing — the byte-level plumbing every streaming transform repeats.
+// Shared SSE framing - the byte-level plumbing every streaming transform repeats.
 //
 // An SSE stream is a sequence of events separated by a blank line (`\n\n`). Bytes
 // arrive in arbitrary chunks, so an event can be split across chunk boundaries
@@ -10,7 +10,7 @@
 // `parseSseData` extracts the `data:` payload (and optional `event:` name) from
 // one raw event block, using the standard "concat data lines, strip one optional
 // leading space" convention. (Two transforms join multi-line `data:` with `\n`
-// instead and keep their own loop — see thinking/messages-stream.ts +
+// instead and keep their own loop - see thinking/messages-stream.ts +
 // thinking/chat-stream.ts.)
 
 import { stripInvisible } from "../thinking";

@@ -1,4 +1,4 @@
-// Pure helper functions for ForwardingEngine — no `this`-bound state, so they
+// Pure helper functions for ForwardingEngine - no `this`-bound state, so they
 // live apart from the class in engine.ts.
 
 import { randomBytes } from "crypto";
@@ -58,7 +58,7 @@ export function makeResolve(provider: Provider, hopPath: string): ResolveUrl {
   };
 }
 
-// Debug capture must never break the response path — swallow any error.
+// Debug capture must never break the response path - swallow any error.
 export function safeCaptureResponse(
   parsed: Record<string, unknown>,
 ): string | undefined {
@@ -114,7 +114,7 @@ export async function readErrorBody(
               : raw;
       return decompressed.toString("utf8").slice(0, maxBytes);
     } catch {
-      // Decompression failed — fall through to raw.
+      // Decompression failed - fall through to raw.
     }
   }
   return raw.toString("utf8").slice(0, maxBytes);

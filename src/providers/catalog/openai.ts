@@ -10,7 +10,7 @@ export const OPENAI_DEFAULT_TRANSFORMS: ModelTransformConfig[] = [
 export const openai = new OpenAICompatibleAdapter({
   id: "openai",
   label: "OpenAI",
-  blurb: "Official OpenAI API — GPT models, chat & responses endpoints.",
+  blurb: "Official OpenAI API - GPT models, chat & responses endpoints.",
   brand: "openai",
   docsUrl: "https://platform.openai.com/docs/api-reference",
   defaults: {
@@ -26,7 +26,7 @@ export const openai = new OpenAICompatibleAdapter({
       label: "API key",
       placeholder: "sk-…",
       required: true,
-      hint: "One per line — rotated round-robin.",
+      hint: "One per line - rotated round-robin.",
     },
   ],
   quirks: {

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fmtCompact } from "./utils";
 
 // Mirrors web/src/lib/utils.ts's fmtTokens rules exactly (same algorithm,
-// hand-kept in sync across the two separate TS projects) — the context-window
+// hand-kept in sync across the two separate TS projects) - the context-window
 // column must read the same way.
 test("fmtCompact: sub-1000 stays exact", () => {
   assert.equal(fmtCompact(0), "0");

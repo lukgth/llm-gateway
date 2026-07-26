@@ -1,7 +1,7 @@
 // Shared local shapes + tiny helpers used by both the buffered request.ts/
 // response.ts converters and the two streaming Transform classes in this
 // folder. Split out so none of them needs to import from one another
-// (avoids a circular dep) — same pattern as converters/chat-messages/shared.ts.
+// (avoids a circular dep) - same pattern as converters/chat-messages/shared.ts.
 
 import crypto from "crypto";
 import type { ChatMessage } from "../../wire";
@@ -61,7 +61,7 @@ export const FINISH_TO_STATUS: Record<string, string> = {
 
 // The reverse of FINISH_TO_STATUS is lossy (both "stop" and "tool_calls" map
 // to "completed"), so responsesResponseToChat() doesn't use a static lookup
-// table here — it derives finish_reason from the actual output contents (a
+// table here - it derives finish_reason from the actual output contents (a
 // function_call item present -> "tool_calls", else "stop"), only falling
 // back to this table for the one signal status alone carries: "incomplete"
 // (length-truncated), which has no equivalent in the output shape itself.

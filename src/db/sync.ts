@@ -166,7 +166,7 @@ export function syncFromConfig(db: DB, cfg: ConfigJson): SyncResult {
       } else {
         // Seed as the "proxy" provider type: it accepts all three wire formats
         // and converts internally (nativeConversion), matching a LiteLLM/9router
-        // style upstream — the defaults (endpoints, authScheme "both", catalogId)
+        // style upstream - the defaults (endpoints, authScheme "both", catalogId)
         // come from that one template so there's no drift.
         const proxyTpl = getProviderTemplate("proxy");
         const seed = proxyTpl

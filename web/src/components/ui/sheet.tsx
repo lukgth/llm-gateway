@@ -31,7 +31,7 @@ const SheetOverlay = React.forwardRef<
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName;
 
 const sheetVariants = cva(
-  // A sliding side panel — literally the same motion as the sidebar's own
+  // A sliding side panel - literally the same motion as the sidebar's own
   // collapse, so it shares its exact duration + S-curve.
   "fixed z-50 gap-4 bg-popover p-6 shadow-lg duration-250 ease-sidebar",
   {

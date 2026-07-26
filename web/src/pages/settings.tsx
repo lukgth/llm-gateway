@@ -50,7 +50,7 @@ export default function Settings() {
     try {
       const r = await api.rebuildUsage();
       toast.success(
-        `Usage rebuilt from logs — ${fmtNum(r.tokens)} tokens across ${r.days} day${r.days === 1 ? "" : "s"}`,
+        `Usage rebuilt from logs - ${fmtNum(r.tokens)} tokens across ${r.days} day${r.days === 1 ? "" : "s"}`,
       );
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : (e as Error).message);
@@ -276,7 +276,7 @@ export default function Settings() {
               </SettingRow>
               <SettingRow
                 label="Debug request logging"
-                hint="Capture the distilled request (messages, tools) and response (text, tool calls) into each log row, and print every transform stage (builtin/family/adapter/model, request+response+stream) to the backend console as it runs — for both live traffic and the Imported Models 'Test' probe. Adds storage per request and console noise; leave off in normal operation."
+                hint="Capture the distilled request (messages, tools) and response (text, tool calls) into each log row, and print every transform stage (builtin/family/adapter/model, request+response+stream) to the backend console as it runs - for both live traffic and the Imported Models 'Test' probe. Adds storage per request and console noise; leave off in normal operation."
               >
                 <div className="sm:flex sm:justify-end">
                   <Switch
@@ -300,7 +300,7 @@ export default function Settings() {
                     <code className="text-primary">web_search</code> /{" "}
                     <code className="text-primary">web_fetch</code> tools, the
                     gateway runs the tool loop itself against the selected
-                    provider — so search works against any upstream model, no
+                    provider - so search works against any upstream model, no
                     Anthropic dependency. Requests that search are answered
                     non-streaming while tools run, then delivered (streamed if
                     requested).

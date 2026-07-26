@@ -107,7 +107,7 @@ const PROVIDER_BRANDS: Record<string, { svg: string; label: string }> = {
   minimax: { svg: minimaxSvg, label: "MiniMax" },
   xai: { svg: grokSvg, label: "xAI" },
   kimi: { svg: kimiSvg, label: "Kimi" },
-  // Catalog-ID aliases — pages that call ProviderIcon with brand={provider.catalogId}
+  // Catalog-ID aliases - pages that call ProviderIcon with brand={provider.catalogId}
   // need entries for IDs that differ from the template's brand field.
   "opencode-go": { svg: opencodeSvg, label: "OpenCode" },
   "google-gemini": { svg: geminiSvg, label: "Gemini" },
@@ -121,7 +121,7 @@ const PROVIDER_BRANDS: Record<string, { svg: string; label: string }> = {
   "qwencloud-cn": { svg: qwenSvg, label: "Qwen" },
   "dashscope-coding": { svg: qwenSvg, label: "Qwen" },
   moonshot: { svg: kimiSvg, label: "Kimi" },
-  // Generic-adapter catalog ids — ProviderCard passes provider.catalogId
+  // Generic-adapter catalog ids - ProviderCard passes provider.catalogId
   // straight through as `brand`, so these need entries too (a custom-named
   // "openai-compatible"/"anthropic-compatible" provider must still show its
   // wire-format's logo, not fall through to the generic chip icon).
@@ -235,7 +235,7 @@ export function ModelIcon({
   return (
     <span
       className={cn(
-        // The SVGs are 1em square — size via font-size on the wrapper.
+        // The SVGs are 1em square - size via font-size on the wrapper.
         "inline-flex size-4 shrink-0 items-center justify-center text-base leading-none [&>svg]:size-full",
         className,
       )}

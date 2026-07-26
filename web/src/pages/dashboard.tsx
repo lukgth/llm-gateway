@@ -41,7 +41,7 @@ export default function Dashboard() {
       <div>
         <PageHeader
           title="Overview"
-          desc="Live gateway telemetry — real-time via WebSocket"
+          desc="Live gateway telemetry - real-time via WebSocket"
         />
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <StatGridSkeleton count={4} />
@@ -93,7 +93,7 @@ export default function Dashboard() {
     <div>
       <PageHeader
         title="Overview"
-        desc="Live gateway telemetry — real-time via WebSocket"
+        desc="Live gateway telemetry - real-time via WebSocket"
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
@@ -118,7 +118,7 @@ export default function Dashboard() {
           value={
             s.p95LatencyMs != null
               ? `${(s.p95LatencyMs / 1000).toFixed(2)}s`
-              : "—"
+              : "-"
           }
         />
         <Stat label="Cost today (est.)" value={fmtUsd(s.costUsdToday)} />
@@ -141,10 +141,10 @@ export default function Dashboard() {
       </div>
 
       <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-5">
-        {/* Token usage by hour — real-time (last 24h) */}
+        {/* Token usage by hour - real-time (last 24h) */}
         <Card className="min-w-0 lg:col-span-3">
           <CardHeader>
-            <CardTitle>Token Usage — Last 24 Hours</CardTitle>
+            <CardTitle>Token Usage • Last 24 Hours</CardTitle>
             <CardAction>
               <Badge variant="secondary">{fmtNum(s.tokensToday)} today</Badge>
             </CardAction>
@@ -212,10 +212,10 @@ export default function Dashboard() {
                         className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
                         title={m.cached > 0 ? fmtNum(m.cached) : undefined}
                       >
-                        {m.cached > 0 ? fmtTokens(m.cached) : "—"}
+                        {m.cached > 0 ? fmtTokens(m.cached) : "-"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
-                        {m.costUsd > 0 ? fmtUsd(m.costUsd) : "—"}
+                        {m.costUsd > 0 ? fmtUsd(m.costUsd) : "-"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -285,15 +285,15 @@ export default function Dashboard() {
                         className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
                         title={p.cached > 0 ? fmtNum(p.cached) : undefined}
                       >
-                        {p.cached > 0 ? fmtTokens(p.cached) : "—"}
+                        {p.cached > 0 ? fmtTokens(p.cached) : "-"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
-                        {p.costUsd > 0 ? fmtUsd(p.costUsd) : "—"}
+                        {p.costUsd > 0 ? fmtUsd(p.costUsd) : "-"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
                         {total
                           ? `${((p.requests / total) * 100).toFixed(0)}%`
-                          : "—"}
+                          : "-"}
                       </TableCell>
                     </TableRow>
                   );

@@ -2,7 +2,7 @@
 //
 // Converts a streaming /v1/chat/completions SSE response into /v1/responses
 // SSE events. Handles reasoning (from <thinking> conversion), tool calls, and
-// content deltas. Each upstream chunk is translated and emitted immediately —
+// content deltas. Each upstream chunk is translated and emitted immediately -
 // no buffering beyond what's needed for JSON parsing.
 //
 // Responses SSE event types emitted:

@@ -34,8 +34,8 @@ import { bad } from "./respond";
 
 // Reference + auto-create: ensure every (provider, upstreamModel) a chain
 // references exists in that provider's imported catalog. Missing ones are
-// best-effort enriched via the provider's fetchModels() seam — same discovery
-// data the explicit Import sheet uses — so a chain-save doesn't leave the row
+// best-effort enriched via the provider's fetchModels() seam - same discovery
+// data the explicit Import sheet uses - so a chain-save doesn't leave the row
 // blank on capabilities/context/max-out. Falls back to bare identity if the
 // fetch fails or the id isn't found upstream (e.g. hand-typed). Never blocks
 // the save. Existing rows are left untouched (idempotent identity upsert).
@@ -61,7 +61,7 @@ async function autoCreateImportedModels(
       const models = await fetchProviderModels(provider, db);
       upstreamByProvider.set(providerId, new Map(models.map((m) => [m.id, m])));
     } catch {
-      // Best-effort — fall back to bare identity for this provider's links.
+      // Best-effort - fall back to bare identity for this provider's links.
     }
   }
   for (const link of links) {
@@ -105,7 +105,7 @@ export function registerModelRoutes(ctx: RouteCtx): void {
     res.json(m);
   });
 
-  // Per-hop success/error counts for the chain editor — keyed by (providerId,
+  // Per-hop success/error counts for the chain editor - keyed by (providerId,
   // upstreamModel), the same identity a chain link routes through.
   r.get("/models/:id/hop-stats", requireAdmin, (req, res) => {
     const m = getModel(db, String(req.params.id));
@@ -136,7 +136,7 @@ export function registerModelRoutes(ctx: RouteCtx): void {
   });
 
   // Test an exposed model by resolving its provider chain and probing the
-  // first viable hop — same chain-walk the forwarding engine uses, but via
+  // first viable hop - same chain-walk the forwarding engine uses, but via
   // the adapter's testModel() seam instead of a live completion.
   r.post("/models/:id/test", requireAdmin, async (req, res) => {
     const model = getModel(db, String(req.params.id));
@@ -314,10 +314,10 @@ export function registerModelRoutes(ctx: RouteCtx): void {
     res.json(listDefaultModelPricing()),
   );
 
-  // Single-alias lookup — the "Use default" button's actual call, so it
+  // Single-alias lookup - the "Use default" button's actual call, so it
   // doesn't have to fetch and search the full list client-side. 404 when no
   // stock entry matches (a real, expected outcome for a niche/self-hosted
-  // model — not an error condition).
+  // model - not an error condition).
   r.get("/model-pricing/defaults/:id", requireAdmin, (req, res) => {
     const match = defaultPricingFor(String(req.params.id));
     if (!match)

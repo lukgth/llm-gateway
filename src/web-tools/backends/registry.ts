@@ -4,7 +4,7 @@
 //   1. Implement SearchProvider in ./<name>.ts (a `create<Name>Provider`
 //      factory that takes a WebProviderConfig).
 //   2. Register it in PROVIDERS below.
-// That's it — it's usable immediately via config `provider: "<name>"`.
+// That's it - it's usable immediately via config `provider: "<name>"`.
 
 import type {
   SearchProvider,

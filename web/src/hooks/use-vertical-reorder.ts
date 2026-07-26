@@ -1,7 +1,7 @@
 // Pointer-based, vertical-only drag-to-reorder for a list of rows (e.g. the
-// model chain table). Unlike native HTML5 drag-and-drop — which drags a whole
+// model chain table). Unlike native HTML5 drag-and-drop - which drags a whole
 // ghost image around in both axes and gives no built-in way to show "this is
-// where it'll land" — this constrains movement to the Y axis entirely (there's
+// where it'll land" - this constrains movement to the Y axis entirely (there's
 // simply no X transform, so the row can't drift sideways) and tracks a live
 // "drop target" index the caller renders as a highlighted slot behind the
 // floating row, instead of just dimming the dragged item.
@@ -10,7 +10,7 @@
 // `registerRow(i)` as the row element's ref callback, and apply `rowStyle(i)`
 // (a translateY transform, only set on the dragged row) plus your own
 // className logic keyed off `dragIndex`/`overIndex`. The hook never mutates
-// your list itself — it only calls `onReorder(from, to)` once, on pointer-up.
+// your list itself - it only calls `onReorder(from, to)` once, on pointer-up.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -62,7 +62,7 @@ export function useVerticalReorder(
       handle: HTMLElement,
       startClientY: number,
     ) => {
-      // Snapshot every row's position ONCE at drag start — cheap for a
+      // Snapshot every row's position ONCE at drag start - cheap for a
       // chain-sized list, and avoids a layout read on every pointermove.
       const rects: RowRect[] = [];
       for (let i = 0; i < count; i++) {
@@ -84,7 +84,7 @@ export function useVerticalReorder(
           const delta = e.clientY - startClientY;
           setOffsetY(delta);
           // Which row's slot does the dragged row's (offset) center now fall
-          // into? That's the drop target — the row that'll shift to make room.
+          // into? That's the drop target - the row that'll shift to make room.
           const fromRect = rects[from];
           const center = fromRect.top + fromRect.height / 2 + delta;
           let target = from;

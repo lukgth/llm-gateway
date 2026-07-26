@@ -8,14 +8,14 @@
 //   3. If the model emitted web tool_use blocks, execute them via Firecrawl,
 //      append an assistant turn + a user turn of tool_result, and loop.
 //   4. When the model stops calling web tools (or we hit the round cap), emit
-//      the final assistant message to the client — as SSE if the client asked
-//      to stream, otherwise as a single JSON body — in the CLIENT's wire
+//      the final assistant message to the client - as SSE if the client asked
+//      to stream, otherwise as a single JSON body - in the CLIENT's wire
 //      format (Messages or, if the client used /chat or /responses, bridged).
 //
 // The loop itself never streams from the upstream (each turn is buffered so we
 // can inspect tool_use). Streaming to the CLIENT is synthesised at the end from
 // the final message, so the client still gets an SSE response when it asked for
-// one — the gateway just can't stream tokens *while a tool call is pending*.
+// one - the gateway just can't stream tokens *while a tool call is pending*.
 
 import { randomBytes } from "crypto";
 import type { Request, Response } from "express";
@@ -91,10 +91,10 @@ export async function runWebToolLoop(
 
   // Short-circuit: Claude Code sends web search as a standalone /v1/messages
   // sub-request with ONLY web tools + a simple prompt, and just wants the
-  // web_search_tool_result blocks back to render — it does its own synthesis in
+  // web_search_tool_result blocks back to render - it does its own synthesis in
   // the main conversation. Running this through the upstream model is
   // unnecessary and (with an OpenAI-format upstream) unreliable. So we run the
-  // search directly and return a synthetic Anthropic response — exactly how
+  // search directly and return a synthetic Anthropic response - exactly how
   // LiteLLM's try_short_circuit_search works. This is the path that "just
   // works" for Claude Code.
   if (present.search && isWebToolsOnly(ctx.requestBody)) {
@@ -116,7 +116,7 @@ export async function runWebToolLoop(
   // Working conversation in Messages shape. If the client spoke Chat, the engine
   // hook (forwardWebToolLoop) already converted ctx.requestBody to Messages shape
   // before calling us, so we treat it uniformly here. (Responses clients don't
-  // reach this loop — they use `input`, not `messages`; they fall through to the
+  // reach this loop - they use `input`, not `messages`; they fall through to the
   // normal proxy.)
   const base = rewriteRequest(ctx.requestBody, present);
   const messages: unknown[] = Array.isArray(base.messages)
@@ -149,7 +149,7 @@ export async function runWebToolLoop(
   //   server_tool_use -> web_search_tool_result -> ... -> (assistant text)
   const webBlocks: unknown[] = [];
 
-  // Base body WITHOUT the web tools — used once the search budget is spent so
+  // Base body WITHOUT the web tools - used once the search budget is spent so
   // the model can no longer call them and must answer.
   const baseNoTools = { ...base };
   delete baseNoTools.tools;
@@ -264,7 +264,7 @@ export async function runWebToolLoop(
       });
     }
 
-    // Any NON-web tool_use in the same turn can't be satisfied by us — hand back
+    // Any NON-web tool_use in the same turn can't be satisfied by us - hand back
     // what we have so the client can take over.
     const hasForeignTool = content.some(
       (b) =>
@@ -355,8 +355,8 @@ export async function runWebToolLoop(
 }
 
 // Short-circuit path: run the search directly (no model call) and return a
-// synthetic Anthropic response — server_tool_use + web_search_tool_result +
-// text — for a standalone web-search-only request. Mirrors LiteLLM's
+// synthetic Anthropic response - server_tool_use + web_search_tool_result +
+// text - for a standalone web-search-only request. Mirrors LiteLLM's
 // try_short_circuit_search. This is what Claude Code hits.
 async function runShortCircuitSearch(
   res: Response,
@@ -439,7 +439,7 @@ async function runShortCircuitSearch(
   }
   // A Firecrawl failure is delivered to the client as a 200 with an in-body
   // web_search_tool_result_error block (per Anthropic's spec), NOT a request
-  // error — so the response is a success. Surface the search failure only in
+  // error - so the response is a success. Surface the search failure only in
   // the log note, without flipping the request to an error.
   if (outcome.error)
     logger.warn("web_tool_search_failed", { error: outcome.error });

@@ -1,5 +1,5 @@
 // =============================================================================
-// xxHash64 — pure-TypeScript implementation (no runtime dependencies)
+// xxHash64 - pure-TypeScript implementation (no runtime dependencies)
 // =============================================================================
 // Reference:
 //   https://github.com/Cyan4973/xxHash/blob/dev/xxhash.h

@@ -59,13 +59,13 @@ export function OverviewTab({
     [
       "Conversion",
       provider.nativeConversion
-        ? "Provider converts — accepts all three endpoints"
+        ? "Provider converts - accepts all three endpoints"
         : `Gateway converts${provider.format ? ` (native ${formatLabel(provider.format)})` : ""}`,
     ],
     [
       "Endpoints",
       <span className="block truncate" title={endpointLabels}>
-        {endpointLabels || "—"}
+        {endpointLabels || "-"}
       </span>,
     ],
     ["Auth scheme", authSchemeLabel(provider.authScheme)],
@@ -83,7 +83,7 @@ export function OverviewTab({
     ],
     ["Timeout", `${Math.round(provider.requestTimeoutMs / 1000)}s`],
     ["TLS verification", provider.tlsVerify ? "On" : "Off"],
-    ["Catalog", provider.catalogId ?? "—"],
+    ["Catalog", provider.catalogId ?? "-"],
   ];
   return (
     <div className="space-y-4">
@@ -116,7 +116,7 @@ export function OverviewTab({
           <div className="flex min-w-0 animate-in flex-wrap items-center gap-2 fade-in-0 slide-in-from-left-1 duration-200 ease-sidebar">
             <Badge
               variant={result.ok ? "success" : "destructive"}
-              // On failure, always show a status code or transport error — never
+              // On failure, always show a status code or transport error - never
               // a bare "Failed" with no diagnostic (see key-manager.tsx's
               // per-key Test tooltip, which already gets this right; this
               // mirrors it). `sample` (a snippet of the raw response body, when
@@ -127,7 +127,7 @@ export function OverviewTab({
               {result.ok
                 ? `Reachable · ${result.ms}ms`
                 : `Failed${result.status ? ` (${result.status})` : ""}${
-                    result.error ? ` — ${result.error}` : ""
+                    result.error ? ` - ${result.error}` : ""
                   }`}
             </Badge>
             {result.keyMask && (
@@ -172,7 +172,7 @@ function ProviderErrorPanel({ providerId }: { providerId: string }) {
   return (
     <FormSection
       title="Recent errors"
-      desc="Failed requests routed through this provider — expand a row to inspect the captured request/response."
+      desc="Failed requests routed through this provider - expand a row to inspect the captured request/response."
     >
       <div className="space-y-3 px-4 py-3">
         <div className="flex items-center justify-between">
@@ -266,7 +266,7 @@ function ErrorLogRow({ log: l }: { log: RequestLog }) {
           </span>
         </TableCell>
         <TableCell className="max-w-56 truncate font-mono text-primary">
-          {l.model ?? "—"}
+          {l.model ?? "-"}
         </TableCell>
         <TableCell className="text-right">
           <StatusBadge status={l.status} throttled={l.throttled} />

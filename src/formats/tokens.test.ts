@@ -1,5 +1,5 @@
 // Token counting + usage extraction tests. Per the format-route completeness
-// audit, tokens.ts had NO direct unit test before this — it was only
+// audit, tokens.ts had NO direct unit test before this - it was only
 // exercised indirectly through an engine-level chat->chat request, which
 // asserts the request succeeds but never checks the numbers. These tests
 // cover all three request-body shapes (Anthropic Messages, OpenAI Chat,
@@ -191,7 +191,7 @@ test("readResponseUsage: OpenAI cached tokens already included in prompt_tokens"
       prompt_tokens_details: { cached_tokens: 60 },
     },
   });
-  // prompt_tokens already includes cached — no addition needed.
+  // prompt_tokens already includes cached - no addition needed.
   assert.deepEqual(usage, { input: 100, output: 20, cached: 60 });
 });
 

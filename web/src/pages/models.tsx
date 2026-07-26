@@ -83,7 +83,7 @@ export default function Models() {
       />
 
       <Card className="gap-0 p-0">
-        {/* Search integrated as the table's own toolbar strip — same pattern
+        {/* Search integrated as the table's own toolbar strip - same pattern
             as the Imported Models table, so both tables' search reads and
             behaves identically. */}
         <div className="flex items-center border-b border-border px-4 py-2.5">
@@ -102,7 +102,7 @@ export default function Models() {
             widths={["55%", "35%", "60%", "30%", "30%", "70%", "20%", "20%"]}
           />
         ) : items.length === 0 ? (
-          <EmptyState msg="No models yet — create one to expose it at /v1" />
+          <EmptyState msg="No models yet - create one to expose it at /v1" />
         ) : filtered.length === 0 ? (
           <EmptyState msg="No models match the search" />
         ) : (
@@ -219,14 +219,14 @@ const ModelRow = memo(function ModelRow({
       </TableCell>
       <TableCell className="max-w-[14rem]">
         <span className="block truncate" title={m.displayName ?? undefined}>
-          {m.displayName ?? "—"}
+          {m.displayName ?? "-"}
         </span>
       </TableCell>
       <TableCell className="text-right tabular-nums">
-        {m.contextWindow ? fmtTokens(m.contextWindow) : "—"}
+        {m.contextWindow ? fmtTokens(m.contextWindow) : "-"}
       </TableCell>
       <TableCell className="text-right tabular-nums">
-        {m.maxOutputTokens ? fmtTokens(m.maxOutputTokens) : "—"}
+        {m.maxOutputTokens ? fmtTokens(m.maxOutputTokens) : "-"}
       </TableCell>
       <TableCell>
         <div className="flex flex-wrap items-center gap-1">

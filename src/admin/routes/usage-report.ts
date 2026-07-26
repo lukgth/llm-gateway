@@ -103,7 +103,7 @@ export async function buildUsageReport(
             ...(message ? { message } : {}),
           };
         } catch (e) {
-          // An adapter's live query threw — surface it as an unavailable key with
+          // An adapter's live query threw - surface it as an unavailable key with
           // the error detail rather than failing the whole page.
           return {
             keyMask: mask,
@@ -119,7 +119,7 @@ export async function buildUsageReport(
     ),
   );
   const visibleKeys = keys.filter((key) => {
-    // Dead/auth-failed keys don't belong in the usage dashboard — they are shown
+    // Dead/auth-failed keys don't belong in the usage dashboard - they are shown
     // in the provider Keys table where operators manage credentials. Rate-limited
     // keys stay visible because their usage/quota windows are still relevant.
     if (key.health?.dead) return false;
@@ -149,7 +149,7 @@ export async function buildUsageReport(
 
 // All providers' reports (the /providers/usage dashboard), built in parallel.
 // Providers whose adapter doesn't report usage (supportsKeyUsage() = false) are
-// omitted entirely — the dashboard only lists providers that have something to
+// omitted entirely - the dashboard only lists providers that have something to
 // show, rather than a wall of empty cards.
 export async function buildUsageReports(
   db: DB,

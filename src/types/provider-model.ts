@@ -1,6 +1,6 @@
 // An imported upstream model, scoped to one provider. This is the per-provider
 // catalog entry a chain link references by upstream_id. Never exposed on
-// /v1/models — only user-authored exposed Models (with chains) are.
+// /v1/models - only user-authored exposed Models (with chains) are.
 
 import type { ModelTransformConfig } from "./transforms";
 import type { ModelCapabilities } from "./capabilities";

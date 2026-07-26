@@ -1,6 +1,6 @@
 // Safe JSON parse helpers for DB TEXT columns (transforms, capabilities,
 // extra_headers, endpoints, …). A malformed or absent value degrades to the
-// caller's fallback rather than throwing — these columns are best-effort and a
+// caller's fallback rather than throwing - these columns are best-effort and a
 // bad row must never crash a read. Single source for the "try JSON.parse,
 // validate shape, else fall back" pattern that otherwise recurs per column.
 

@@ -8,7 +8,7 @@ const Textarea = React.forwardRef<
   <textarea
     ref={ref}
     className={cn(
-      // Shared control surface — matches Button / Input / Select / Combobox.
+      // Shared control surface - matches Button / Input / Select / Combobox.
       // 13px (text-[0.8125rem]) keeps controls in scale with the 12px content.
       "scrollbar-thin flex min-h-20 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-[0.8125rem] transition-colors outline-none",
       "placeholder:text-muted-foreground",

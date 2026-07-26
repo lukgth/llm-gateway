@@ -37,7 +37,7 @@ export interface WebProviderConfig {
   timeoutMs?: number;
 }
 
-// The contract every web provider implements. `fetch` is optional — a provider
+// The contract every web provider implements. `fetch` is optional - a provider
 // that only does search can omit it (the gateway then reports web_fetch as
 // unavailable rather than crashing).
 export interface SearchProvider {

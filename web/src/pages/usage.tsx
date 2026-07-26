@@ -79,7 +79,7 @@ export default function Usage() {
       <div>
         <PageHeader
           title="Usage"
-          desc="Per-key token consumption, quotas and provider resolution — resets at UTC midnight"
+          desc="Per-key token consumption, quotas and provider resolution - resets at UTC midnight"
         />
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <StatGridSkeleton count={4} />
@@ -155,7 +155,7 @@ export default function Usage() {
     <div>
       <PageHeader
         title="Usage"
-        desc="Per-key token consumption, quotas and provider resolution — resets at UTC midnight"
+        desc="Per-key token consumption, quotas and provider resolution - resets at UTC midnight"
       />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
         <Stat
@@ -178,7 +178,7 @@ export default function Usage() {
       <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
         {/* self-start keeps the chart at its natural height instead of being
             stretched to match the (taller, expandable) keys card in the same
-            grid row — which otherwise inflated the chart and never shrank back. */}
+            grid row - which otherwise inflated the chart and never shrank back. */}
         <Card className="min-w-0 self-start lg:col-span-1">
           <CardHeader>
             <CardTitle>14-Day History</CardTitle>
@@ -208,7 +208,7 @@ export default function Usage() {
           </CardHeader>
           <CardContent className="p-0">
             {sorted.length === 0 ? (
-              <EmptyState msg="No keys yet — create one on the API Keys page" />
+              <EmptyState msg="No keys yet - create one on the API Keys page" />
             ) : (
               <Table className="min-w-[52rem] table-fixed">
                 <TableHeader>
@@ -244,7 +244,7 @@ export default function Usage() {
         </Card>
       </div>
 
-      {/* Per-(key, model, provider) breakdown — "what did each request resolve to" */}
+      {/* Per-(key, model, provider) breakdown - "what did each request resolve to" */}
       <Card className="mt-3 min-w-0">
         <CardHeader>
           <CardTitle>Resolution by Key, Model & Provider</CardTitle>
@@ -256,7 +256,7 @@ export default function Usage() {
         </CardHeader>
         <CardContent className="p-0">
           {rows.length === 0 ? (
-            <EmptyState msg="No resolved requests yet — send a request through the gateway" />
+            <EmptyState msg="No resolved requests yet - send a request through the gateway" />
           ) : (
             <Table>
               <TableHeader>
@@ -279,7 +279,7 @@ export default function Usage() {
                       {r.keyPrefix}
                     </TableCell>
                     <TableCell className="max-w-[10rem] truncate text-muted-foreground">
-                      {r.userName ?? "—"}
+                      {r.userName ?? "-"}
                     </TableCell>
                     <TableCell className="max-w-[14rem] font-mono">
                       <span className="flex min-w-0 items-center gap-2">
@@ -296,7 +296,7 @@ export default function Usage() {
                           {r.providerName}
                         </Badge>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="text-muted-foreground">-</span>
                       )}
                     </TableCell>
                     <TableCell
@@ -315,15 +315,15 @@ export default function Usage() {
                       className="text-right tabular-nums text-muted-foreground"
                       title={r.cached > 0 ? fmtNum(r.cached) : undefined}
                     >
-                      {r.cached > 0 ? fmtTokens(r.cached) : "—"}
+                      {r.cached > 0 ? fmtTokens(r.cached) : "-"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {r.costUsd > 0 ? fmtUsd(r.costUsd) : "—"}
+                      {r.costUsd > 0 ? fmtUsd(r.costUsd) : "-"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {totalBreakdownTokens
                         ? `${((r.tokens / totalBreakdownTokens) * 100).toFixed(0)}%`
-                        : "—"}
+                        : "-"}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -340,7 +340,7 @@ export default function Usage() {
         </CardContent>
       </Card>
 
-      {/* Model resolution lookup — "gpt-5.5 resolved to which provider + tokens" */}
+      {/* Model resolution lookup - "gpt-5.5 resolved to which provider + tokens" */}
       <Card className="mt-3 min-w-0">
         <CardHeader>
           <CardTitle>Model Resolver</CardTitle>
@@ -425,12 +425,12 @@ export default function Usage() {
                             {fmtTokens(r.tokens)}
                           </TableCell>
                           <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
-                            {r.costUsd > 0 ? fmtUsd(r.costUsd) : "—"}
+                            {r.costUsd > 0 ? fmtUsd(r.costUsd) : "-"}
                           </TableCell>
                           <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
                             {total
                               ? `${((r.tokens / total) * 100).toFixed(0)}%`
-                              : "—"}
+                              : "-"}
                           </TableCell>
                         </TableRow>
                       );
@@ -511,11 +511,11 @@ const KeyUsageRow = memo(function KeyUsageRow({
         <TableCell>
           <div className="truncate font-mono text-primary">{k.keyPrefix}</div>
           <div className="truncate text-[0.65rem] text-muted-foreground">
-            {k.keyName ?? "—"}
+            {k.keyName ?? "-"}
           </div>
         </TableCell>
         <TableCell className="truncate text-muted-foreground">
-          {k.userName ?? "—"}
+          {k.userName ?? "-"}
         </TableCell>
         <TableCell onClick={(e) => e.stopPropagation()}>
           {editing ? (
@@ -594,7 +594,7 @@ const KeyUsageRow = memo(function KeyUsageRow({
           className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
           title={k.cached > 0 ? fmtNum(k.cached) : undefined}
         >
-          {k.cached > 0 ? fmtTokens(k.cached) : "—"}
+          {k.cached > 0 ? fmtTokens(k.cached) : "-"}
         </TableCell>
         <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
           {k.limit ? (
@@ -658,7 +658,7 @@ const KeyUsageRow = memo(function KeyUsageRow({
                               {d.providerName}
                             </Badge>
                           ) : (
-                            <span className="text-muted-foreground">—</span>
+                            <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
                         <TableCell
@@ -677,15 +677,15 @@ const KeyUsageRow = memo(function KeyUsageRow({
                           className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
                           title={d.cached > 0 ? fmtNum(d.cached) : undefined}
                         >
-                          {d.cached > 0 ? fmtTokens(d.cached) : "—"}
+                          {d.cached > 0 ? fmtTokens(d.cached) : "-"}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
-                          {d.costUsd > 0 ? fmtUsd(d.costUsd) : "—"}
+                          {d.costUsd > 0 ? fmtUsd(d.costUsd) : "-"}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground pr-4 whitespace-nowrap">
                           {total
                             ? `${((d.tokens / total) * 100).toFixed(0)}%`
-                            : "—"}
+                            : "-"}
                         </TableCell>
                       </TableRow>
                     );

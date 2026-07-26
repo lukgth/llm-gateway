@@ -1,4 +1,4 @@
-// Step 2: configure — name/baseUrl/keys from the template's fields, plus an
+// Step 2: configure - name/baseUrl/keys from the template's fields, plus an
 // Advanced disclosure for basePath/headers.
 
 import { ChevronDown } from "lucide-react";
@@ -143,7 +143,7 @@ export function ConfigStep({
                 value={
                   (tpl.defaults.endpoints ?? [])
                     .map((k) => WIRE_KIND_LABELS[k])
-                    .join(", ") || "—"
+                    .join(", ") || "-"
                 }
               />
               <Meta
@@ -153,7 +153,7 @@ export function ConfigStep({
             </div>
             <Field
               label="Base path"
-              hint="Inserted between origin and endpoint — REPLACES the implicit /v1 prefix (blank = /v1 is used). Include it yourself if you need it, e.g. /v1beta/openai."
+              hint="Inserted between origin and endpoint - REPLACES the implicit /v1 prefix (blank = /v1 is used). Include it yourself if you need it, e.g. /v1beta/openai."
             >
               <Input
                 value={basePath}
@@ -172,7 +172,7 @@ export function ConfigStep({
                   basePath,
                   tpl.defaults.endpoints?.[0],
                   tpl.defaults.endpointPaths,
-                ) || "—"}
+                ) || "-"}
               </div>
             </div>
             <Field

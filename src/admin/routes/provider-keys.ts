@@ -78,11 +78,11 @@ export function registerProviderKeyRoutes(ctx: RouteCtx): void {
     res.json({ keys: withHealth(keys), total: all.length, offset, limit });
   });
 
-  // Per-key success/error counts for the key manager table — keyed by
+  // Per-key success/error counts for the key manager table - keyed by
   // cred_hash, the same identity a credential is looked up by. Auth failures
   // (401/403) short-circuit out of the retry loop before a request_logs row
   // is ever written (see engine.ts forward()), so they'd be invisible to the
-  // key manager's error count if it only read request_logs — merge in
+  // key manager's error count if it only read request_logs - merge in
   // KeyHealthStore's own lifetime auth-fail counter to cover that gap.
   r.get("/providers/:id/keys/stats", requireAdmin, (req, res) => {
     const providerId = String(req.params.id);
@@ -205,7 +205,7 @@ export function registerProviderKeyRoutes(ctx: RouteCtx): void {
 
   // --- update single key ---
   // Registered after every literal /keys/<word> route above (stats, batch,
-  // import, sync, sync/trigger) — Express matches routes in registration
+  // import, sync, sync/trigger) - Express matches routes in registration
   // order, and this wildcard would otherwise swallow those literal paths
   // (e.g. PUT /keys/sync arriving here with keyId="sync" and 404ing).
   r.put("/providers/:id/keys/:keyId", requireAdmin, (req, res) => {

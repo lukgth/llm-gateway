@@ -1,4 +1,4 @@
-// Shared wire-format types — barrel + format→type mapping.
+// Shared wire-format types - barrel + format→type mapping.
 //
 // Three wire formats the gateway speaks: "chat" (OpenAI Chat Completions),
 // "messages" (Anthropic Messages), "responses" (OpenAI Responses). The mapping
@@ -7,7 +7,7 @@
 // from the format tag alone.
 //
 // `WireFmt` is re-declared here (identical string union to pipeline's) so the
-// wire/ module has no dependency back on pipeline — pipeline imports from here.
+// wire/ module has no dependency back on pipeline - pipeline imports from here.
 
 export * from "./anthropic";
 export * from "./openai-chat";

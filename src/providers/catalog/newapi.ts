@@ -7,13 +7,13 @@ import type { UsageCtx, KeyUsageResult } from "../base/types";
 import { WireKind } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
-// NewAPI — OpenAI-compatible provider with credit-based quota tracking.
+// NewAPI - OpenAI-compatible provider with credit-based quota tracking.
 //
 // Quota units: the provider bills in credits where 1,000,000 credits = $1 by
 // default. The `quotaPerDollar` quirk controls the conversion rate (exposed
 // in keyUsage windows as a "credits" unit so the dashboard shows real spend).
 //
-// keyUsage() queries GET {baseUrl}/api/usage/token (Bearer auth) — the
+// keyUsage() queries GET {baseUrl}/api/usage/token (Bearer auth) - the
 // per-key token/credit balance endpoint. Response shape:
 //   {
 //     "code": true,
@@ -31,10 +31,10 @@ import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 //     "message": "ok"
 //   }
 // When `unlimited_quota` is true, `total_available` is meaningless (reads 0
-// even though the key isn't actually capped) — see the `limit` comment below.
+// even though the key isn't actually capped) - see the `limit` comment below.
 //
 // `expires_at` is when the TOKEN ITSELF becomes invalid (a credential
-// lifetime), not a usage-window reset — NewAPI credits are a one-time grant
+// lifetime), not a usage-window reset - NewAPI credits are a one-time grant
 // with no rolling refill, so the window carries no `resetsAt` and the key's
 // `expiresAt` is reported separately instead.
 
@@ -81,7 +81,7 @@ class NewApiAdapter extends OpenAICompatibleAdapter {
       return {
         windows: [],
         unavailable: true,
-        message: "Key disabled — usage not queried.",
+        message: "Key disabled - usage not queried.",
       };
     }
 
@@ -133,7 +133,7 @@ class NewApiAdapter extends OpenAICompatibleAdapter {
     const unlimited = d.unlimited_quota === true;
     // total_available reads 0 on an unlimited key (it isn't tracking a real
     // ceiling), not an actual 0-remaining cap. Infinity isn't JSON-safe
-    // (serializes to null over the wire), so use a large finite sentinel —
+    // (serializes to null over the wire), so use a large finite sentinel -
     // the "(unlimited)" label carries the real meaning; the bar just needs
     // to stay visually near-empty.
     const limitCredits = unlimited
@@ -152,7 +152,7 @@ class NewApiAdapter extends OpenAICompatibleAdapter {
           used,
           limit,
           unit: "dollars" as const,
-          // No `resetsAt` — a NewAPI credit grant is a one-time balance, not
+          // No `resetsAt` - a NewAPI credit grant is a one-time balance, not
           // a rolling window that refills. `expires_at` (below) is when the
           // TOKEN ITSELF stops working, not when usage resets.
         },
@@ -184,13 +184,13 @@ export const newapi = new NewApiAdapter({
       placeholder: "https://api.newapi.example",
       required: true,
       editable: true,
-      hint: "Origin — the gateway appends /v1/chat/completions.",
+      hint: "Origin - the gateway appends /v1/chat/completions.",
     },
     {
       key: "apiKeys",
       label: "API key",
       required: true,
-      hint: "One per line — rotated round-robin.",
+      hint: "One per line - rotated round-robin.",
     },
   ],
   quirks: {

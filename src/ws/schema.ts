@@ -1,4 +1,4 @@
-// WebSocket message schema — the single source of truth for the typed
+// WebSocket message schema - the single source of truth for the typed
 // protocol between the admin UI and the gateway server.
 
 import type { TestProviderResult } from "../providers/base/types";
@@ -50,7 +50,7 @@ export interface WsPong {
   type: "pong";
 }
 
-// Batch key testing — a parallel message family (not a WsTopic subscribe/
+// Batch key testing - a parallel message family (not a WsTopic subscribe/
 // push cycle, and not a one-shot `request`/`response`): the server streams
 // one progress event per completed key as results land, in whatever order
 // they finish, followed by a single terminal "done". `id` is caller-chosen
@@ -98,7 +98,7 @@ export interface WsError {
 }
 
 // One per completed key, streamed as results land (not buffered until the
-// whole batch finishes) — `index` is the key's position in the request's
+// whole batch finishes) - `index` is the key's position in the request's
 // `keyIds` array, stable regardless of completion order, so the client can
 // always match a result back to the request that produced it.
 export interface WsBatchTestProgress {
@@ -117,7 +117,7 @@ export interface WsBatchTestDone {
 }
 
 // Fatal setup failure (unknown provider/key, duplicate batch id already
-// running) — NOT an individual key's test failing, which is a normal
+// running) - NOT an individual key's test failing, which is a normal
 // `WsBatchTestProgress` with `result.ok === false`.
 export interface WsBatchTestError {
   type: "batch-test-error";

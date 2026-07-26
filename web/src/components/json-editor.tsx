@@ -19,7 +19,7 @@ function escapeHtml(s: string): string {
 }
 
 // Tokenize a JSON-ish string into span-wrapped HTML. Tolerant of partial/invalid
-// input (it's an editor) — anything unrecognized is emitted as plain text. Order
+// input (it's an editor) - anything unrecognized is emitted as plain text. Order
 // matters: strings first (so braces inside them aren't mistaken for punctuation),
 // then literals, numbers, punctuation. Object KEYS (a string immediately followed
 // by a colon) get the label color; other strings get the string color.
@@ -33,7 +33,7 @@ function highlightJson(code: string): string {
     out += escapeHtml(code.slice(last, m.index));
     const [tok, key, str, lit, num, punct] = m;
     if (key !== undefined) {
-      // "field": — color the field name, keep the trailing colon as punctuation.
+      // "field": - color the field name, keep the trailing colon as punctuation.
       const name = key.replace(/\s*:\s*$/, "");
       out += `<span class="jt-label">${escapeHtml(name)}</span><span class="jt-punct">:</span>`;
     } else if (str !== undefined) {

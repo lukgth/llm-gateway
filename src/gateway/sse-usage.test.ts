@@ -1,5 +1,5 @@
 // SseUsageObserver tests. Per the format-route completeness audit, this had
-// NO dedicated test before this — only indirectly touched by an engine-level
+// NO dedicated test before this - only indirectly touched by an engine-level
 // streaming test that asserts on an error event, never on usage. Covers all
 // three usage-nesting shapes it reads (top-level, .message.usage,
 // .response.usage), the chars/4 fallback estimate, cached-token extraction,
@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { SseUsageObserver } from "./sse-usage";
 
 // Feed a Transform a sequence of raw SSE text chunks and collect everything
-// written back out, concatenated — used to assert pass-through-verbatim.
+// written back out, concatenated - used to assert pass-through-verbatim.
 function feed(observer: SseUsageObserver, chunks: string[]): string {
   const out: Buffer[] = [];
   observer.on("data", (c: Buffer) => out.push(c));
@@ -145,7 +145,7 @@ test("reads cached tokens via readCachedTokens (Anthropic + OpenAI shapes)", () 
     }),
   ]);
   assert.equal(openai.usage(0).cached, 6);
-  // OpenAI's prompt_tokens already includes cached — no addition.
+  // OpenAI's prompt_tokens already includes cached - no addition.
   assert.equal(openai.usage(0).input, 10);
 });
 

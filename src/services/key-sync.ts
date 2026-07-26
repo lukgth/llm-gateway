@@ -1,6 +1,6 @@
 // Background key sync service: polls configured URLs on a per-provider
 // timer and reconciles the provider_keys table via importKeysFromUrl.
-// The URL response is the source of truth — keys not in the response get
+// The URL response is the source of truth - keys not in the response get
 // disabled (not deleted), preserving health/affinity data. Keys that
 // reappear are re-enabled automatically.
 

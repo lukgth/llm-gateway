@@ -154,7 +154,7 @@ function generateProviderId(db: DB, name: string): string {
   return `prov-${randSuffix()}${randSuffix()}`;
 }
 
-// Non-secret id suffix (a DB uniqueness token, visible in the admin UI — never
+// Non-secret id suffix (a DB uniqueness token, visible in the admin UI - never
 // a credential). Uses crypto.randomBytes rather than Math.random purely to keep
 // it out of "insecure randomness" scanner rules; the collision math doesn't
 // actually depend on CSPRNG-grade unpredictability here.

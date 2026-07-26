@@ -54,10 +54,10 @@ export function modelTransformBags(
 }
 
 // Drop any family-default entry a model's own config overrides (same id+phase
-// — the model's entry wins). Shared by mergeTransforms (single flat list, used
+// - the model's entry wins). Shared by mergeTransforms (single flat list, used
 // where relative order between family/own doesn't matter) and buildRoute
 // (which keeps the two lists separate so it can place family transforms BEFORE
-// the adapter's own stack and own transforms AFTER — see engine.ts buildRoute).
+// the adapter's own stack and own transforms AFTER - see engine.ts buildRoute).
 export function dropOverriddenDefaults(
   defaults: ModelTransformConfig[] | undefined,
   own: ModelTransformConfig[] | undefined,

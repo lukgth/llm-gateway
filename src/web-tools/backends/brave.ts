@@ -1,10 +1,10 @@
-// Brave Search web provider — search only (no page fetch).
+// Brave Search web provider - search only (no page fetch).
 //
 // Best fit for interactive, latency-sensitive agents (Claude Code): Brave runs
 // its own fresh index and has a generous free "Data for AI" tier. Requires an
 // API key (get one on the Free AI plan at api-dashboard.search.brave.com).
 //
-// We request `extra_snippets=true` so each hit carries up to 5 extra excerpts —
+// We request `extra_snippets=true` so each hit carries up to 5 extra excerpts -
 // folded into the description so the agentic-loop path has richer context to
 // reason over, while the short-circuit path still just uses title + URL.
 //
@@ -77,7 +77,7 @@ export function createBraveProvider(config: WebProviderConfig): SearchProvider {
     });
   }
 
-  // Brave is search-only — no `fetch`. executeWebTool reports web_fetch as
+  // Brave is search-only - no `fetch`. executeWebTool reports web_fetch as
   // unsupported for this provider rather than crashing.
   return { name: "brave", search };
 }

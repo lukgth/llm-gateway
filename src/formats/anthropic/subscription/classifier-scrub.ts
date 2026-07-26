@@ -32,7 +32,7 @@ export const OPENCODE_SCRUB_SUBSTITUTIONS: readonly ScrubSubstitution[] = [
     from: /Here is some useful information about the environment you are running in:/g,
     to: "Environment context:",
   },
-  // Note: TodoWrite is NOT scrubbed — same real tool name in opencode and CC.
+  // Note: TodoWrite is NOT scrubbed - same real tool name in opencode and CC.
 ];
 
 export function scrubAnchorsInPlace(

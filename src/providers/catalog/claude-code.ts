@@ -68,7 +68,7 @@ class ClaudeCodeAdapter extends AnthropicCompatibleAdapter {
       return {
         windows: [],
         unavailable: true,
-        message: "No usage captured yet — send a request with this key.",
+        message: "No usage captured yet - send a request with this key.",
       };
     }
     const info = parseUnifiedRateLimitHeaders(ctx.unifiedUsage.headers);
@@ -112,16 +112,16 @@ export const claudeCode = new ClaudeCodeAdapter({
       label: "API key",
       placeholder: "sk-ant-…",
       required: true,
-      hint: "One per line — rotated round-robin.",
+      hint: "One per line - rotated round-robin.",
     },
   ],
   quirks: {
     requiredHeaders: { "anthropic-version": "2023-06-01" },
     thinking: { defaultType: "adaptive", supportsEffort: true },
-    // Same Anthropic-family base as anthropic.ts — see
+    // Same Anthropic-family base as anthropic.ts - see
     // ANTHROPIC_DEFAULT_TRANSFORMS's doc comment in anthropic-compatible.ts.
     // The subscription no-op stack (subscriptionRequestStack, above) is a
-    // separate untagged requestTransforms() addition, not a quirks default —
+    // separate untagged requestTransforms() addition, not a quirks default -
     // it has no ModelTransformConfig shape (no library transform backs it),
     // so it can't be seeded/shown the same way; it still appears in the
     // resolved-transforms view as an adapter-level stage (see

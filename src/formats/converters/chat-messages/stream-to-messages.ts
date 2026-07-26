@@ -44,7 +44,7 @@ export class ChatToMessagesSseTransform extends Transform {
 
   private send(obj: { type: string } & Record<string, unknown>): void {
     // Anthropic SSE uses an `event: <type>` line plus a `data:` line. Both are
-    // required — clients (e.g. Claude Code) key off the event line.
+    // required - clients (e.g. Claude Code) key off the event line.
     this.push(`event: ${obj.type}\ndata: ${JSON.stringify(obj)}\n\n`);
   }
 
@@ -88,7 +88,7 @@ export class ChatToMessagesSseTransform extends Transform {
 
   // S1: thinking block lifecycle. Reasoning arrives before content in practice.
   // Real Anthropic thinking blocks open with an empty `signature` field too
-  // (not just `thinking`) — matches the live API's own content_block_start
+  // (not just `thinking`) - matches the live API's own content_block_start
   // shape for a not-yet-signed block.
   private openThinkingBlock(): number {
     const i = this.nextIndex++;
@@ -103,14 +103,14 @@ export class ChatToMessagesSseTransform extends Transform {
 
   // Real Anthropic extended-thinking streams end a thinking block with a
   // `signature_delta` event (carrying the cryptographic signature) BEFORE
-  // `content_block_stop` — never inside content_block_start. This bridge is
+  // `content_block_stop` - never inside content_block_start. This bridge is
   // synthesizing the thinking block from an OpenAI-shaped reasoning_content
   // stream, so there's no genuine signature to relay; SYNTHETIC_THINKING_SIGNATURE
   // fills the slot so the block's SHAPE matches a real one (some clients/SDKs,
   // including Anthropic's own, reject a thinking block with no signature at
   // all on echo-back). See that constant's doc comment for why this is safe:
-  // stripUnsupportedThinking normalizes every thinking block — synthetic or
-  // real — back to text before any request reaches a messages-speaking
+  // stripUnsupportedThinking normalizes every thinking block - synthetic or
+  // real - back to text before any request reaches a messages-speaking
   // upstream, so this placeholder never needs to be a valid signature.
   private closeThinkingBlock(): void {
     if (!this.thinkingBlockOpen) return;
@@ -219,7 +219,7 @@ export class ChatToMessagesSseTransform extends Transform {
               },
             });
           } else if (tc.function?.name) {
-            // name arriving late (rare) — ignore
+            // name arriving late (rare) - ignore
           }
           if (tc.function?.arguments) {
             this.send({
@@ -246,7 +246,7 @@ export class ChatToMessagesSseTransform extends Transform {
         this.send({ type: "content_block_stop", index: idx });
       this.toolBlocks.clear();
       // S2: fold OpenAI usage into Anthropic shape (cache split preserved).
-      // Use lastUsage as fallback — some providers send usage on a separate
+      // Use lastUsage as fallback - some providers send usage on a separate
       // chunk before finish_reason, or on a usage-only chunk after it.
       const anthUsage = chatUsageToAnthropic(
         (chunk.usage as Parameters<typeof chatUsageToAnthropic>[0]) ??

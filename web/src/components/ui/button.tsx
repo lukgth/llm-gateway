@@ -3,7 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  // Unified control font: 13px (text-[0.8125rem]) — one step down from text-sm so
+  // Unified control font: 13px (text-[0.8125rem]) - one step down from text-sm so
   // buttons sit in scale with the surrounding 12px content instead of reading
   // oversized. Matches Input / Select / Textarea / Combobox. Size variants that
   // need a different font (xs -> 12px, lg -> 14px) override this.

@@ -2,7 +2,7 @@
 //
 // Declarative presets that pre-fill a new provider's config so users don't have
 // to hand-type base URLs, wire formats, auth schemes and version headers. Purely
-// additive: a template produces a normal Provider row — the proxy engine never
+// additive: a template produces a normal Provider row - the proxy engine never
 // sees the template. See src/providers/.
 
 import type { AuthScheme, ProviderFormat, WireKind } from "./provider";
@@ -33,7 +33,7 @@ export interface ProviderDefaults {
 }
 
 // Known behaviors a stock provider needs. Applied at provider-create / model-import
-// time only — NOT on the request hot path — so adding a quirk can never regress
+// time only - NOT on the request hot path - so adding a quirk can never regress
 // streaming or format conversion.
 export interface ProviderQuirks {
   /** Headers merged into the provider's extraHeaders on create (e.g. anthropic-version). */
