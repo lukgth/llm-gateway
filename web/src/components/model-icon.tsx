@@ -117,6 +117,7 @@ const PROVIDER_BRANDS: Record<string, { svg: string; label: string }> = {
   "claude-code": { svg: claudeSvg, label: "Claude" },
   "xiaomi-mimo": { svg: mimoSvg, label: "MiMo" },
   clinepass: { svg: clineSvg, label: "Cline" },
+  dashscope: { svg: qwenSvg, label: "Qwen" },
   qwencloud: { svg: qwenSvg, label: "Qwen" },
   "qwencloud-cn": { svg: qwenSvg, label: "Qwen" },
   "dashscope-coding": { svg: qwenSvg, label: "Qwen" },

@@ -21,6 +21,7 @@ test("catalog is non-empty and includes the requested providers", () => {
     "openrouter",
     "opencode",
     "xiaomi-mimo",
+    "dashscope",
     "openai-compatible",
     "anthropic-compatible",
     "proxy",

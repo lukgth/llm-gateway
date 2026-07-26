@@ -51,6 +51,7 @@ import { proxy } from "./catalog/proxy";
 import { newapi } from "./catalog/newapi";
 import { ollama, ollamaCloud } from "./catalog/ollama";
 import { opencodeGo } from "./catalog/opencode-go";
+import { dashscope } from "./catalog/dashscope";
 import { qwencloud, qwencloudCn } from "./catalog/qwencloud";
 import { moonshot } from "./catalog/moonshot";
 import { dashscopeCoding } from "./catalog/dashscope-coding";
@@ -71,6 +72,7 @@ const ADAPTERS: ProviderAdapter[] = [
   xiaomiMimo,
   deepseek,
   glm,
+  dashscope,
   qwencloud,
   qwencloudCn,
   dashscopeCoding,
