@@ -120,8 +120,7 @@ export function listApiKeys(db: DB): ApiKey[] {
 
 export function getApiKey(db: DB, id: string): ApiKey | null {
   const row = db.prepare(`${SELECT_JOIN} WHERE k.id = ?`).get(id) as
-    | ApiKeyRow
-    | undefined;
+    ApiKeyRow | undefined;
   return row ? mapKey(db, row) : null;
 }
 
@@ -138,8 +137,7 @@ export function getApiKeyByHash(db: DB, hash: string): ApiKey | null {
 // configurable operator-friendly error message.
 export function getAnyApiKeyByHash(db: DB, hash: string): ApiKey | null {
   const row = db.prepare(`${SELECT_JOIN} WHERE k.key_hash = ?`).get(hash) as
-    | ApiKeyRow
-    | undefined;
+    ApiKeyRow | undefined;
   return row ? mapKey(db, row) : null;
 }
 

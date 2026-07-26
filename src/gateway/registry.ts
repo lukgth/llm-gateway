@@ -143,7 +143,8 @@ export class ModelRegistry {
     }
     const alias = this.aliasFromExposed(clientModel);
     const model = this.models.find((m) => m.alias === alias);
-    if (model) return this.canAccess(apiKey, model) ? { model } : { error: 404 };
+    if (model)
+      return this.canAccess(apiKey, model) ? { model } : { error: 404 };
     if (this.settings.allowUnknown && (!apiKey || apiKey.accessAllModels)) {
       // Forward verbatim to a single-link chain (no provider known yet - the
       // engine will treat the raw name as the upstream model for every enabled

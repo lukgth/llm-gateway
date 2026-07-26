@@ -11,7 +11,11 @@ import {
 } from "./api-keys";
 import { sha256 } from "../config";
 
-function model(db: ReturnType<typeof openDatabase>, id: string, enabled = true) {
+function model(
+  db: ReturnType<typeof openDatabase>,
+  id: string,
+  enabled = true,
+) {
   return createModel(db, { id, alias: id, enabled });
 }
 
@@ -106,12 +110,14 @@ test("registry filters both listing shapes and blocks unknown for restricted key
     );
     const registry = new ModelRegistry(db);
 
-    assert.deepEqual(registry.listOpenAI(key).data.map((m) => m.id), [
-      "anthropic/m1",
-    ]);
-    assert.deepEqual(registry.listAnthropic(key).data.map((m) => m.id), [
-      "anthropic/m1",
-    ]);
+    assert.deepEqual(
+      registry.listOpenAI(key).data.map((m) => m.id),
+      ["anthropic/m1"],
+    );
+    assert.deepEqual(
+      registry.listAnthropic(key).data.map((m) => m.id),
+      ["anthropic/m1"],
+    );
     assert.equal(registry.resolveModel("m1", key).model?.id, "m1");
     assert.equal(registry.resolveModel("m2", key).error, 404);
 

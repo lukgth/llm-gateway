@@ -418,11 +418,12 @@ function ModelAccessControl({
                       <span className="block truncate text-xs font-medium">
                         {model.alias}
                       </span>
-                      {model.displayName && model.displayName !== model.alias && (
-                        <span className="block truncate text-[11px] text-muted-foreground">
-                          {model.displayName}
-                        </span>
-                      )}
+                      {model.displayName &&
+                        model.displayName !== model.alias && (
+                          <span className="block truncate text-[11px] text-muted-foreground">
+                            {model.displayName}
+                          </span>
+                        )}
                     </span>
                     {!model.enabled && (
                       <Badge variant="secondary" className="text-[10px]">
