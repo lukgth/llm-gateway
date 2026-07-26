@@ -9,7 +9,7 @@
 // the long context. Everything is a plain callable function — no adapter seam.
 
 import { requestJson } from "../../gateway/http";
-import { agentFor } from "../../gateway/proxy-agent";
+import { dispatchAgent } from "../../gateway/proxy-agent";
 import { SONNET_46_RE } from "../../formats/model-version";
 
 // Sonnet 4.6's base context window (input-token ceiling on a Claude Code sub).
@@ -99,7 +99,7 @@ export async function countInputTokens(
       body: JSON.stringify(buildCountTokensBody(opts.body)),
       timeoutMs: opts.timeoutMs,
       tlsVerify: opts.tlsVerify,
-      agent: agentFor(opts.proxy, new URL(url).protocol === "https:"),
+      agent: dispatchAgent(opts.proxy, new URL(url).protocol === "https:"),
     });
     if (res.status < 200 || res.status >= 300) return null;
     const parsed = JSON.parse(res.text) as { input_tokens?: unknown };

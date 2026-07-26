@@ -17,9 +17,17 @@ class QwenCloudAdapter extends OpenAICompatibleAdapter {
   // <origin>/apps/anthropic — not under <origin>/compatible-mode/v1.
   // ctx.baseUrl is just the origin (e.g. https://token-plan...aliyuncs.com)
   // since the /compatible-mode/v1 prefix is carried in ctx.basePath; so we
-  // can append /apps/anthropic directly to ctx.baseUrl.
+  // can append to ctx.baseUrl directly.
+  //
+  // Alibaba documents /apps/anthropic as the ANTHROPIC_BASE_URL — a BASE the
+  // client appends the Messages path to, not an endpoint itself. Verified live
+  // on both regions: POST /apps/anthropic/v1/messages -> 401 (auth reached) on
+  // each, while the bare /apps/anthropic -> 404 on cn-beijing. Both hosts route
+  // before they authenticate (a nonsense path -> 404), so that 404 is a real
+  // miss, and the bare path only appeared to work on ap-southeast-1 because
+  // that region answers the prefix with a 401 instead.
   override messages(ctx: BuildCtx): BuiltRequest {
-    const url = ctx.baseUrl.replace(/\/+$/, "") + "/apps/anthropic";
+    const url = ctx.baseUrl.replace(/\/+$/, "") + "/apps/anthropic/v1/messages";
     return { url, headers: ctx.headers, body: ctx.body };
   }
 }

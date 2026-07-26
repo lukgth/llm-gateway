@@ -25,7 +25,7 @@ import type { Request, Response } from "express";
 import type { Database as DB } from "better-sqlite3";
 import type { Logger } from "../logger";
 import type { Model, Provider } from "../types";
-import { agentFor } from "./proxy-agent";
+import { dispatchAgent } from "./proxy-agent";
 import { buildUpstreamUrl, hostFromUrl } from "./url";
 import {
   adapterForProvider,
@@ -1030,9 +1030,9 @@ export class ForwardingEngine {
 
     const isHttps = upstreamUrl.protocol === "https:";
     const transport = isHttps ? https : http;
-    let proxyAgent: ReturnType<typeof agentFor>;
+    let proxyAgent: ReturnType<typeof dispatchAgent>;
     try {
-      proxyAgent = agentFor(provider.proxy, isHttps);
+      proxyAgent = dispatchAgent(provider.proxy, isHttps);
     } catch (err) {
       return {
         committed: false,
@@ -1103,7 +1103,10 @@ export class ForwardingEngine {
           path: `${upstreamUrl.pathname}${upstreamUrl.search}`,
           headers,
           rejectUnauthorized: provider.tlsVerify,
-          ...(proxyAgent ? { agent: proxyAgent } : {}),
+          // Always explicit — dispatchAgent returns the proxy agent or the
+          // IPv4-first direct one, never undefined (which would silently fall
+          // back to Node's global agent and neither prefer v4 nor race families).
+          agent: proxyAgent,
         },
         (upRes) => {
           if (timer) {
@@ -2262,7 +2265,7 @@ export class ForwardingEngine {
         body: serialized,
         timeoutMs: provider.requestTimeoutMs,
         tlsVerify: provider.tlsVerify,
-        agent: agentFor(provider.proxy, upstreamUrl.protocol === "https:"),
+        agent: dispatchAgent(provider.proxy, upstreamUrl.protocol === "https:"),
       });
     } catch (err) {
       return {

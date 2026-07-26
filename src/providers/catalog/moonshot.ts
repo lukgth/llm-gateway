@@ -18,10 +18,15 @@ import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 class MoonshotAdapter extends OpenAICompatibleAdapter {
   // The Anthropic-format endpoint is a sibling of /v1 — <origin>/anthropic,
   // not <origin>/v1/anthropic. ctx.baseUrl is just the origin (the /v1 prefix
-  // is carried in ctx.basePath), so append directly to it. Same shape as the
-  // qwencloud /apps/anthropic override.
+  // is carried in ctx.basePath), so append directly to it.
+  //
+  // `/anthropic` is the ANTHROPIC_BASE_URL Moonshot documents, i.e. a BASE that
+  // the client appends the Messages path to — the bare path is not itself an
+  // endpoint. Verified against the live host: POST /anthropic -> 404, POST
+  // /anthropic/v1/messages -> 401 (auth reached), and a nonsense path -> 404,
+  // so this host routes before it authenticates and that 404 is a real miss.
   override messages(ctx: BuildCtx): BuiltRequest {
-    const url = ctx.baseUrl.replace(/\/+$/, "") + "/anthropic";
+    const url = ctx.baseUrl.replace(/\/+$/, "") + "/anthropic/v1/messages";
     return { url, headers: ctx.headers, body: ctx.body };
   }
 }

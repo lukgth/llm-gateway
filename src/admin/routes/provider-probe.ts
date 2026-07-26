@@ -31,7 +31,7 @@ import {
   type UsageCtx,
   type AdapterRequest,
 } from "../../providers";
-import { agentFor } from "../../gateway/proxy-agent";
+import { dispatchAgent } from "../../gateway/proxy-agent";
 import { shortId } from "../../gateway/engine-support/utils";
 import type { Logger } from "../../logger";
 import { getSettings } from "../../repo/settings";
@@ -81,6 +81,21 @@ function modelsRequestHeaders(
   return applyAuthHeaders(headers, p.authScheme, keyOverride ?? p.apiKeys[0]);
 }
 
+// A never-empty, always-actionable description of a transport failure. Node's
+// socket/TLS errors can arrive with an empty `message` and the real signal in
+// `code`/`syscall`; an empty string is falsy and would slip past the
+// `if (res.error)` guards downstream, leaving a null status with no explanation
+// (the bare "status 0" / "no status line" case this whole path exists to avoid).
+function describeTransportError(err: unknown): string {
+  const e = err as { message?: string; code?: string; syscall?: string };
+  const parts = [
+    e?.message?.trim(),
+    e?.code ? `code=${e.code}` : "",
+    e?.syscall ? `syscall=${e.syscall}` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" ") : "transport error with no detail";
+}
+
 // Default per-hop probe timeout when the provider doesn't specify one. A probe
 // is an interactive admin action, so this stays well under the gateway's own
 // request timeout — but slow-to-connect hosts (some regional endpoints take
@@ -126,9 +141,9 @@ function rawRequestOnce(
   }
   const isHttps = url.protocol === "https:";
   const transport = isHttps ? https : http;
-  let proxyAgent: ReturnType<typeof agentFor>;
+  let proxyAgent: ReturnType<typeof dispatchAgent>;
   try {
-    proxyAgent = agentFor(opts.proxy, isHttps);
+    proxyAgent = dispatchAgent(opts.proxy, isHttps);
   } catch (err) {
     return Promise.resolve({
       status: null,
@@ -149,7 +164,10 @@ function rawRequestOnce(
         path: url.pathname + url.search,
         headers: opts.headers,
         rejectUnauthorized: opts.tlsVerify,
-        ...(proxyAgent ? { agent: proxyAgent } : {}),
+        // Always an explicit agent: the proxy one when configured, otherwise
+        // the IPv4-first direct agent (see dispatchAgent/directAgent — both
+        // the lookup order and autoSelectFamily only take effect at agent level).
+        agent: proxyAgent,
       },
       (upRes) => {
         const chunks: Buffer[] = [];
@@ -177,7 +195,7 @@ function rawRequestOnce(
             headers: upRes.headers,
             body: Buffer.concat(chunks).toString("utf8"),
             ms: Date.now() - start,
-            error: `response stream error: ${err.message}`,
+            error: `response stream error: ${describeTransportError(err)}`,
           }),
         );
       },
@@ -188,7 +206,12 @@ function rawRequestOnce(
         headers: {},
         body: "",
         ms: Date.now() - start,
-        error: err.message,
+        // Node socket/TLS errors sometimes carry an EMPTY message while the
+        // useful part is in .code/.syscall. An empty string here is falsy, so
+        // it would slip past every `if (res.error)` guard downstream and
+        // resurface as an unexplained null status — always synthesize
+        // something actionable.
+        error: describeTransportError(err),
       }),
     );
     const timeoutMs = Math.min(
@@ -406,9 +429,12 @@ function modelsTransport(
     });
     if (res.error) throw new Error(res.error);
     // No status line: throw rather than let `?? 0` manufacture a fake "status 0"
-    // the operator can't act on.
+    // the operator can't act on. Name the URL — the usual cause is a request
+    // that never reached a route, and the path is the thing worth checking.
     if (res.status === null)
-      throw new Error("no response from upstream (no status line)");
+      throw new Error(
+        `no response from upstream (no status line) for ${urlStr} after ${res.ms}ms`,
+      );
     return {
       ok: res.status >= 200 && res.status < 300,
       status: res.status,
@@ -526,9 +552,11 @@ function adapterRequestTransport(
     });
     if (res.error) throw new Error(res.error);
     // Same reasoning as modelsTransport: a null status must surface as a real
-    // error, never as a bare "status 0" in the UI.
+    // error naming the URL, never as a bare "status 0" in the UI.
     if (res.status === null)
-      throw new Error("no response from upstream (no status line)");
+      throw new Error(
+        `no response from upstream (no status line) for ${urlStr} after ${res.ms}ms`,
+      );
     return {
       status: res.status,
       ok: res.status >= 200 && res.status < 300,
