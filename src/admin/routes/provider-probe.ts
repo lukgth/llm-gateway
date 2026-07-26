@@ -81,9 +81,17 @@ function modelsRequestHeaders(
   return applyAuthHeaders(headers, p.authScheme, keyOverride ?? p.apiKeys[0]);
 }
 
-// One HTTP round-trip with the provider's outbound proxy + TLS-verify + a 15s
-// timeout. Returns the raw status/body (never throws — a transport error
-// resolves with status:null + error). No redirect handling — see rawRequest,
+// Default per-hop probe timeout when the provider doesn't specify one. A probe
+// is an interactive admin action, so this stays well under the gateway's own
+// request timeout — but slow-to-connect hosts (some regional endpoints take
+// 10s+ just to complete the TCP+TLS handshake) need more than a snap judgement.
+const DEFAULT_PROBE_TIMEOUT_MS = 15_000;
+const MIN_PROBE_TIMEOUT_MS = 5_000;
+const MAX_PROBE_TIMEOUT_MS = 60_000;
+
+// One HTTP round-trip with the provider's outbound proxy + TLS-verify + a
+// bounded timeout. Returns the raw status/body (never throws — a transport
+// error resolves with status:null + error). No redirect handling — see rawRequest,
 // which wraps this with redirect-following; every other call site should use
 // that, not this, so a 301/302/307/308 from a reverse proxy or an http->https
 // canonicalization doesn't surface as a bare non-2xx failure.
@@ -95,6 +103,7 @@ function rawRequestOnce(
     body?: string;
     tlsVerify: boolean;
     proxy?: string | null;
+    timeoutMs?: number;
   },
 ): Promise<{
   status: number | null;
@@ -147,10 +156,28 @@ function rawRequestOnce(
         upRes.on("data", (c) => chunks.push(c as Buffer));
         upRes.on("end", () =>
           resolve({
+            // statusCode is always set on a completed response; the fallback
+            // only fires if the socket died between headers and 'end'. Carry an
+            // explicit error so no caller can coerce this into a bare status 0.
             status: upRes.statusCode ?? null,
             headers: upRes.headers,
             body: Buffer.concat(chunks).toString("utf8"),
             ms: Date.now() - start,
+            ...(upRes.statusCode
+              ? {}
+              : { error: "upstream closed before sending a status line" }),
+          }),
+        );
+        // A connection dropped mid-body emits 'error' on the RESPONSE, not the
+        // request. Without this the promise never settles (the probe hangs until
+        // the timeout) and Node treats it as an unhandled stream error.
+        upRes.on("error", (err) =>
+          resolve({
+            status: null,
+            headers: upRes.headers,
+            body: Buffer.concat(chunks).toString("utf8"),
+            ms: Date.now() - start,
+            error: `response stream error: ${err.message}`,
           }),
         );
       },
@@ -164,7 +191,16 @@ function rawRequestOnce(
         error: err.message,
       }),
     );
-    req.setTimeout(15000, () => req.destroy(new Error("probe timeout")));
+    const timeoutMs = Math.min(
+      MAX_PROBE_TIMEOUT_MS,
+      Math.max(
+        MIN_PROBE_TIMEOUT_MS,
+        opts.timeoutMs || DEFAULT_PROBE_TIMEOUT_MS,
+      ),
+    );
+    req.setTimeout(timeoutMs, () =>
+      req.destroy(new Error(`probe timeout after ${timeoutMs}ms`)),
+    );
     req.end(opts.body);
   });
 }
@@ -172,8 +208,43 @@ function rawRequestOnce(
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECTS = 5;
 
+// Transport failures worth a second attempt: the connection never produced an
+// HTTP response, and the cause is the kind that clears on its own. A slow or
+// congested route (some regional endpoints intermittently take 10s+ just to
+// finish the TCP+TLS handshake) shows up here as a timeout or reset, and one
+// retry turns an operator-visible "Failed" into a normal result. Deliberately
+// NOT retried: DNS NXDOMAIN, bad URL/proxy config, cert-verification failures —
+// those are deterministic, and retrying only doubles the wait before the same
+// answer.
+const RETRYABLE_TRANSPORT = [
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EPIPE",
+  "EAI_AGAIN",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "socket hang up",
+  "probe timeout",
+  "response stream error",
+  "before sending a status line",
+];
+
+function isRetryableTransportError(error: string | undefined): boolean {
+  if (!error) return false;
+  return RETRYABLE_TRANSPORT.some((needle) => error.includes(needle));
+}
+
+// How a probe reports a transport problem to the operator. Wired from the route
+// layer (which owns the Logger); omitted by tests and other callers.
+export interface ProbeLogCtx {
+  logger?: Logger;
+  /** Provider id (saved) or a label like "wizard" for a pre-create probe. */
+  providerId?: string;
+}
+
 // Low-level HTTP request with the provider's outbound proxy + TLS-verify, a
-// 15s per-hop timeout, AND redirect-following (up to MAX_REDIRECTS hops) —
+// bounded per-hop timeout, AND redirect-following (up to MAX_REDIRECTS hops) —
 // the transport every connectivity test, model-list fetch, and adapter
 // keyUsage()/testModel() query goes through. A reverse proxy that 301s
 // http->https, or a usage endpoint that redirects a trailing-slash mismatch,
@@ -189,7 +260,7 @@ const MAX_REDIRECTS = 5;
 // Relative Location headers resolve against the current URL. A malformed or
 // missing Location, or exceeding MAX_REDIRECTS, returns the redirect response
 // itself rather than throwing — the caller sees a real status to reason about.
-function rawRequest(
+async function rawRequest(
   urlStr: string,
   opts: {
     method?: "GET" | "POST";
@@ -197,6 +268,10 @@ function rawRequest(
     body?: string;
     tlsVerify: boolean;
     proxy?: string | null;
+    timeoutMs?: number;
+    /** Extra attempts after a retryable transport failure (default 1). */
+    retries?: number;
+    log?: ProbeLogCtx;
   },
 ): Promise<{
   status: number | null;
@@ -204,7 +279,38 @@ function rawRequest(
   ms: number;
   error?: string;
 }> {
-  return followRedirects(urlStr, opts, 0, Date.now());
+  const attempts = Math.max(1, (opts.retries ?? 1) + 1);
+  const overallStart = Date.now();
+  let res = await followRedirects(urlStr, opts, 0, Date.now());
+
+  for (let attempt = 2; attempt <= attempts; attempt++) {
+    if (!isRetryableTransportError(res.error)) break;
+    opts.log?.logger?.warn("provider_probe_retry", {
+      provider: opts.log.providerId,
+      url: urlStr,
+      attempt: `${attempt - 1}/${attempts}`,
+      ms: res.ms,
+      err: res.error,
+    });
+    // Short fixed pause — the failures this retries are transient-by-nature
+    // (handshake stalls, resets), not rate limits, so there's nothing to back
+    // off from; a long sleep would just stall an interactive admin action.
+    await new Promise((r) => setTimeout(r, 400));
+    res = await followRedirects(urlStr, opts, 0, Date.now());
+  }
+
+  // A probe that never got a status line is the case that used to surface in
+  // the UI as a bare, unexplained "status 0". Always log it with the real cause.
+  if (res.status === null)
+    opts.log?.logger?.warn("provider_probe_transport_failed", {
+      provider: opts.log.providerId,
+      url: urlStr,
+      attempts,
+      ms: Date.now() - overallStart,
+      err: res.error ?? "no status line and no transport error",
+    });
+
+  return res;
 }
 
 async function followRedirects(
@@ -215,6 +321,7 @@ async function followRedirects(
     body?: string;
     tlsVerify: boolean;
     proxy?: string | null;
+    timeoutMs?: number;
   },
   hop: number,
   overallStart: number,
@@ -274,6 +381,9 @@ function rawGet(
     headers: Record<string, string>;
     tlsVerify: boolean;
     proxy?: string | null;
+    timeoutMs?: number;
+    retries?: number;
+    log?: ProbeLogCtx;
   },
 ): ReturnType<typeof rawRequest> {
   return rawRequest(urlStr, { ...opts, method: "GET" });
@@ -282,17 +392,26 @@ function rawGet(
 // A ModelListTransport backed by rawGet, so fetchModelList honors the provider's
 // proxy + tlsVerify (global fetch can do neither SOCKS proxies nor per-request
 // rejectUnauthorized). A transport-level error becomes a throw the caller surfaces.
-function modelsTransport(p: ProviderLike): ModelListTransport {
+function modelsTransport(
+  p: ProviderLike,
+  log?: ProbeLogCtx,
+): ModelListTransport {
   return async (urlStr, init) => {
     const res = await rawGet(urlStr, {
       headers: init.headers,
       tlsVerify: p.tlsVerify,
       proxy: p.proxy,
+      timeoutMs: p.requestTimeoutMs,
+      log,
     });
     if (res.error) throw new Error(res.error);
+    // No status line: throw rather than let `?? 0` manufacture a fake "status 0"
+    // the operator can't act on.
+    if (res.status === null)
+      throw new Error("no response from upstream (no status line)");
     return {
-      ok: res.status !== null && res.status >= 200 && res.status < 300,
-      status: res.status ?? 0,
+      ok: res.status >= 200 && res.status < 300,
+      status: res.status,
       // No status line from rawGet — surface a short body snippet so a non-2xx
       // error is diagnostic (e.g. the upstream's own message) instead of blank.
       statusText: res.body.slice(0, 120).replace(/\s+/g, " ").trim(),
@@ -313,6 +432,7 @@ function modelsTransport(p: ProviderLike): ModelListTransport {
 function probeModels(
   p: ProviderLike,
   keyOverride?: string,
+  log?: ProbeLogCtx,
 ): Promise<{
   status: number | null;
   body: string;
@@ -326,6 +446,8 @@ function probeModels(
     },
     tlsVerify: p.tlsVerify,
     proxy: p.proxy,
+    timeoutMs: p.requestTimeoutMs,
+    log,
   });
 }
 
@@ -336,6 +458,7 @@ function makeModelsCtx(
   p: ProviderLike,
   format: ModelsFormat,
   apiKeyOverride?: string | null,
+  log?: ProbeLogCtx,
 ): Omit<ModelsCtx, "provider"> {
   const basePath = p.basePath || "";
   const modelsPath = p.modelsPath || "/v1/models";
@@ -356,7 +479,7 @@ function makeModelsCtx(
     headers: modelsRequestHeaders(p, apiKey ?? undefined),
     apiKey,
     format,
-    transport: modelsTransport(p),
+    transport: modelsTransport(p, log),
   };
 }
 
@@ -367,13 +490,17 @@ function makeModelsCtx(
 export async function fetchProviderModels(
   p: Provider,
   db: DB,
+  logger?: Logger,
 ): Promise<UpstreamModel[]> {
   const adapter = adapterForProvider(p);
   const keys = listEnabledCredentials(db, p.id);
   const pl = providerLikeFrom(p, keys);
   return adapter.fetchModels({
     provider: p,
-    ...makeModelsCtx(pl, adapter.nativeFormat),
+    ...makeModelsCtx(pl, adapter.nativeFormat, undefined, {
+      logger,
+      providerId: p.id,
+    }),
   });
 }
 
@@ -383,7 +510,10 @@ export async function fetchProviderModels(
 // A transport-level error becomes a throw — the caller's catch turns it into a
 // clean ok:false/status:null result (testModel) or an "unavailable" key
 // (keyUsage).
-function adapterRequestTransport(p: Provider): AdapterRequest {
+function adapterRequestTransport(
+  p: Provider,
+  log?: ProbeLogCtx,
+): AdapterRequest {
   return async (urlStr, init) => {
     const res = await rawRequest(urlStr, {
       method: init.method ?? "GET",
@@ -391,11 +521,17 @@ function adapterRequestTransport(p: Provider): AdapterRequest {
       body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
       tlsVerify: p.tlsVerify,
       proxy: p.proxy,
+      timeoutMs: p.requestTimeoutMs,
+      log: log ?? { providerId: p.id },
     });
     if (res.error) throw new Error(res.error);
+    // Same reasoning as modelsTransport: a null status must surface as a real
+    // error, never as a bare "status 0" in the UI.
+    if (res.status === null)
+      throw new Error("no response from upstream (no status line)");
     return {
-      status: res.status ?? 0,
-      ok: res.status !== null && res.status >= 200 && res.status < 300,
+      status: res.status,
+      ok: res.status >= 200 && res.status < 300,
       ms: res.ms,
       text: res.body,
       json: () => JSON.parse(res.body),
@@ -516,9 +652,13 @@ export function makeUsageCtx(
 // header or the response won't parse as the Anthropic shape.
 export async function fetchUpstreamModels(
   p: ProviderLike,
+  logger?: Logger,
 ): Promise<UpstreamModel[]> {
   const tryFormat = async (format: ModelsFormat) => {
-    const ctx = makeModelsCtx(p, format);
+    const ctx = makeModelsCtx(p, format, undefined, {
+      logger,
+      providerId: "wizard",
+    });
     const result = await fetchModelList({
       url: ctx.url,
       headers: ctx.headers,
@@ -552,6 +692,7 @@ export async function fetchUpstreamModels(
 export async function testProviderAdhoc(
   p: ProviderLike,
   keyUsed?: string,
+  logger?: Logger,
 ): Promise<{
   ok: boolean;
   status: number | null;
@@ -561,7 +702,7 @@ export async function testProviderAdhoc(
   keyMask?: string;
 }> {
   const key = keyUsed ?? p.apiKeys[0];
-  const res = await probeModels(p, key);
+  const res = await probeModels(p, key, { logger, providerId: "wizard" });
   return {
     ok: !!res.status && res.status >= 200 && res.status < 400,
     status: res.status,
@@ -583,6 +724,7 @@ function makeTestProviderCtx(
   p: Provider,
   keys: string[],
   keyOverride?: string,
+  logger?: Logger,
 ): Omit<TestProviderCtx, "provider"> {
   const basePath = p.basePath || "";
   const resolve: ResolveUrl = (target) =>
@@ -604,7 +746,7 @@ function makeTestProviderCtx(
     url: resolve(),
     headers: modelsRequestHeaders(pl, keyOverride),
     apiKey,
-    request: adapterRequestTransport(p),
+    request: adapterRequestTransport(p, { logger, providerId: p.id }),
   };
 }
 
@@ -621,6 +763,7 @@ export async function testSavedProvider(
   p: Provider,
   db: DB,
   keyUsed?: string,
+  logger?: Logger,
 ): Promise<{
   ok: boolean;
   status: number | null;
@@ -631,7 +774,7 @@ export async function testSavedProvider(
 }> {
   const adapter = adapterForProvider(p);
   const keys = listEnabledCredentials(db, p.id);
-  const ctx = makeTestProviderCtx(p, keys, keyUsed);
+  const ctx = makeTestProviderCtx(p, keys, keyUsed, logger);
   const result = await adapter.testProvider({ provider: p, ...ctx });
   return {
     ...result,

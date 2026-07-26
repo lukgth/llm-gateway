@@ -283,3 +283,90 @@ test("rawRequest: a redirect with no Location header returns the redirect respon
     await close();
   }
 });
+
+// --- transport resilience -------------------------------------------------
+// Regression cover for the "status 0" report: a probe against a host with a
+// flaky connection (some regional endpoints intermittently stall or reset
+// during the TCP+TLS handshake) surfaced in the UI as a bare, undiagnosable
+// "Failed (0)". Three things were wrong, one test each below:
+//   1. a connection dropped MID-BODY emits 'error' on the RESPONSE, which had
+//      no handler — the promise never settled and Node saw an unhandled
+//      stream error,
+//   2. a null status was coerced to 0 by `?? 0` in the transports, inventing
+//      an HTTP status that never existed instead of reporting the real cause,
+//   3. nothing was retried, so a single transient reset failed the whole probe.
+
+test("rawRequest: a connection dropped mid-body settles with the real error, not a hang", async () => {
+  const { origin, close } = await withServer((_req, res) => {
+    // Headers land, then the socket dies before the body completes.
+    res.writeHead(200, {
+      "content-type": "application/json",
+      "content-length": "999",
+    });
+    res.write('{"data":[');
+    res.socket?.destroy();
+  });
+  try {
+    const p = providerFor(origin);
+    const ctx = makeUsageCtx(p);
+    const started = Date.now();
+    await assert.rejects(
+      () =>
+        ctx.request(ctx.resolve("/mid-body"), { method: "GET", headers: {} }),
+      // The point: a real transport error, never a fabricated "status 0".
+      (err: Error) =>
+        /socket hang up|response stream error|ECONNRESET/.test(err.message),
+    );
+    // Settles on the failure itself rather than waiting out the timeout.
+    assert.ok(
+      Date.now() - started < 5000,
+      `expected a prompt settle, took ${Date.now() - started}ms`,
+    );
+  } finally {
+    await close();
+  }
+});
+
+test("rawRequest: a transient reset is retried and the second attempt's success is returned", async () => {
+  let attempts = 0;
+  const { origin, close } = await withServer((_req, res) => {
+    attempts++;
+    if (attempts === 1) return void res.socket?.destroy();
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ data: [{ id: "m1" }] }));
+  });
+  try {
+    const p = providerFor(origin);
+    const ctx = makeUsageCtx(p);
+    const result = await ctx.request(ctx.resolve("/flaky"), {
+      method: "GET",
+      headers: {},
+    });
+    assert.equal(result.status, 200);
+    assert.equal(attempts, 2, "expected exactly one retry");
+  } finally {
+    await close();
+  }
+});
+
+test("rawRequest: a deterministic non-2xx is NOT retried", async () => {
+  let attempts = 0;
+  const { origin, close } = await withServer((_req, res) => {
+    attempts++;
+    res.writeHead(401, { "content-type": "application/json" });
+    res.end('{"error":"bad key"}');
+  });
+  try {
+    const p = providerFor(origin);
+    const ctx = makeUsageCtx(p);
+    const result = await ctx.request(ctx.resolve("/unauthorized"), {
+      method: "GET",
+      headers: {},
+    });
+    // A 401 is a real answer — retrying only doubles the wait for the same result.
+    assert.equal(result.status, 401);
+    assert.equal(attempts, 1);
+  } finally {
+    await close();
+  }
+});

@@ -191,7 +191,7 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
         requestedKey ??
         router.pickKeyForTest(provider.id, enabledCreds, null)?.key ??
         undefined;
-      const result = await testSavedProvider(provider, db, key);
+      const result = await testSavedProvider(provider, db, key, logger);
       res.json(result);
     } catch (e) {
       res.json({ ok: false, status: null, ms: 0, error: (e as Error).message });
@@ -214,7 +214,7 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
     if (!provider)
       return res.status(404).json({ error: { message: "not found" } });
     try {
-      const models = await fetchProviderModels(provider, db);
+      const models = await fetchProviderModels(provider, db, logger);
       res.json({ models });
     } catch (e) {
       res.json({ models: [], error: (e as Error).message });
@@ -296,14 +296,14 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
           : undefined,
     };
     try {
-      const result = await testProviderAdhoc(probe);
+      const result = await testProviderAdhoc(probe, undefined, logger);
       // Best-effort model discovery; failures don't fail the test. Returns the
       // universal list so the wizard imports rich metadata (context/max-out/
       // capabilities), same as the standalone importer.
       let models: UpstreamModel[] = [];
       if (result.ok) {
         try {
-          models = await fetchUpstreamModels(probe);
+          models = await fetchUpstreamModels(probe, logger);
         } catch {
           models = [];
         }

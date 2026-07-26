@@ -42,6 +42,8 @@ export interface ProviderLike {
   basePath?: string;
   modelsPath?: string;
   proxy?: string | null;
+  /** Provider's configured per-request timeout; probes clamp it to a sane range. */
+  requestTimeoutMs?: number;
   /** Model-list dialect to fetch in (default "openai" when unset/null). */
   format?: ModelsFormat | null;
 }
@@ -57,6 +59,7 @@ export function providerLikeFrom(
     basePath: string;
     modelsPath: string;
     proxy: string | null;
+    requestTimeoutMs?: number;
     format: ModelsFormat | null;
   },
   keys: string[],
@@ -71,6 +74,7 @@ export function providerLikeFrom(
     basePath: p.basePath,
     modelsPath: p.modelsPath,
     proxy: p.proxy,
+    requestTimeoutMs: p.requestTimeoutMs,
     format: p.format,
   };
 }
