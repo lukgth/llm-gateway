@@ -12,7 +12,7 @@ export const xiaomiMimo = new XiaomiMimoAdapter({
   brand: "mimo",
   docsUrl: "https://xiaomimimo.com/",
   defaults: {
-    baseUrl: "https://api.mimo.xiaomi.com",
+    baseUrl: "https://api.xiaomimimo.com",
     endpoints: [WireKind.Chat],
     authScheme: "bearer",
     nativeConversion: false,
