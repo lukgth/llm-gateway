@@ -141,6 +141,13 @@ export interface AttemptResult {
    * rotate to another key with no penalty/cooldown/log - but WITHOUT clearing or
    * setting the long-context credit-proof (that's a different credit ceiling). */
   modelCreditsRequired?: boolean;
+  /** The upstream (official Anthropic API) returned a 400 "credit balance is
+   * too low" invalid_request_error: the account has no prepaid funds. The key
+   * itself isn't broken, so it must NOT be disabled - but it also can't serve
+   * anything until the balance is topped up, so the engine rate-limits/cools
+   * it down (a penalty, unlike usageCreditsRequired/modelCreditsRequired which
+   * apply none) and rotates to another key. */
+  creditBalanceExhausted?: boolean;
   /** The pre-flight count_tokens gate found the input over the model's context
    * window for this provider (Claude Code Sonnet 4.6 → 200k). Abandon this
    * provider and fail over to the next hop WITHOUT any key-health penalty - the

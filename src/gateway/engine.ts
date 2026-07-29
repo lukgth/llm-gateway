@@ -90,6 +90,7 @@ import type { RateLimitHint } from "./key-health";
 import {
   isClaudeCodeUsageCreditsError,
   isClaudeCodeModelCreditsError,
+  isAnthropicCreditBalanceError,
 } from "../services/anthropic/usage-credits";
 import {
   contextWindowLimit,
@@ -131,6 +132,12 @@ import type { ForwardContext } from "./engine-support/types";
 // forever - in practice the loop stops much sooner, the moment every enabled key
 // has returned the credits 429. Hit the cap → fail the provider over cleanly.
 const MAX_CREDIT_ROTATIONS = 100;
+
+// An Anthropic "credit balance too low" 400 means the account is out of
+// prepaid funds - not transient like a 429, so cool the key down hard to
+// avoid burning attempts on it, but keep it in the pool (a top-up makes it
+// usable again with no restart needed).
+const CREDIT_BALANCE_COOLDOWN_MS = 60 * 60 * 1000;
 
 export class ForwardingEngine {
   private readonly keyHealth: KeyHealthStore;
@@ -1369,6 +1376,58 @@ export class ForwardingEngine {
       };
     }
 
+    // Anthropic "credit balance too low" 400: the key is fine, the account is
+    // just out of prepaid funds. Penalize (long cooldown) instead of
+    // disabling, and rotate to another key.
+    if (status === 400) {
+      const errBody = await readErrorBody(upRes, MAX_BUFFER_BYTES);
+      if (
+        isAnthropicCreditBalanceError({
+          status,
+          catalogId: provider.catalogId,
+          body: errBody,
+        })
+      ) {
+        if (upstreamKey.hash)
+          this.keyHealth.markRateLimited(
+            provider.id,
+            upstreamKey.hash,
+            CREDIT_BALANCE_COOLDOWN_MS,
+            status,
+            `credit balance too low: ${errBody.slice(0, 200)}`,
+          );
+        return {
+          committed: false,
+          status,
+          reason: `Anthropic key has insufficient credit balance (status ${status}: ${errBody.slice(0, 200)})`,
+          creditBalanceExhausted: true,
+        };
+      }
+      logUpstreamNon2xx(this.logger, {
+        status,
+        provider: provider.id,
+        upstreamModel,
+        path: ctx.clientPath,
+        keyMask: upstreamKey.mask,
+        requestHeaders,
+        responseHeaders: headers,
+        body: errBody,
+        category: "non-retryable",
+      });
+      if (!res.headersSent) {
+        const seeded = filteredHeaders(headers, { stripEncoding: true });
+        const out =
+          provider.catalogId === "claude-code"
+            ? bareResponseHeaders(seeded)
+            : seeded;
+        const buf = Buffer.from(errBody, "utf8");
+        out["content-length"] = String(buf.length);
+        res.writeHead(status, out);
+        res.end(buf);
+      }
+      return { committed: true, status, error: `upstream ${status}` };
+    }
+
     // Auth failure (bad/revoked key): don't commit this to the client - the
     // key is dead, not the request. Read the body (for logging/reason only,
     // never forwarded) and fail this attempt over so forward()'s retry loop
@@ -2176,6 +2235,7 @@ export class ForwardingEngine {
         retryable: boolean;
         usageCreditsRequired?: boolean;
         modelCreditsRequired?: boolean;
+        creditBalanceExhausted?: boolean;
       }
   > {
     // Health-aware key pick for the (non-streaming) web-tool turn. Each turn is
@@ -2433,6 +2493,32 @@ export class ForwardingEngine {
           reason: `Key lacks usage credits for ${upstreamModel} (status ${res.status}: ${res.text.slice(0, 200)})`,
           retryable: true,
           modelCreditsRequired: true,
+        };
+      }
+      // Anthropic "credit balance too low" 400: the key is fine, the account is
+      // just out of prepaid funds. Penalize (long cooldown) instead of
+      // disabling, and rotate to another key.
+      if (
+        isAnthropicCreditBalanceError({
+          status: res.status,
+          catalogId: provider.catalogId,
+          body: res.text,
+        })
+      ) {
+        if (pick)
+          this.keyHealth.markRateLimited(
+            provider.id,
+            pick.keyHash,
+            CREDIT_BALANCE_COOLDOWN_MS,
+            res.status,
+            `credit balance too low: ${res.text.slice(0, 200)}`,
+          );
+        return {
+          ok: false,
+          status: res.status,
+          reason: `Anthropic key has insufficient credit balance (status ${res.status}: ${res.text.slice(0, 200)})`,
+          retryable: true,
+          creditBalanceExhausted: true,
         };
       }
       const authFailed = AUTH_FAIL_STATUS.has(res.status);

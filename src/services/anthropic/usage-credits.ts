@@ -98,3 +98,38 @@ export function isClaudeCodeModelCreditsError(input: {
     return false;
   }
 }
+
+// Anthropic's pay-as-you-go "out of credits" 400 - the account's prepaid
+// balance is empty. Distinct from the Claude Code subscription signals above
+// (those are 429s scoped to claude-code); this is a plain invalid_request_error
+// any Anthropic API key can return once its balance runs dry. Matched by
+// substring (not exact message) so trailing wording changes upstream don't
+// silently disable detection.
+const CREDIT_BALANCE_SUBSTRINGS = ["credit balance is too low"];
+
+// Detect the "credit balance too low" 400. NOT a key fault in the auth sense -
+// the key/account is otherwise valid, it just has no funds - so the engine
+// should penalize (rate-limit/cooldown) rather than disable the key, and
+// rotate to another one. Gated to the official Anthropic catalog since that's
+// the only adapter with a prepaid-balance billing model.
+export function isAnthropicCreditBalanceError(input: {
+  status: number;
+  catalogId: string | null | undefined;
+  body: string;
+}): boolean {
+  if (input.status !== 400 || input.catalogId !== "anthropic") return false;
+
+  try {
+    const parsed = JSON.parse(input.body) as {
+      error?: { type?: unknown; message?: unknown };
+    };
+    if (parsed.error?.type !== "invalid_request_error") return false;
+    const message = parsed.error.message;
+    return (
+      typeof message === "string" &&
+      CREDIT_BALANCE_SUBSTRINGS.some((s) => message.toLowerCase().includes(s))
+    );
+  } catch {
+    return false;
+  }
+}

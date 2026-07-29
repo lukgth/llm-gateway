@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   isClaudeCodeUsageCreditsError,
   isClaudeCodeModelCreditsError,
+  isAnthropicCreditBalanceError,
   LONG_CONTEXT_USAGE_CREDITS_MESSAGE,
   MODEL_USAGE_CREDITS_MESSAGE,
 } from "./usage-credits";
@@ -211,4 +212,56 @@ test("premium-model credits rejects other statuses/providers/types", () => {
     }),
     false,
   );
+});
+
+function creditBalanceMatches(
+  overrides: Partial<Parameters<typeof isAnthropicCreditBalanceError>[0]> = {},
+): boolean {
+  return isAnthropicCreditBalanceError({
+    status: 400,
+    catalogId: "anthropic",
+    body: JSON.stringify({
+      type: "error",
+      error: {
+        type: "invalid_request_error",
+        message:
+          "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+      },
+    }),
+    ...overrides,
+  });
+}
+
+test("matches the Anthropic credit-balance-too-low 400", () => {
+  assert.equal(creditBalanceMatches(), true);
+});
+
+test("credit-balance rejects other statuses/providers/types", () => {
+  assert.equal(creditBalanceMatches({ status: 429 }), false);
+  assert.equal(creditBalanceMatches({ catalogId: "claude-code" }), false);
+  assert.equal(creditBalanceMatches({ catalogId: null }), false);
+  assert.equal(
+    creditBalanceMatches({
+      body: JSON.stringify({
+        error: {
+          type: "rate_limit_error",
+          message:
+            "Your credit balance is too low to access the Anthropic API.",
+        },
+      }),
+    }),
+    false,
+  );
+  assert.equal(
+    creditBalanceMatches({
+      body: JSON.stringify({
+        error: {
+          type: "invalid_request_error",
+          message: "model: field required",
+        },
+      }),
+    }),
+    false,
+  );
+  assert.equal(creditBalanceMatches({ body: "not json" }), false);
 });
