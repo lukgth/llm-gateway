@@ -153,7 +153,6 @@ export function AddProviderDialog({
 
   const runTest = async () => {
     if (!tpl) return;
-    if (!tpl.authentication && apiKeys.length === 0) return;
     if (tpl.authentication && authSession?.state !== "ready") return;
     setTesting(true);
     setProbe(null);
@@ -162,7 +161,10 @@ export function AddProviderDialog({
         ? await api.testProviderAuth(authSession!.id)
         : await api.testProviderConfig({
             baseUrl: baseUrl.trim(),
-            apiKey: apiKeys[Math.floor(Math.random() * apiKeys.length)],
+            apiKey:
+              apiKeys.length > 0
+                ? apiKeys[Math.floor(Math.random() * apiKeys.length)]
+                : undefined,
             authScheme: tpl.defaults.authScheme ?? "bearer",
             basePath: basePath.trim(),
             modelsPath: tpl.defaults.modelsPath ?? "/v1/models",
