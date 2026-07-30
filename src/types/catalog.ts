@@ -68,6 +68,14 @@ export interface TemplateField {
   hint?: string;
 }
 
+export interface ProviderAuthentication {
+  kind: "oauth";
+  flow: "device_code";
+  title: string;
+  description: string;
+  actionLabel?: string;
+}
+
 export interface ProviderTemplate {
   id: string;
   label: string;
@@ -78,4 +86,8 @@ export interface ProviderTemplate {
   fields: TemplateField[];
   quirks?: ProviderQuirks;
   docsUrl?: string;
+  /** Whether this provider supports the managed OAuth account flow. */
+  supportsOAuth?: boolean;
+  /** How the wizard acquires credentials; outbound auth still uses authScheme. */
+  authentication?: ProviderAuthentication;
 }

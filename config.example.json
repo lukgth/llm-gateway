@@ -4,6 +4,7 @@
   "port": 8787,
   "dataDir": "./data",
   "dbPath": "./data/gateway.db",
+  "_providerOAuthKey_comment": "Managed provider tokens are AES-256-GCM encrypted using data/provider-oauth.key. The gateway creates this owner-only key automatically. Back it up separately with the database; losing it makes connected provider accounts unrecoverable.",
 
   "_webDistDir_comment": "Where the built frontend lives. Defaults to ./web/dist (set by the build). Override only if you relocated it.",
   "webDistDir": "./web/dist",

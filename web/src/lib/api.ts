@@ -20,6 +20,11 @@ import type {
   OverviewResponse,
   Provider,
   ProviderInput,
+  ProviderAuthSession,
+  BatchOAuthOps,
+  BatchOAuthResult,
+  ProviderOAuthAccount,
+  ProviderOAuthView,
   ProviderKey,
   ProviderKeySyncConfig,
   ProviderTestResult,
@@ -146,6 +151,70 @@ export const api = {
   listProviderCatalog: () => req<ProviderTemplate[]>("/api/provider-catalog"),
   testProviderConfig: (input: ProviderTestInput) =>
     req<ProviderTestProbe>("/api/provider-catalog/test", json("POST", input)),
+
+  // managed provider authentication
+  startProviderAuth: (catalogId: string) =>
+    req<ProviderAuthSession>(
+      "/api/provider-auth/sessions",
+      json("POST", { catalogId }),
+    ),
+  providerAuthStatus: (sessionId: string) =>
+    req<ProviderAuthSession>(`/api/provider-auth/sessions/${sessionId}`),
+  pollProviderAuth: (sessionId: string) =>
+    req<ProviderAuthSession>(
+      `/api/provider-auth/sessions/${sessionId}/poll`,
+      { method: "POST" },
+    ),
+  testProviderAuth: (sessionId: string) =>
+    req<ProviderTestProbe>(
+      `/api/provider-auth/sessions/${sessionId}/test`,
+      { method: "POST" },
+    ),
+  cancelProviderAuth: (sessionId: string) =>
+    req<void>(`/api/provider-auth/sessions/${sessionId}`, {
+      method: "DELETE",
+    }),
+  providerAuth: (providerId: string) =>
+    req<{ accounts: ProviderOAuthAccount[] }>(
+      `/api/providers/${providerId}/auth`,
+    ),
+  addProviderAuth: (providerId: string, sessionId: string) =>
+    req<ProviderOAuthView>(
+      `/api/providers/${providerId}/auth`,
+      json("POST", { sessionId }),
+    ),
+  updateProviderAuth: (
+    providerId: string,
+    accountId: string,
+    enabled: boolean,
+  ) =>
+    req<ProviderOAuthView>(
+      `/api/providers/${providerId}/auth/${accountId}`,
+      json("PUT", { enabled }),
+    ),
+  testProviderAuthConnection: (providerId: string, accountId: string) =>
+    req<ProviderTestProbe>(
+      `/api/providers/${providerId}/auth/${accountId}/test`,
+      { method: "POST" },
+    ),
+  reconnectProviderAuth: (
+    providerId: string,
+    accountId: string,
+    sessionId: string,
+  ) =>
+    req<ProviderOAuthView>(
+      `/api/providers/${providerId}/auth/${accountId}/reconnect`,
+      json("POST", { sessionId }),
+    ),
+  deleteProviderAuth: (providerId: string, accountId: string) =>
+    req<void>(`/api/providers/${providerId}/auth/${accountId}`, {
+      method: "DELETE",
+    }),
+  batchProviderAuth: (providerId: string, ops: BatchOAuthOps) =>
+    req<BatchOAuthResult>(
+      `/api/providers/${providerId}/auth/batch`,
+      json("POST", ops),
+    ),
 
   // models
   listModels: () => req<Model[]>("/api/models"),

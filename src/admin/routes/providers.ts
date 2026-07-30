@@ -19,8 +19,11 @@ import {
   countProviderModelsByProvider,
 } from "../../repo/provider-models";
 import { listProviderKeys } from "../../repo/provider-keys";
+import { listAllProviderOAuthViews } from "../../repo/provider-oauth";
 import { listProviderTemplates, type UpstreamModel } from "../../providers";
 import type { AuthScheme } from "../../types";
+import type { AdminRequest } from "../../auth/admin-auth";
+import { getProviderTemplate } from "../../providers";
 import type { RouteCtx, ProviderLike } from "./types";
 import {
   str,
@@ -41,6 +44,41 @@ import { resolveProviderTransforms } from "./resolved-transforms";
 import { buildUsageReport, buildUsageReports } from "./usage-report";
 import { bad } from "./respond";
 
+function requireAdminSessionBinding(req: AdminRequest): string {
+  if (!req.__adminSessionBinding) throw new Error("Admin session binding missing");
+  return req.__adminSessionBinding;
+}
+
+function providerDto(
+  provider: ReturnType<typeof getProvider> extends infer T
+    ? Exclude<T, null>
+    : never,
+  authentication: ReturnType<typeof listAllProviderOAuthViews> extends Map<
+    string,
+    infer V
+  >
+    ? V
+    : never,
+) {
+  const supportsOAuth = !!provider.catalogId &&
+    getProviderTemplate(provider.catalogId)?.supportsOAuth === true;
+  const { keyCount, ...base } = provider;
+  return supportsOAuth
+    ? {
+        ...base,
+        supportsOAuth: true as const,
+        authMethod: "oauth" as const,
+        accountCount: authentication.length,
+        authentication,
+      }
+    : {
+        ...base,
+        supportsOAuth: false as const,
+        authMethod: "api-key" as const,
+        keyCount,
+      };
+}
+
 export function registerProviderRoutes(ctx: RouteCtx): void {
   const { db, logger, router, r, requireAdmin, broadcast } = ctx;
 
@@ -49,9 +87,10 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
   // the true registered-imported count, not the exposed-chain hop count.
   r.get("/providers", requireAdmin, (_req, res) => {
     const counts = countProviderModelsByProvider(db);
+    const authentication = listAllProviderOAuthViews(db);
     res.json(
       listProviders(db).map((p) => ({
-        ...p,
+        ...providerDto(p, authentication.get(p.id) ?? []),
         importedModelCount: counts[p.id] ?? 0,
       })),
     );
@@ -68,10 +107,39 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
   r.post("/providers", requireAdmin, (req, res) => {
     try {
       const input = parseProviderInput(req.body, true);
-      const p = createProvider(db, input);
+      const template = input.catalogId
+        ? getProviderTemplate(input.catalogId)
+        : undefined;
+      const managed = template?.authentication?.kind === "oauth";
+      if (
+        managed &&
+        ((input.apiKeys?.length ?? 0) > 0 ||
+          (input.disabledApiKeys?.length ?? 0) > 0)
+      )
+        throw new Error("OAuth providers do not accept API keys");
+      if (managed && !input.authSessionId)
+        throw new Error("Completed authentication is required");
+      if (!managed && input.authSessionId)
+        throw new Error("This provider does not use managed authentication");
+
+      const tx = db.transaction(() => {
+        const provider = createProvider(db, input);
+        const authentication = managed
+          ? ctx.providerAuth.adoptForNewProvider(
+              input.authSessionId!,
+              requireAdminSessionBinding(req as AdminRequest),
+              provider.id,
+              input.catalogId!,
+            )
+          : null;
+        return { provider, authentication };
+      });
+      const { provider, authentication } = tx();
       router.reload();
       broadcast(["providers", "overview"], "provider:create");
-      res.status(201).json(p);
+      res
+        .status(201)
+        .json(providerDto(provider, authentication ? [authentication] : []));
     } catch (e) {
       bad(res, e);
     }
@@ -80,17 +148,30 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
   r.get("/providers/:id", requireAdmin, (req, res) => {
     const p = getProvider(db, String(req.params.id));
     if (!p) return res.status(404).json({ error: { message: "not found" } });
-    res.json(p);
+    res.json(providerDto(p, ctx.providerCredentials.views(p.id)));
   });
 
   r.put("/providers/:id", requireAdmin, (req, res) => {
     try {
       const id = String(req.params.id);
-      const p = updateProvider(db, id, parseProviderInput(req.body));
+      const current = getProvider(db, id);
+      if (!current)
+        return res.status(404).json({ error: { message: "not found" } });
+      const input = parseProviderInput(req.body);
+      const catalogId = input.catalogId ?? current.catalogId;
+      const managed =
+        !!catalogId && getProviderTemplate(catalogId)?.supportsOAuth === true;
+      if (
+        managed &&
+        ((input.apiKeys?.length ?? 0) > 0 ||
+          (input.disabledApiKeys?.length ?? 0) > 0)
+      )
+        throw new Error("OAuth providers do not accept API keys");
+      const p = updateProvider(db, id, input);
       if (!p) return res.status(404).json({ error: { message: "not found" } });
       router.reload();
       broadcast(["providers", "overview"], "provider:update");
-      res.json(p);
+      res.json(providerDto(p, ctx.providerCredentials.views(p.id)));
     } catch (e) {
       bad(res, e);
     }
@@ -178,20 +259,35 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
     if (!provider)
       return res.status(404).json({ error: { message: "not found" } });
     const requestedKey = str((req.body as Record<string, unknown>)?.key);
-    const allKeys = listProviderKeys(db, provider.id);
-    if (requestedKey && !allKeys.some((k) => k.credential === requestedKey))
-      return res
-        .status(400)
-        .json({ error: { message: "key is not configured on this provider" } });
-    const enabledCreds = allKeys
-      .filter((k) => k.enabled)
-      .map((k) => k.credential);
     try {
-      const key =
-        requestedKey ??
-        router.pickKeyForTest(provider.id, enabledCreds, null)?.key ??
-        undefined;
-      const result = await testSavedProvider(provider, db, key, logger);
+      const managedCredential = await ctx.providerCredentials.resolveManaged(
+        provider.id,
+      );
+      let key = managedCredential?.value;
+      if (!managedCredential) {
+        const allKeys = listProviderKeys(db, provider.id);
+        if (
+          requestedKey &&
+          !allKeys.some((candidate) => candidate.credential === requestedKey)
+        )
+          return res.status(400).json({
+            error: { message: "key is not configured on this provider" },
+          });
+        const enabledCreds = allKeys
+          .filter((candidate) => candidate.enabled)
+          .map((candidate) => candidate.credential);
+        key =
+          requestedKey ??
+          router.pickKeyForTest(provider.id, enabledCreds, null)?.key ??
+          undefined;
+      }
+      const result = await testSavedProvider(
+        provider,
+        db,
+        key,
+        logger,
+        managedCredential?.value,
+      );
       res.json(result);
     } catch (e) {
       res.json({ ok: false, status: null, ms: 0, error: (e as Error).message });
@@ -214,7 +310,13 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
     if (!provider)
       return res.status(404).json({ error: { message: "not found" } });
     try {
-      const models = await fetchProviderModels(provider, db, logger);
+      const managed = await ctx.providerCredentials.resolveManaged(provider.id);
+      const models = await fetchProviderModels(
+        provider,
+        db,
+        logger,
+        managed?.value,
+      );
       res.json({ models });
     } catch (e) {
       res.json({ models: [], error: (e as Error).message });
@@ -534,12 +636,14 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
     if (!pm || pm.providerId !== providerId)
       return res.status(404).json({ error: { message: "model not found" } });
     try {
+      const managed = await ctx.providerCredentials.resolveManaged(provider.id);
       const result = await testProviderModel(
         provider,
         pm.upstreamId,
         db,
         logger,
         pm.transforms,
+        managed?.value,
       );
       res.json(result);
     } catch (e) {

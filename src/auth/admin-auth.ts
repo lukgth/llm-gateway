@@ -20,6 +20,8 @@ export interface AdminAuth {
 
 export interface AdminRequest extends Request {
   __admin?: boolean;
+  /** HMAC binding for server-side drafts owned by this exact admin session. */
+  __adminSessionBinding?: string;
 }
 
 function b64url(buf: Buffer | string): string {
@@ -149,7 +151,12 @@ export function adminAuthMiddleware(secret: string) {
     );
     const token = bearer || req.header("x-admin-token") || "";
     if (token && verifyToken(token, secret)) {
-      (req as AdminRequest).__admin = true;
+      const adminReq = req as AdminRequest;
+      adminReq.__admin = true;
+      adminReq.__adminSessionBinding = crypto
+        .createHmac("sha256", secret)
+        .update(`admin-session:${token}`)
+        .digest("hex");
       return next();
     }
     res.status(401).json({

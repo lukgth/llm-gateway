@@ -20,16 +20,32 @@ import { adminRouter } from "./admin/routes";
 import type { BroadcastFn } from "./admin/routes/types";
 import type { KeySyncService } from "./services/key-sync";
 import type { BootstrapConfig } from "./config";
+import type { ProviderAuthService } from "./services/provider-auth/service";
+import type { ProviderCredentialService } from "./services/provider-credentials";
 
-export function createServerApp(
-  db: DB,
-  logger: Logger,
-  router: GatewayRouter,
-  auth: AdminAuth,
-  opts: BootstrapConfig,
-  broadcast?: BroadcastFn,
-  keySyncService?: KeySyncService,
-): Express {
+export interface ServerDependencies {
+  db: DB;
+  logger: Logger;
+  router: GatewayRouter;
+  auth: AdminAuth;
+  opts: BootstrapConfig;
+  providerAuth: ProviderAuthService;
+  providerCredentials: ProviderCredentialService;
+  broadcast?: BroadcastFn;
+  keySyncService?: KeySyncService;
+}
+
+export function createServerApp({
+  db,
+  logger,
+  router,
+  auth,
+  opts,
+  providerAuth,
+  providerCredentials,
+  broadcast,
+  keySyncService,
+}: ServerDependencies): Express {
   const app = express();
 
   // Global request logger - Morgan-style colorized line for every request.
@@ -61,7 +77,17 @@ export function createServerApp(
   // Admin API.
   app.use(
     "/api",
-    adminRouter(db, logger, router, auth, opts, broadcast, keySyncService),
+    adminRouter({
+      db,
+      logger,
+      router,
+      auth,
+      bootstrap: opts,
+      providerAuth,
+      providerCredentials,
+      broadcast,
+      keySyncService,
+    }),
   );
 
   // Gateway /v1 surface.

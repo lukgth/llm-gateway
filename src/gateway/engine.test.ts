@@ -24,6 +24,7 @@ import { ForwardingEngine, type ForwardContext } from "./engine";
 import { KeyHealthStore, hashKey } from "./key-health";
 import type { Model } from "../types";
 import { WireKind } from "../types";
+import type { ProviderCredentialService } from "../services/provider-credentials";
 
 // A quiet logger (suppress console noise during the test run).
 function quietLogger(): Logger {
@@ -171,6 +172,128 @@ test("forward() resolves with 502 when request serialization throws (no escape)"
       );
     });
     assert.equal(state.statusCode, 502);
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test("disconnected managed providers fail over without forwarding client auth", async () => {
+  const captured: { auth?: string; requests: number } = { requests: 0 };
+  const server = http.createServer((req, res) => {
+    captured.requests++;
+    captured.auth = req.headers.authorization;
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ id: "x", usage: {} }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "managed",
+      name: "Cline Free",
+      baseUrl: `http://127.0.0.1:${port}`,
+      catalogId: "clinefree",
+      retryAttempts: 1,
+    });
+    createProvider(db, {
+      id: "fallback",
+      name: "Fallback",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["fallback-secret"],
+      catalogId: "openai",
+      retryAttempts: 1,
+    });
+    const model = getModel(
+      db,
+      createModel(db, {
+        alias: "test-model",
+        providers: [
+          { providerId: "managed", upstreamModel: "managed-model" },
+          { providerId: "fallback", upstreamModel: "fallback-model" },
+        ],
+      }).id,
+    )!;
+    const providerCredentials = {
+      candidates() {
+        return [];
+      },
+    } as unknown as ProviderCredentialService;
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+      providerCredentials,
+    );
+    const { res, state } = mockRes();
+
+    await engine.forward(
+      {
+        method: "POST",
+        headers: { authorization: "Bearer client-secret" },
+      } as never,
+      res as never,
+      ctxFor(model, {
+        model: "test-model",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    assert.equal(state.statusCode, 200);
+    assert.equal(captured.requests, 1);
+    assert.equal(captured.auth, "Bearer fallback-secret");
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("disconnected managed providers skip web-tool turns", async () => {
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "managed",
+      name: "Cline Free",
+      baseUrl: "http://127.0.0.1:9",
+      catalogId: "clinefree",
+      retryAttempts: 1,
+    });
+    const model = getModel(
+      db,
+      createModel(db, {
+        alias: "test-model",
+        providers: [
+          { providerId: "managed", upstreamModel: "managed-model" },
+        ],
+      }).id,
+    )!;
+    const providerCredentials = {
+      candidates() {
+        return [];
+      },
+    } as unknown as ProviderCredentialService;
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+      providerCredentials,
+    );
+    const result = await engine.runMessagesTurn(
+      {
+        method: "POST",
+        headers: { authorization: "Bearer client-secret" },
+      } as never,
+      ctxFor(model, {}),
+      { model: "test-model", messages: [] },
+    );
+    assert.deepEqual(result, {
+      ok: false,
+      status: 502,
+      reason: "managed authentication is not connected",
+    });
   } finally {
     closeDatabase(db);
   }

@@ -28,10 +28,15 @@ export function num(v: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+export interface ProviderRequestInput extends ProviderInput {
+  /** Create-only opaque handle for a completed managed-auth session. */
+  authSessionId?: string;
+}
+
 export function parseProviderInput(
   body: unknown,
   requireCreate = false,
-): ProviderInput {
+): ProviderRequestInput {
   const b = (body || {}) as Record<string, unknown>;
   if (requireCreate) {
     if (!str(b.name)) throw new Error("name is required");
@@ -105,6 +110,7 @@ export function parseProviderInput(
       b.providerConfig && typeof b.providerConfig === "object"
         ? (b.providerConfig as Record<string, unknown>)
         : undefined,
+    authSessionId: str(b.authSessionId),
   };
 }
 

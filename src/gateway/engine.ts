@@ -87,11 +87,17 @@ import {
   type RateLimitScope,
 } from "../services/anthropic/rate-limit-scope";
 import type { RateLimitHint } from "./key-health";
+import type { ProviderCredentialService } from "../services/provider-credentials";
+import { providerAuthIntegration } from "../services/provider-auth/registry";
 import {
   isClaudeCodeUsageCreditsError,
   isClaudeCodeModelCreditsError,
   isAnthropicCreditBalanceError,
 } from "../services/anthropic/usage-credits";
+import {
+  clineRetryDelayMs,
+  isClineFreeLimitError,
+} from "../providers/clinefree";
 import {
   contextWindowLimit,
   countInputTokens,
@@ -147,6 +153,7 @@ export class ForwardingEngine {
     private readonly logger: Logger,
     private readonly thinking: ThinkingConverter,
     private readonly ssePingInterval: number,
+    private readonly providerCredentials?: ProviderCredentialService,
   ) {
     this.keyHealth = new KeyHealthStore(db);
   }
@@ -515,7 +522,23 @@ export class ForwardingEngine {
       // Attempt budget: at least the provider's configured retries, but widened
       // so a multi-key provider can fail a rate-limited/auth-failed key over to
       // a healthy one within this request (bounded by the key count).
-      const providerKeys = listEnabledCredentials(this.db, entry.provider.id);
+      const requiresManagedAuth =
+        !!entry.provider.catalogId &&
+        !!providerAuthIntegration(entry.provider.catalogId);
+      // Managed credentials enter key health only as stable, non-secret row
+      // identities. Decrypt and refresh only the account selected for an attempt.
+      const providerKeys = requiresManagedAuth
+        ? (this.providerCredentials?.candidates(entry.provider.id) ?? [])
+        : listEnabledCredentials(this.db, entry.provider.id);
+      if (requiresManagedAuth && providerKeys.length === 0) {
+        lastReason = "managed authentication is not connected";
+        this.logger.warn("provider_auth_unavailable", {
+          provider: entry.provider.id,
+          model: entry.upstreamModel,
+          err: lastReason,
+        });
+        continue;
+      }
       // Every configured key for this provider is disabled (auth-failed or
       // manually turned off) - NOT the same as a genuinely keyless provider
       // (0 keys ever configured), which intentionally forwards the client's
@@ -562,11 +585,12 @@ export class ForwardingEngine {
         });
         continue; // all enabled keys are cooling down/auth-failed; try next provider
       }
-      const attempts = Math.max(
+      let attempts = Math.max(
         1,
         entry.provider.retryAttempts,
         Math.min(usable || 1, providerKeys.length || 1),
       );
+      const managedRefreshAttempted = new Set<string>();
       // `tried` excludes keys from re-selection this request. `creditLess` is the
       // subset that returned the long-context usage-credits 429 - tracked so we
       // fail the provider over cleanly the instant EVERY enabled key is credit-
@@ -592,6 +616,31 @@ export class ForwardingEngine {
           tried,
         );
         if (pick) tried.add(pick.keyHash);
+        if (requiresManagedAuth && !pick) {
+          lastReason = "no usable managed authentication account";
+          break;
+        }
+        let managedCredential = null as Awaited<
+          ReturnType<ProviderCredentialService["resolveManaged"]>
+        >;
+        if (requiresManagedAuth && pick) {
+          try {
+            managedCredential =
+              (await this.providerCredentials?.resolveHealthKey(
+                entry.provider.id,
+                pick.key,
+              )) ?? null;
+          } catch (error) {
+            lastReason = `managed authentication unavailable: ${(error as Error).message}`;
+            this.keyHealth.markAuthFailed(
+              entry.provider.id,
+              pick.keyHash,
+              401,
+              lastReason,
+            );
+            continue;
+          }
+        }
         const result = await this.attemptOnce(
           req,
           res,
@@ -600,6 +649,7 @@ export class ForwardingEngine {
           route,
           startedAt,
           pick,
+          managedCredential,
         );
 
         // The pre-flight count_tokens gate found the input over this provider's
@@ -697,13 +747,46 @@ export class ForwardingEngine {
             if (sawCreditError)
               this.keyHealth.markCreditProven(entry.provider.id, pick.keyHash);
           } else if (result.status && AUTH_FAIL_STATUS.has(result.status)) {
-            this.keyHealth.markAuthFailed(
-              entry.provider.id,
-              pick.keyHash,
-              result.status,
-              result.reason ?? `upstream auth failed (${result.status})`,
-            );
-            this.disableDeadKey(entry.provider.id, pick.keyHash, result.status);
+            if (managedCredential && pick) {
+              // Managed credentials get one forced refresh and one immediate retry,
+              // independent of the provider's ordinary retry budget. The selector
+              // remains stable across token rotation.
+              if (!managedRefreshAttempted.has(pick.keyHash)) {
+                managedRefreshAttempted.add(pick.keyHash);
+                try {
+                  managedCredential =
+                    (await this.providerCredentials?.resolveHealthKey(
+                      entry.provider.id,
+                      pick.key,
+                      true,
+                    )) ?? null;
+                  tried.delete(pick.keyHash);
+                  attempts = Math.max(attempts, normalAttempts + 2);
+                  lastReason = "managed credential refreshed; retrying";
+                } catch (error) {
+                  lastReason = `managed credential refresh failed: ${(error as Error).message}`;
+                }
+              } else {
+                this.providerCredentials?.rejectHealthKey(
+                  entry.provider.id,
+                  pick.key,
+                );
+                this.keyHealth.markAuthFailed(
+                  entry.provider.id,
+                  pick.keyHash,
+                  result.status,
+                  result.reason ?? `upstream auth failed (${result.status})`,
+                );
+              }
+            } else {
+              this.keyHealth.markAuthFailed(
+                entry.provider.id,
+                pick.keyHash,
+                result.status,
+                result.reason ?? `upstream auth failed (${result.status})`,
+              );
+              this.disableDeadKey(entry.provider.id, pick.keyHash, result.status);
+            }
           } else if (result.status === 429) {
             if (
               result.rateLimitScope === "model" &&
@@ -750,8 +833,8 @@ export class ForwardingEngine {
               // Preserve the key's premium (Fable) class evidence whenever a
               // Fable window drove this 429 - a quota exhaustion isn't proof the
               // key can't serve Fable, so don't let it demote the class.
-              result.rateLimitScope === "model" ||
-                result.fableCooldownMs !== undefined
+              result.rateLimitScope === "model" &&
+                result.rateLimitModelClass === "fable"
                 ? "model"
                 : "global",
             );
@@ -924,10 +1007,14 @@ export class ForwardingEngine {
     route: Route,
     startedAt: number,
     pick: KeyPick | null,
+    managedCredential?: Awaited<
+      ReturnType<ProviderCredentialService["resolveManaged"]>
+    >,
   ): Promise<AttemptResult> {
     const { provider, upstreamModel } = entry;
     const keyHash = pick?.keyHash ?? null;
-    const keyMask = pick?.key ? maskProviderKey(pick.key) : null;
+    const keyMask =
+      managedCredential?.mask ?? (pick?.key ? maskProviderKey(pick.key) : null);
 
     // Fresh per-attempt ctx so a request hook's URL/header rewrites can't leak
     // across retries/hops (route.xctx is shared for the whole request).
@@ -940,11 +1027,13 @@ export class ForwardingEngine {
     // auth. `apiKey` is the SAME key buildHeaders just derived the auth
     // header from and the build phase will separately receive as
     // BuildCtx.apiKey - see TransformCtx.headers's/apiKey's doc comments.
-    const key = pick?.key ?? null;
-    const keyMetadata = pick
-      ? (getProviderKeyByHash(this.db, provider.id, pick.keyHash)?.metadata ??
-        {})
-      : {};
+    const key = managedCredential?.value ?? pick?.key ?? null;
+    const keyMetadata =
+      managedCredential?.metadata ??
+      (pick
+        ? (getProviderKeyByHash(this.db, provider.id, pick.keyHash)?.metadata ??
+          {})
+        : {});
     const attemptCtx: TransformCtx = {
       ...route.xctx,
       apiKey: key,
@@ -1298,6 +1387,25 @@ export class ForwardingEngine {
           reason: "Claude Code key lacks usage credits for this model",
           modelCreditsRequired: true,
         };
+
+      if (
+        provider.catalogId === "clinefree" &&
+        status === 429 &&
+        isClineFreeLimitError(errBody)
+      ) {
+        const delay = clineRetryDelayMs(errBody) ?? 60_000;
+        return {
+          committed: false,
+          status,
+          reason: `Cline free-model limit reached for ${upstreamModel}`,
+          rateLimitScope: "model",
+          rateLimitModelClass: `model:${upstreamModel}`,
+          rateLimitMs: delay,
+          rateLimitResetAt: Date.now() + delay,
+          rateLimitSource: "clinefree-model-limit",
+          rateLimitReason: "Cline reported a limit for this exact free model",
+        };
+      }
 
       captureClaudeUsage();
       const now = Date.now();
@@ -2116,7 +2224,16 @@ export class ForwardingEngine {
       // Same widening as forward(): a multi-key provider gets enough attempts
       // to fail an auth-failed/rate-limited key over to a healthy one within
       // this turn, bounded by how many keys it actually has.
-      const turnKeys = listEnabledCredentials(this.db, entry.provider.id);
+      const requiresManagedAuth =
+        !!entry.provider.catalogId &&
+        !!providerAuthIntegration(entry.provider.catalogId);
+      const turnKeys = requiresManagedAuth
+        ? (this.providerCredentials?.candidates(entry.provider.id) ?? [])
+        : listEnabledCredentials(this.db, entry.provider.id);
+      if (requiresManagedAuth && turnKeys.length === 0) {
+        lastReason = "managed authentication is not connected";
+        continue;
+      }
       // Same "all keys dead" guard as forward() - see its comment. A
       // genuinely keyless provider (0 keys ever configured) still routes.
       if (turnKeys.length === 0) {
@@ -2173,6 +2290,7 @@ export class ForwardingEngine {
           route,
           messagesBody,
           tried,
+          requiresManagedAuth,
         );
         if (r.ok) return r;
         lastReason = r.reason;
@@ -2226,6 +2344,7 @@ export class ForwardingEngine {
     route: Route,
     messagesBody: Record<string, unknown>,
     tried: Set<string>,
+    managed: boolean,
   ): Promise<
     | { ok: true; body: Record<string, unknown>; usage: StreamUsageLike }
     | {
@@ -2241,7 +2360,9 @@ export class ForwardingEngine {
     // Health-aware key pick for the (non-streaming) web-tool turn. Each turn is
     // a fresh selection so a rate-limited/auth-failed key is skipped. Picked up
     // front so the builder sees the selected key.
-    const turnKeys = listEnabledCredentials(this.db, provider.id);
+    const turnKeys = managed
+      ? (this.providerCredentials?.candidates(provider.id) ?? [])
+      : listEnabledCredentials(this.db, provider.id);
     const pick = this.keyHealth.select(
       provider.id,
       turnKeys,
@@ -2249,11 +2370,38 @@ export class ForwardingEngine {
       tried,
     );
     if (pick) tried.add(pick.keyHash);
-    const key = pick?.key ?? null;
-    const keyMetadata = pick
-      ? (getProviderKeyByHash(this.db, provider.id, pick.keyHash)?.metadata ??
-        {})
-      : {};
+    let managedCredential = null as Awaited<
+      ReturnType<ProviderCredentialService["resolveManaged"]>
+    >;
+    if (managed && pick) {
+      try {
+        managedCredential =
+          (await this.providerCredentials?.resolveHealthKey(
+            provider.id,
+            pick.key,
+          )) ?? null;
+      } catch (error) {
+        this.keyHealth.markAuthFailed(
+          provider.id,
+          pick.keyHash,
+          401,
+          (error as Error).message,
+        );
+        return {
+          ok: false,
+          status: 401,
+          reason: `managed authentication unavailable: ${(error as Error).message}`,
+          retryable: true,
+        };
+      }
+    }
+    const key = managedCredential?.value ?? pick?.key ?? null;
+    const keyMetadata =
+      managedCredential?.metadata ??
+      (pick
+        ? (getProviderKeyByHash(this.db, provider.id, pick.keyHash)?.metadata ??
+          {})
+        : {});
 
     // Convert Messages -> provider format (via the ordered request stages), force
     // non-streaming, stamp model, then let the adapter build the final request.
@@ -2536,13 +2684,15 @@ export class ForwardingEngine {
           : "non-retryable web-tool turn",
       });
       if (pick && authFailed) {
+        if (managed)
+          this.providerCredentials?.rejectHealthKey(provider.id, pick.key);
         this.keyHealth.markAuthFailed(
           provider.id,
           pick.keyHash,
           res.status,
           `upstream ${res.status}: ${res.text.slice(0, 300)}`,
         );
-        this.disableDeadKey(provider.id, pick.keyHash, res.status);
+        if (!managed) this.disableDeadKey(provider.id, pick.keyHash, res.status);
       }
       return {
         ok: false,

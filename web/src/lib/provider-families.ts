@@ -37,7 +37,7 @@ export const PROVIDER_FAMILIES: readonly ProviderFamily[] = [
     ids: ["dashscope", "dashscope-coding", "qwencloud", "qwencloud-cn"],
   },
   { label: "Moonshot", brand: "kimi", ids: ["moonshot"] },
-  { label: "Cline", brand: "cline", ids: ["clinepass"] },
+  { label: "Cline", brand: "cline", ids: ["clinepass", "clinefree"] },
   { label: "MiniMax", brand: "minimax", ids: ["minimax"] },
   { label: "xAI", brand: "xai", ids: ["xai"] },
 ];

@@ -91,7 +91,7 @@ export function ConfigStep({
         </Field>
       )}
 
-      {keyField && (
+      {keyField && !tpl.authentication && (
         <KeyManager
           value={apiKeys}
           onChange={(en) => setApiKeys(en)}

@@ -26,6 +26,7 @@ import type {
   ProviderInput,
   ProviderTemplate,
   ProviderTestProbe,
+  ProviderAuthSession,
 } from "@/lib/types";
 import { importModelsForProvider } from "../import-models";
 import { Stepper } from "@/components/shared";
@@ -41,8 +42,16 @@ import { PickStep } from "./pick-step";
 import { ConfigStep } from "./config-step";
 import { TestStep } from "./test-step";
 import { ImportStep } from "./import-step";
+import { AuthStep } from "./auth-step";
 
-const STEPS = ["Pick", "Configure", "Test", "Import"];
+type WizardStage = "pick" | "configure" | "authenticate" | "test" | "import";
+const STAGE_LABEL: Record<WizardStage, string> = {
+  pick: "Pick",
+  configure: "Configure",
+  authenticate: "Authenticate",
+  test: "Test",
+  import: "Import",
+};
 
 export function AddProviderDialog({
   onClose,
@@ -51,7 +60,7 @@ export function AddProviderDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [step, setStep] = useState(0);
+  const [stage, setStage] = useState<WizardStage>("pick");
   const [templates, setTemplates] = useState<ProviderTemplate[] | null>(null);
   const [tpl, setTpl] = useState<ProviderTemplate | null>(null);
 
@@ -69,10 +78,17 @@ export function AddProviderDialog({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [modelFilter, setModelFilter] = useState("");
   const [finishing, setFinishing] = useState(false);
+  const [authSession, setAuthSession] = useState<ProviderAuthSession | null>(null);
 
   useEffect(() => {
     api.listProviderCatalog().then(setTemplates).catch(toast.error);
   }, []);
+
+  const clearAuthSession = () => {
+    if (authSession && authSession.state !== "consumed")
+      void api.cancelProviderAuth(authSession.id).catch(() => {});
+    setAuthSession(null);
+  };
 
   const choose = (t: ProviderTemplate) => {
     setTpl(t);
@@ -83,6 +99,7 @@ export function AddProviderDialog({
     );
     setBaseUrl(t.defaults.baseUrl ?? "");
     setBasePath(t.defaults.basePath ?? "");
+    clearAuthSession();
     setApiKeys([]);
     setProbe(null);
     setSelected(new Set());
@@ -97,7 +114,7 @@ export function AddProviderDialog({
       ),
     );
     setShowAdvanced(false);
-    setStep(1);
+    setStage("configure");
   };
 
   // Build the ProviderInput from template defaults + form values.
@@ -113,7 +130,8 @@ export function AddProviderDialog({
     return {
       name: name.trim(),
       baseUrl: baseUrl.trim(),
-      apiKeys,
+      apiKeys: tpl.authentication ? undefined : apiKeys,
+      authSessionId: tpl.authentication ? authSession?.id : undefined,
       authScheme: tpl.defaults.authScheme ?? "bearer",
       // format is a nullable generic hint; adapter-backed templates omit it and
       // the adapter identifies itself (null passes through).
@@ -134,25 +152,28 @@ export function AddProviderDialog({
   };
 
   const runTest = async () => {
-    if (!tpl || apiKeys.length === 0) return;
+    if (!tpl) return;
+    if (!tpl.authentication && apiKeys.length === 0) return;
+    if (tpl.authentication && authSession?.state !== "ready") return;
     setTesting(true);
     setProbe(null);
-    const key = apiKeys[Math.floor(Math.random() * apiKeys.length)];
     try {
-      const r = await api.testProviderConfig({
-        baseUrl: baseUrl.trim(),
-        apiKey: key,
-        authScheme: tpl.defaults.authScheme ?? "bearer",
-        basePath: basePath.trim(),
-        modelsPath: tpl.defaults.modelsPath ?? "/v1/models",
-        extraHeaders: (() => {
-          try {
-            return headersText.trim() ? JSON.parse(headersText) : {};
-          } catch {
-            return {};
-          }
-        })(),
-      });
+      const r = tpl.authentication
+        ? await api.testProviderAuth(authSession!.id)
+        : await api.testProviderConfig({
+            baseUrl: baseUrl.trim(),
+            apiKey: apiKeys[Math.floor(Math.random() * apiKeys.length)],
+            authScheme: tpl.defaults.authScheme ?? "bearer",
+            basePath: basePath.trim(),
+            modelsPath: tpl.defaults.modelsPath ?? "/v1/models",
+            extraHeaders: (() => {
+              try {
+                return headersText.trim() ? JSON.parse(headersText) : {};
+              } catch {
+                return {};
+              }
+            })(),
+          });
       setProbe(r);
       if (r.ok)
         toast.success(
@@ -208,7 +229,17 @@ export function AddProviderDialog({
     !!tpl &&
     (!fieldReq("name") || name.trim().length > 0) &&
     (!fieldReq("baseUrl") || baseUrl.trim().length > 0) &&
-    (!fieldReq("apiKeys") || apiKeys.length > 0);
+    (tpl.authentication || !fieldReq("apiKeys") || apiKeys.length > 0);
+  const stages: WizardStage[] = tpl?.authentication
+    ? ["pick", "configure", "authenticate", "test", "import"]
+    : ["pick", "configure", "test", "import"];
+  const current = Math.max(0, stages.indexOf(stage));
+  const goBack = () => {
+    if (current === 0) return close();
+    const target = stages[current - 1];
+    if (stage === "authenticate") clearAuthSession();
+    setStage(target);
+  };
 
   const filteredModels = (probe?.models ?? []).filter((m) =>
     (m.id + " " + (m.displayName ?? ""))
@@ -216,22 +247,33 @@ export function AddProviderDialog({
       .includes(modelFilter.toLowerCase()),
   );
 
+  const close = () => {
+    clearAuthSession();
+    onClose();
+  };
+
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
+    <Dialog open onOpenChange={(o) => !o && close()}>
       <DialogContent className="max-w-2xl max-h-[88vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Add Provider</DialogTitle>
           <DialogDescription>
-            Pick a provider, drop in your key, test, and optionally import
-            models.
+            Pick a provider, configure authentication, test connectivity, and
+            optionally import models.
           </DialogDescription>
         </DialogHeader>
 
-        <Stepper steps={STEPS} current={step} className="px-1" />
+        <Stepper
+          steps={stages.map((s) => STAGE_LABEL[s])}
+          current={current}
+          className="px-1"
+        />
 
         <div className="flex-1 overflow-y-auto py-1 pr-1">
-          {step === 0 && <PickStep templates={templates} onPick={choose} />}
-          {step === 1 && tpl && (
+          {stage === "pick" && (
+            <PickStep templates={templates} onPick={choose} />
+          )}
+          {stage === "configure" && tpl && (
             <ConfigStep
               tpl={tpl}
               name={name}
@@ -248,7 +290,14 @@ export function AddProviderDialog({
               setHeadersText={setHeadersText}
             />
           )}
-          {step === 2 && tpl && (
+          {stage === "authenticate" && tpl && (
+            <AuthStep
+              tpl={tpl}
+              session={authSession}
+              onSession={setAuthSession}
+            />
+          )}
+          {stage === "test" && tpl && (
             <TestStep
               testing={testing}
               probe={probe}
@@ -259,7 +308,7 @@ export function AddProviderDialog({
               endpointPaths={tpl.defaults.endpointPaths}
             />
           )}
-          {step === 3 && (
+          {stage === "import" && (
             <ImportStep
               probe={probe}
               selected={selected}
@@ -277,27 +326,35 @@ export function AddProviderDialog({
 
         {/* footer nav */}
         <div className="flex items-center justify-between border-t border-border pt-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => (step === 0 ? onClose() : setStep(step - 1))}
-          >
+          <Button variant="ghost" size="sm" onClick={goBack}>
             <ChevronLeft className="h-3.5 w-3.5" />
-            {step === 0 ? "Cancel" : "Back"}
+            {stage === "pick" ? "Cancel" : "Back"}
           </Button>
 
           <div className="flex gap-2">
-            {step === 1 && (
+            {stage === "configure" && (
               <Button
                 size="sm"
                 disabled={!configValid}
-                onClick={() => setStep(2)}
+                onClick={() =>
+                  setStage(tpl?.authentication ? "authenticate" : "test")
+                }
               >
                 Next
                 <ChevronRight className="h-3.5 w-3.5" />
               </Button>
             )}
-            {step === 2 && (
+            {stage === "authenticate" && (
+              <Button
+                size="sm"
+                disabled={authSession?.state !== "ready"}
+                onClick={() => setStage("test")}
+              >
+                Next
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {stage === "test" && (
               <>
                 <Button
                   variant="outline"
@@ -312,13 +369,13 @@ export function AddProviderDialog({
                   )}
                   Test
                 </Button>
-                <Button size="sm" onClick={() => setStep(3)}>
+                <Button size="sm" onClick={() => setStage("import")}>
                   {probe?.models.length ? "Import models" : "Skip"}
                   <ChevronRight className="h-3.5 w-3.5" />
                 </Button>
               </>
             )}
-            {step === 3 && (
+            {stage === "import" && (
               <Button size="sm" onClick={finish} disabled={finishing}>
                 {finishing ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />

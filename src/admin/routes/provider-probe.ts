@@ -518,9 +518,10 @@ export async function fetchProviderModels(
   p: Provider,
   db: DB,
   logger?: Logger,
+  managedKey?: string | null,
 ): Promise<UpstreamModel[]> {
   const adapter = adapterForProvider(p);
-  const keys = listEnabledCredentials(db, p.id);
+  const keys = managedKey ? [managedKey] : listEnabledCredentials(db, p.id);
   const pl = providerLikeFrom(p, keys);
   return adapter.fetchModels({
     provider: p,
@@ -617,9 +618,14 @@ export async function testProviderModel(
   db?: DB,
   logger?: Logger,
   ownTransforms?: ModelTransformConfig[],
+  managedKey?: string | null,
 ): Promise<TestModelResult> {
   const adapter = adapterForProvider(p);
-  const keys = db ? listEnabledCredentials(db, p.id) : [];
+  const keys = managedKey
+    ? [managedKey]
+    : db
+      ? listEnabledCredentials(db, p.id)
+      : [];
   return adapter.testModel({
     provider: p,
     model: upstreamId,
@@ -793,6 +799,7 @@ export async function testSavedProvider(
   db: DB,
   keyUsed?: string,
   logger?: Logger,
+  managedKey?: string | null,
 ): Promise<{
   ok: boolean;
   status: number | null;
@@ -802,8 +809,8 @@ export async function testSavedProvider(
   keyMask?: string;
 }> {
   const adapter = adapterForProvider(p);
-  const keys = listEnabledCredentials(db, p.id);
-  const ctx = makeTestProviderCtx(p, keys, keyUsed, logger);
+  const keys = managedKey ? [managedKey] : listEnabledCredentials(db, p.id);
+  const ctx = makeTestProviderCtx(p, keys, keyUsed ?? managedKey ?? undefined, logger);
   const result = await adapter.testProvider({ provider: p, ...ctx });
   return {
     ...result,

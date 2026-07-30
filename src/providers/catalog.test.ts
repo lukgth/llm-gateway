@@ -24,10 +24,27 @@ test("catalog is non-empty and includes the requested providers", () => {
     "dashscope",
     "openai-compatible",
     "anthropic-compatible",
+    "clinefree",
     "proxy",
   ]) {
     assert.ok(ids.includes(expected), `missing template: ${expected}`);
   }
+});
+
+test("Cline Free uses managed device authentication", () => {
+  const free = getProviderTemplate("clinefree")!;
+  const pass = getProviderTemplate("clinepass")!;
+  assert.notEqual(free.id, pass.id);
+  assert.deepEqual(free.authentication, {
+    kind: "oauth",
+    flow: "device_code",
+    title: "Connect Cline",
+    description:
+      "Sign in through Cline's secure device flow to use the currently available free models.",
+    actionLabel: "Connect Cline account",
+  });
+  assert.equal(free.fields.some((field) => field.key === "apiKeys"), false);
+  assert.equal(pass.authentication, undefined);
 });
 
 test("template ids are unique", () => {

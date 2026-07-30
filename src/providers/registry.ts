@@ -56,6 +56,7 @@ import { qwencloud, qwencloudCn } from "./catalog/qwencloud";
 import { moonshot } from "./catalog/moonshot";
 import { dashscopeCoding } from "./catalog/dashscope-coding";
 import { clinepass } from "./catalog/clinepass";
+import { clinefree } from "./catalog/clinefree";
 import { minimax } from "./catalog/minimax";
 import { xai } from "./catalog/xai";
 
@@ -78,6 +79,7 @@ const ADAPTERS: ProviderAdapter[] = [
   dashscopeCoding,
   moonshot,
   clinepass,
+  clinefree,
   minimax,
   xai,
   gemini,

@@ -15,6 +15,9 @@ import type { AdminAuth } from "../../auth/admin-auth";
 import { adminAuthMiddleware } from "../../auth/admin-auth";
 import type { KeySyncService } from "../../services/key-sync";
 import type { BootstrapConfig } from "../../config";
+import type { ProviderAuthService } from "../../services/provider-auth/service";
+import type { ProviderCredentialService } from "../../services/provider-credentials";
+import { registerProviderAuthRoutes } from "./provider-auth";
 import type { RouteCtx, BroadcastFn } from "./types";
 import { registerSettingsRoutes } from "./settings";
 import { registerProviderRoutes } from "./providers";
@@ -25,15 +28,29 @@ import { registerUsageRoutes } from "./usage";
 
 const noop: BroadcastFn = () => {};
 
-export function adminRouter(
-  db: DB,
-  logger: Logger,
-  router: GatewayRouter,
-  auth: AdminAuth,
-  bootstrap: BootstrapConfig,
-  broadcast?: BroadcastFn,
-  keySyncService?: KeySyncService,
-): Router {
+export interface AdminRouterDependencies {
+  db: DB;
+  logger: Logger;
+  router: GatewayRouter;
+  auth: AdminAuth;
+  bootstrap: BootstrapConfig;
+  providerAuth: ProviderAuthService;
+  providerCredentials: ProviderCredentialService;
+  broadcast?: BroadcastFn;
+  keySyncService?: KeySyncService;
+}
+
+export function adminRouter({
+  db,
+  logger,
+  router,
+  auth,
+  bootstrap,
+  providerAuth,
+  providerCredentials,
+  broadcast,
+  keySyncService,
+}: AdminRouterDependencies): Router {
   const r = Router();
   const requireAdmin = adminAuthMiddleware(auth.secret);
   const ctx: RouteCtx = {
@@ -44,10 +61,13 @@ export function adminRouter(
     requireAdmin,
     broadcast: broadcast ?? noop,
     bootstrap,
+    providerAuth,
+    providerCredentials,
     keySyncService,
   };
 
   registerSettingsRoutes(ctx, auth);
+  registerProviderAuthRoutes(ctx);
   registerProviderRoutes(ctx);
   registerProviderKeyRoutes(ctx);
   registerModelRoutes(ctx);

@@ -15,7 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import type { Model, Provider } from "@/lib/types";
+import type { Model, Provider, ProviderTemplate } from "@/lib/types";
 import {
   PageHeader,
   PageSkeleton,
@@ -29,6 +29,7 @@ import { OverviewTab } from "./overview-tab";
 import { KeysTab } from "./keys-tab";
 import { ConfigForm } from "./config-form";
 import { ModelsTab, DangerZone } from "./models-tab";
+import { AuthenticationPanel } from "./authentication-panel";
 
 type TabId = "overview" | "config" | "keys" | "models" | "advanced";
 const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
@@ -44,6 +45,7 @@ export default function ProviderDetailPage() {
   const navigate = useNavigate();
   const [provider, setProvider] = useState<Provider | null>(null);
   const [models, setModels] = useState<Model[]>([]);
+  const [templates, setTemplates] = useState<ProviderTemplate[]>([]);
   const [notFound, setNotFound] = useState(false);
 
   const load = useCallback(() => {
@@ -59,6 +61,10 @@ export default function ProviderDetailPage() {
       .listModels()
       .then(setModels)
       .catch(() => {});
+    api
+      .listProviderCatalog()
+      .then(setTemplates)
+      .catch(() => {});
   }, [id]);
   useEffect(() => {
     load();
@@ -67,6 +73,8 @@ export default function ProviderDetailPage() {
   const routed = models.filter((m) =>
     m.providers.some((l) => l.providerId === id),
   );
+  const template = templates.find((item) => item.id === provider?.catalogId);
+  const managedAuthentication = provider?.authMethod === "oauth";
   const active: TabId = (
     TABS.some((t) => t.id === tab) ? tab : "overview"
   ) as TabId;
@@ -104,21 +112,29 @@ export default function ProviderDetailPage() {
       />
 
       <SectionTabs
-        sections={TABS.map((t) =>
-          t.id === "models"
-            ? {
-                ...t,
-                badge: <Badge variant="secondary">{routed.length}</Badge>,
-              }
-            : t.id === "keys"
+        sections={TABS.map((t) => {
+          if (t.id === "models")
+            return {
+              ...t,
+              badge: <Badge variant="secondary">{routed.length}</Badge>,
+            };
+          if (t.id === "keys")
+            return provider.authMethod === "oauth"
               ? {
+                  ...t,
+                  label: "Authentication",
+                  badge: (
+                    <Badge variant="secondary">{provider.accountCount}</Badge>
+                  ),
+                }
+              : {
                   ...t,
                   badge: (
                     <Badge variant="secondary">{provider.keyCount.total}</Badge>
                   ),
-                }
-              : t,
-        )}
+                };
+          return t;
+        })}
         active={active}
         onChange={(t) => navigate(`/providers/${id}/${t}`)}
       />
@@ -130,7 +146,16 @@ export default function ProviderDetailPage() {
         {active === "config" && (
           <ConfigForm provider={provider} onSaved={load} section="config" />
         )}
-        {active === "keys" && <KeysTab provider={provider} onSaved={load} />}
+        {active === "keys" &&
+          (managedAuthentication && template ? (
+            <AuthenticationPanel
+              provider={provider}
+              template={template}
+              onSaved={load}
+            />
+          ) : (
+            <KeysTab provider={provider} onSaved={load} />
+          ))}
         {active === "models" && (
           <ModelsTab provider={provider} models={routed} />
         )}

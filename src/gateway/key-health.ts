@@ -209,12 +209,6 @@ export class KeyHealthStore {
     return `${providerId}|${model}`;
   }
 
-  private cooldownClass(model: string | null | undefined): string | null {
-    // Only premium 7d_oi has a model-scoped cooldown. Base models use the
-    // global provider-key cooldown even though they share class affinity.
-    return modelClassOf(model) === "fable" ? "fable" : null;
-  }
-
   private ck(providerId: string, keyHash: string, modelClass: string): string {
     return `${providerId}|${keyHash}|${modelClass}`;
   }
@@ -224,12 +218,17 @@ export class KeyHealthStore {
     keyHash: string,
     model: string | null | undefined,
   ): number {
-    const modelClass = this.cooldownClass(model);
-    if (!modelClass) return 0;
-    return (
-      this.modelCooldowns.get(this.ck(providerId, keyHash, modelClass))
-        ?.cooldownUntil ?? 0
-    );
+    if (!model) return 0;
+    const exact =
+      this.modelCooldowns.get(this.ck(providerId, keyHash, `model:${model}`))
+        ?.cooldownUntil ?? 0;
+    // Premium 7d_oi adds a family-wide Fable cooldown; exact-model entries are
+    // also checked for providers such as Cline Free.
+    if (modelClassOf(model) !== "fable") return exact;
+    const family =
+      this.modelCooldowns.get(this.ck(providerId, keyHash, "fable"))
+        ?.cooldownUntil ?? 0;
+    return Math.max(exact, family);
   }
 
   private readyAt(
