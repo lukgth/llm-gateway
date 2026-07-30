@@ -375,6 +375,13 @@ export const minimax = new MiniMaxAdapter({
     },
   ],
   quirks: {
-    defaultTransforms: OPENAI_DEFAULT_TRANSFORMS,
+    defaultTransforms: [
+      ...OPENAI_DEFAULT_TRANSFORMS,
+      {
+        id: "set-field",
+        phase: "request",
+        params: { path: "stream_options.include_usage", value: "true" },
+      },
+    ],
   },
 });
