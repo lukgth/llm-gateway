@@ -19,6 +19,7 @@ test("catalog is non-empty and includes the requested providers", () => {
     "anthropic",
     "nvidia-nim",
     "openrouter",
+    "commandcode",
     "opencode",
     "xiaomi-mimo",
     "dashscope",

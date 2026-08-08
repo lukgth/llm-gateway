@@ -59,6 +59,7 @@ import { clinepass } from "./catalog/clinepass";
 import { clinefree } from "./catalog/clinefree";
 import { minimax } from "./catalog/minimax";
 import { xai } from "./catalog/xai";
+import { commandcode } from "./catalog/commandcode";
 
 // Order here is the order shown in the catalog grid: branded stock providers
 // first, generic escape-hatch templates last.
@@ -70,6 +71,7 @@ const ADAPTERS: ProviderAdapter[] = [
   openrouter,
   opencode,
   opencodeGo,
+  commandcode,
   xiaomiMimo,
   deepseek,
   glm,
