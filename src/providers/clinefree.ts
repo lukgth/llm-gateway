@@ -7,8 +7,8 @@ export const CLINE_CHAT_URL = `${CLINE_API_BASE_URL}${CLINE_BASE_PATH}/chat/comp
 export const CLINE_MODELS_URL = `${CLINE_API_BASE_URL}${CLINE_BASE_PATH}/ai/cline/recommended-models`;
 export const CLINE_REGISTER_URL = `${CLINE_API_BASE_URL}${CLINE_BASE_PATH}/auth/register`;
 export const CLINE_REFRESH_URL = `${CLINE_API_BASE_URL}${CLINE_BASE_PATH}/auth/refresh`;
-export const CLINE_CLIENT_VERSION = "3.0.47";
-export const CLINE_CORE_VERSION = "0.0.66";
+export const CLINE_CLIENT_VERSION = "3.0.51";
+export const CLINE_CORE_VERSION = "0.0.71";
 
 export interface ClineFreeModel extends UpstreamModel {
   description?: string;
@@ -16,19 +16,14 @@ export interface ClineFreeModel extends UpstreamModel {
 
 export const STATIC_CLINE_FREE_MODELS: ClineFreeModel[] = [
   {
-    id: "cline-free/glm-5.2",
-    displayName: "GLM 5.2",
-    description: "Z.ai's frontier open weights model",
+    id: "deepseek/deepseek-v4-flash",
+    displayName: "DeepSeek V4 Flash",
+    description: "Fast and efficient with 1M context window",
   },
   {
     id: "poolside/laguna-s-2.1:free",
     displayName: "Laguna S 2.1",
     description: "Latest coding agent model from Poolside",
-  },
-  {
-    id: "deepseek/deepseek-v4-flash",
-    displayName: "DeepSeek V4 Flash",
-    description: "Fast and efficient with 1M context window",
   },
   {
     id: "stepfun/step-3.7-flash",

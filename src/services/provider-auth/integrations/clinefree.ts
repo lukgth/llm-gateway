@@ -255,7 +255,7 @@ export const clinefreeAuth: ProviderAuthIntegration = {
         body: JSON.stringify({
           model,
           messages: [{ role: "user", content: "Reply with one word." }],
-          max_tokens: 8,
+          max_tokens: 2048,
           stream: false,
         }),
       });

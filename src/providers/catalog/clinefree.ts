@@ -21,7 +21,7 @@ class ClineFreeAdapter extends OpenAICompatibleAdapter {
   override chatCompletions(ctx: BuildCtx): BuiltRequest {
     if (!ctx.apiKey) throw new Error("Cline Free authentication is missing");
     return {
-      url: ctx.resolve(),
+      url: ctx.url,
       headers: {
         ...ctx.headers,
         ...clineFingerprintHeaders(ctx.apiKey),
@@ -47,7 +47,13 @@ class ClineFreeAdapter extends OpenAICompatibleAdapter {
   }
 
   override async testModel(ctx: TestModelCtx): Promise<TestModelResult> {
-    return this.probeEndpoint(ctx, WireKind.Chat);
+    return this.probeEndpoint(ctx, WireKind.Chat, {
+      body: {
+        model: ctx.model,
+        max_tokens: 2048,
+        messages: [{ role: "user", content: "Reply with one word." }],
+      },
+    });
   }
 
   override async testProvider(
