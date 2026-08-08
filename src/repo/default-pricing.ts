@@ -206,6 +206,25 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 2,
     completionPer1m: 12,
   },
+
+  // --- Meta / Muse Spark ---------------------------------------------------
+  // https://developer.meta.com/ai/models/muse-spark/
+  {
+    id: "muse-spark-2.1",
+    label: "Muse Spark 2.1",
+    brand: "meta",
+    promptPer1m: 1.25,
+    completionPer1m: 4.25,
+    cachedPer1m: 0.15,
+  },
+  {
+    id: "muse-spark-2.1-contributor",
+    label: "Muse Spark 2.1 (Contributor)",
+    brand: "meta",
+    promptPer1m: 0.1,
+    completionPer1m: 0.2,
+    cachedPer1m: 0.002,
+  },
 ];
 
 // Full reference list, for a picker UI. Function form (not the raw const)

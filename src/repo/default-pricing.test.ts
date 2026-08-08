@@ -54,6 +54,21 @@ test("defaultPricingFor: unknown model returns undefined", () => {
   assert.equal(defaultPricingFor("not-a-real-model-xyz"), undefined);
 });
 
+test("defaultPricingFor: resolves both Muse Spark tiers", () => {
+  const normal = defaultPricingFor("muse-spark-2.1");
+  assert.ok(normal);
+  assert.equal(normal!.promptPer1m, 1.25);
+  assert.equal(normal!.completionPer1m, 4.25);
+  assert.equal(normal!.cachedPer1m, 0.15);
+
+  const contributor = defaultPricingFor("muse-spark-2.1-contributor");
+  assert.ok(contributor);
+  assert.equal(contributor!.promptPer1m, 0.1);
+  assert.equal(contributor!.completionPer1m, 0.2);
+  assert.equal(contributor!.cachedPer1m, 0.002);
+  assert.equal(contributor!.brand, "meta");
+});
+
 test("defaultPricingFor: covers every provider family referenced in the catalog brand set", () => {
   const brands = new Set(DEFAULT_MODEL_PRICING.map((m) => m.brand));
   for (const expected of ["anthropic", "openai", "deepseek", "zai"]) {

@@ -63,6 +63,7 @@ const BRAND_RULES: Array<{ pattern: RegExp; svg: string; label: string }> = [
   { pattern: /grok|xai/i, svg: grokSvg, label: "Grok" },
   { pattern: /ollama/i, svg: ollamaSvg, label: "Ollama" },
   { pattern: /llama|meta\b/i, svg: metaSvg, label: "Meta" },
+  { pattern: /muse/i, svg: metaSvg, label: "Meta" },
   { pattern: /command-?r|cohere|aya\b/i, svg: cohereSvg, label: "Cohere" },
   { pattern: /phi-?\d|microsoft/i, svg: microsoftSvg, label: "Microsoft" },
   { pattern: /nemotron|nvidia/i, svg: nvidiaSvg, label: "NVIDIA" },
