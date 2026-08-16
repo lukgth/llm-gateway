@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Check,
   Copy,
+  Download,
   Eye,
   EyeOff,
   FlaskConical,
@@ -149,6 +150,17 @@ export function ProviderKeyManager({
   const load = useCallback(async () => {
     try {
       const { keys: fetched } = await api.listProviderKeys(providerId);
+      // Prune stale selections so a requested selected-only export never
+      // silently falls back to exporting every key after a provider change
+      // or reload invalidated the selected IDs.
+      const loadedIds = new Set(fetched.map((key) => key.id));
+      setSelected((current) => {
+        const next = new Set(current);
+        for (const id of current) {
+          if (!loadedIds.has(id)) next.delete(id);
+        }
+        return next;
+      });
       setKeys(fetched);
     } catch (error) {
       toast.error((error as Error).message);
@@ -439,6 +451,29 @@ export function ProviderKeyManager({
     });
   };
 
+  const exportKeys = (exportedKeys: ProviderKey[]) => {
+    const content = exportedKeys
+      .map((key) => key.credential) // raw credentials only; no labels/metadata
+      .join("\n")
+      .concat("\n");
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const safeProviderId =
+      providerId.replace(/[^a-zA-Z0-9._-]+/g, "-") || "provider";
+    anchor.href = url;
+    anchor.download = `${safeProviderId}-keys.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    toast.success(
+      `Exported ${exportedKeys.length} key${
+        exportedKeys.length === 1 ? "" : "s"
+      }`,
+    );
+  };
+
   return (
     <>
       <Card className="gap-0 overflow-hidden p-0">
@@ -491,6 +526,19 @@ export function ProviderKeyManager({
               onChange={setFilter}
               placeholder="Search keys…"
             />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loading || keys.length === 0}
+              onClick={() =>
+                exportKeys(selected.size > 0 ? selectedKeys : keys)
+              }
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span className="hidden lg:inline">
+                Export {selected.size > 0 ? "selected" : "all"}
+              </span>
+            </Button>
             <Button
               variant="outline"
               size="sm"
