@@ -90,15 +90,14 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     cachedPer1m: 0.5,
   },
   {
-    // Standard pricing (post Aug 31 2026 introductory window) - the durable
-    // rate, so a stock reference doesn't silently go stale the day the promo
-    // ends. See the source doc's note for the $2/$10 introductory rate.
+    // Current standard rate (the previously announced temporary $3/$15 promo
+    // has expired). https://platform.claude.com/docs/en/about-claude/pricing
     id: "claude-sonnet-5",
     label: "Claude Sonnet 5",
     brand: "anthropic",
-    promptPer1m: 3,
-    completionPer1m: 15,
-    cachedPer1m: 0.3,
+    promptPer1m: 2,
+    completionPer1m: 10,
+    cachedPer1m: 0.2,
   },
   {
     id: "claude-sonnet-4-6",
@@ -126,6 +125,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
   },
 
   // --- OpenAI -----------------------------------------------------------
+  // https://developers.openai.com/api/docs/pricing,
   // https://openai.com/api/pricing, https://openai.com/index/gpt-5-6/
   {
     id: "gpt-5.6-sol",
@@ -151,25 +151,76 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     completionPer1m: 1.2,
     cachedPer1m: 0.02,
   },
+  {
+    id: "gpt-5.5",
+    label: "GPT-5.5",
+    brand: "openai",
+    promptPer1m: 5,
+    completionPer1m: 30,
+    cachedPer1m: 0.5,
+  },
+  {
+    // OpenAI publishes no cached-input price for this model.
+    id: "gpt-5.5-pro",
+    label: "GPT-5.5 Pro",
+    brand: "openai",
+    promptPer1m: 30,
+    completionPer1m: 180,
+  },
+  {
+    id: "gpt-5.4",
+    label: "GPT-5.4",
+    brand: "openai",
+    promptPer1m: 2.5,
+    completionPer1m: 15,
+    cachedPer1m: 0.25,
+  },
+  {
+    id: "gpt-5.4-mini",
+    label: "GPT-5.4 mini",
+    brand: "openai",
+    promptPer1m: 0.75,
+    completionPer1m: 4.5,
+    cachedPer1m: 0.075,
+  },
+  {
+    id: "gpt-5.4-nano",
+    label: "GPT-5.4 nano",
+    brand: "openai",
+    promptPer1m: 0.2,
+    completionPer1m: 1.25,
+    cachedPer1m: 0.02,
+  },
+  {
+    // OpenAI publishes no cached-input price for this model.
+    id: "gpt-5.4-pro",
+    label: "GPT-5.4 Pro",
+    brand: "openai",
+    promptPer1m: 30,
+    completionPer1m: 180,
+  },
 
   // --- DeepSeek -----------------------------------------------------------
-  // https://api-docs.deepseek.com/quick_start/pricing/ (official; cache-hit
-  // rate is a genuine subset price, not a flat discount fraction).
+  // https://api-docs.deepseek.com/quick_start/pricing/,
+  // https://api-docs.deepseek.com/news/news260813 (peak/off-peak schedule,
+  // effective Aug 16 2026). This table has no time/tier dimension, so we store
+  // the official PEAK rate as the conservative scalar reference - we cannot
+  // pick a rate by UTC time and may not invent an average.
   {
     id: "deepseek-v4-pro",
     label: "DeepSeek V4 Pro",
     brand: "deepseek",
-    promptPer1m: 0.435,
-    completionPer1m: 0.87,
-    cachedPer1m: 0.003625,
+    promptPer1m: 1.32,
+    completionPer1m: 3.96,
+    cachedPer1m: 0.044,
   },
   {
     id: "deepseek-v4-flash",
     label: "DeepSeek V4 Flash",
     brand: "deepseek",
-    promptPer1m: 0.14,
-    completionPer1m: 0.28,
-    cachedPer1m: 0.0028,
+    promptPer1m: 0.44,
+    completionPer1m: 1.32,
+    cachedPer1m: 0.014,
   },
 
   // --- Z.AI / GLM -----------------------------------------------------------
@@ -182,11 +233,22 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     completionPer1m: 4.4,
     cachedPer1m: 0.26,
   },
+  {
+    // GLM-5.3 carries the same published per-token rate as GLM-5.2.
+    // https://docs.z.ai/guides/overview/pricing
+    id: "glm-5.3",
+    label: "GLM-5.3",
+    brand: "zai",
+    promptPer1m: 1.4,
+    completionPer1m: 4.4,
+    cachedPer1m: 0.26,
+  },
 
   // --- xAI / Grok -----------------------------------------------------------
-  // https://docs.x.ai/developers/pricing (short-context tier; long-context
-  // >=200k prompt tokens roughly doubles input/output and drops cached to
-  // $0.30 - not modeled here, this is the standard-tier rate).
+  // https://docs.x.ai/developers/models (short-context tier; the >=200k-gram
+  // prompt-token tier is higher and cannot be represented by this scalar
+  // table's single tier - we keep the short-context rates and won't invent a
+  // blended average).
   {
     id: "grok-4.5",
     label: "Grok 4.5",
@@ -195,16 +257,78 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     completionPer1m: 6,
     cachedPer1m: 0.3,
   },
+  {
+    id: "grok-4.6",
+    label: "Grok 4.6",
+    brand: "xai",
+    promptPer1m: 2,
+    completionPer1m: 6,
+    cachedPer1m: 0.5,
+  },
 
   // --- Google / Gemini --------------------------------------------------
-  // https://ai.google.dev/gemini-api/docs/pricing (<=200k prompt-token tier;
-  // the >200k tier roughly doubles both rates).
+  // https://ai.google.dev/gemini-api/docs/pricing and
+  // https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash (<=200k
+  // prompt-token tier; the >200k tier roughly doubles both rates). Like the
+  // Sonnet entry above, the 3.7-flash / 3.6-flash rows use the durable
+  // post-December-31-2026 standard rates rather than their expiring
+  // introductory promotions, so the reference doesn't go stale the day the
+  // promo ends.
+  {
+    id: "gemini-3.7-flash",
+    label: "Gemini 3.7 Flash",
+    brand: "gemini",
+    promptPer1m: 1.5,
+    completionPer1m: 7.5,
+    cachedPer1m: 0.15,
+  },
+  {
+    id: "gemini-3.6-flash",
+    label: "Gemini 3.6 Flash",
+    brand: "gemini",
+    promptPer1m: 1.5,
+    completionPer1m: 7.5,
+    cachedPer1m: 0.15,
+  },
+  {
+    id: "gemini-3.5-flash",
+    label: "Gemini 3.5 Flash",
+    brand: "gemini",
+    promptPer1m: 1.5,
+    completionPer1m: 9,
+    cachedPer1m: 0.15,
+  },
   {
     id: "gemini-3.1-pro",
     label: "Gemini 3.1 Pro",
     brand: "gemini",
     promptPer1m: 2,
     completionPer1m: 12,
+  },
+  {
+    // The provider's exact preview id (not the same as the GA "gemini-3.1-pro"
+    // entry above); <=200k standard tier.
+    id: "gemini-3.1-pro-preview",
+    label: "Gemini 3.1 Pro (Preview)",
+    brand: "gemini",
+    promptPer1m: 2,
+    completionPer1m: 12,
+    cachedPer1m: 0.2,
+  },
+
+  // --- Alibaba / Qwen ----------------------------------------------------
+  // https://www.alibabacloud.com/help/en/model-studio/model-pricing,
+  // https://www.alibabacloud.com/help/en/model-studio/qwen3-8-max
+  // (confirmed Aug 3 2026 GA release). List price is used despite the
+  // temporary launch discount. Alibaba documents context caching, but this
+  // scalar table has no provider-neutral cache-write/read distinction, so we
+  // omit cachedPer1m rather than apply an unverified discount.
+  {
+    id: "qwen3.8-max",
+    label: "Qwen3.8-Max",
+    brand: "qwen",
+    promptPer1m: 2,
+    completionPer1m: 6,
   },
 
   // --- Meta / Muse Spark ---------------------------------------------------
@@ -224,6 +348,54 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 0.1,
     completionPer1m: 0.2,
     cachedPer1m: 0.002,
+  },
+
+  // --- Moonshot / Kimi ----------------------------------------------------
+  // https://platform.kimi.ai/docs/pricing/chat
+  {
+    id: "kimi-k3",
+    label: "Kimi K3",
+    brand: "kimi",
+    promptPer1m: 3,
+    completionPer1m: 15,
+    cachedPer1m: 0.3,
+  },
+  {
+    id: "kimi-k2.7-code",
+    label: "Kimi K2.7 Code",
+    brand: "kimi",
+    promptPer1m: 0.95,
+    completionPer1m: 4,
+    cachedPer1m: 0.19,
+  },
+  {
+    id: "kimi-k2.7-code-highspeed",
+    label: "Kimi K2.7 Code (High-Speed)",
+    brand: "kimi",
+    promptPer1m: 1.9,
+    completionPer1m: 8,
+    cachedPer1m: 0.38,
+  },
+
+  // --- MiniMax -------------------------------------------------------------
+  // https://platform.minimax.io/docs/guides/pricing-paygo (current
+  // permanently discounted standard rates, not the struck-through pre-
+  // discount list prices).
+  {
+    id: "minimax-m3",
+    label: "MiniMax M3",
+    brand: "minimax",
+    promptPer1m: 0.3,
+    completionPer1m: 1.2,
+    cachedPer1m: 0.06,
+  },
+  {
+    id: "minimax-m2.7",
+    label: "MiniMax M2.7",
+    brand: "minimax",
+    promptPer1m: 0.3,
+    completionPer1m: 1.2,
+    cachedPer1m: 0.06,
   },
 ];
 
