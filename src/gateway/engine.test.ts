@@ -25,6 +25,12 @@ import { KeyHealthStore, hashKey } from "./key-health";
 import type { Model } from "../types";
 import { WireKind } from "../types";
 import type { ProviderCredentialService } from "../services/provider-credentials";
+import { ProviderCredentialService as RealProviderCredentialService } from "../services/provider-credentials";
+import { ProviderAuthCrypto } from "../services/provider-auth/crypto";
+import { createProviderOAuth } from "../repo/provider-oauth";
+import fs from "fs";
+import os from "os";
+import path from "path";
 
 // A quiet logger (suppress console noise during the test run).
 function quietLogger(): Logger {
@@ -2925,5 +2931,119 @@ test("debug capture logs the upstream-converted body, not the raw client body", 
   } finally {
     closeDatabase(db);
     await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("Codex managed account reaches the backend with the pinned CLI identity", async () => {
+  // The fake upstream records what a REAL forwarded request looks like: path,
+  // bearer, chatgpt-account-id, originator/version/user-agent, and the
+  // store:false + instructions body normalization.
+  const captured: {
+    path?: string;
+    auth?: string;
+    accountId?: string;
+    originator?: string;
+    version?: string;
+    userAgent?: string;
+    body?: Record<string, unknown>;
+  } = {};
+  let upstreamResponses = 0;
+  const server = http.createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(c as Buffer));
+    req.on("end", () => {
+      captured.path = req.url;
+      captured.auth = req.headers["authorization"] as string;
+      captured.accountId = req.headers["chatgpt-account-id"] as string;
+      captured.originator = req.headers["originator"] as string;
+      captured.version = req.headers["version"] as string;
+      captured.userAgent = req.headers["user-agent"] as string;
+      try {
+        captured.body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      } catch {
+        captured.body = undefined;
+      }
+      upstreamResponses++;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "resp-1",
+          output: [
+            {
+              type: "message",
+              content: [{ type: "output_text", text: "hi there" }],
+            },
+          ],
+          usage: { input_tokens: 3, output_tokens: 5 },
+        }),
+      );
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as AddressInfo).port;
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-codex-"));
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "codex-up",
+      name: "OpenAI Codex",
+      baseUrl: `http://127.0.0.1:${port}`,
+      basePath: "/backend-api/codex",
+      modelsPath: "/models",
+      endpoints: [WireKind.Responses, WireKind.Chat],
+      authScheme: "bearer",
+      catalogId: "openai-codex",
+      retryAttempts: 1,
+    });
+    // A synthetic stored OAuth credential - exactly one row, encrypted.
+    const crypto = new ProviderAuthCrypto(db, dir);
+    const oauth = createProviderOAuth(db, crypto, "codex-up", {
+      integrationId: "codex",
+      secrets: { accessToken: "synthetic-codex-bearer" },
+      expiresAt: Date.now() + 60 * 60_000,
+      account: { accountId: "acct-e2e", email: "e2e@example.com" },
+    });
+    void oauth;
+    const m = createModel(db, {
+      alias: "codex-model",
+      providers: [{ providerId: "codex-up", upstreamModel: "gpt-5-codex" }],
+    });
+    const model = getModel(db, m.id)!;
+
+    // Real credential service so resolveManaged decrypts + serves the token
+    // and its account metadata (integration lookup hits the real registry).
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+      providerCredentials,
+    );
+    const { res, state } = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctxFor(model, {
+        model: "codex-model",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    assert.equal(state.statusCode || 200, 200);
+    assert.equal(upstreamResponses, 1);
+    assert.equal(captured.path, "/backend-api/codex/responses");
+    assert.equal(captured.auth, "Bearer synthetic-codex-bearer");
+    assert.equal(captured.accountId, "acct-e2e");
+    assert.equal(captured.originator, "codex_cli_rs");
+    assert.equal(captured.version, "0.149.0");
+    assert.match(captured.userAgent ?? "", /^codex_cli_rs\/0\.149\.0 \(.+\) reqwest\//);
+    assert.equal(captured.body?.store, false);
+    assert.equal(typeof captured.body?.instructions, "string");
+  } finally {
+    closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });

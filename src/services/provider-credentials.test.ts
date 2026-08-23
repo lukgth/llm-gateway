@@ -254,3 +254,62 @@ test("authentication checks proactively refresh near-expiry credentials", async 
     ctx.close();
   }
 });
+
+test("expired credential without a refresh token is marked reauth_required without a refresh call", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "provider-credentials-"));
+  const db = openDatabase(":memory:");
+  try {
+    const provider = createProvider(db, {
+      id: "codex-provider",
+      name: "OpenAI Codex",
+      baseUrl: "https://chatgpt.com",
+      catalogId: "openai-codex",
+    });
+    const crypto = new ProviderAuthCrypto(db, dir);
+    createProviderOAuth(db, crypto, provider.id, {
+      integrationId: "codex",
+      // Cookie-derived session: no refreshToken at all.
+      secrets: { accessToken: "cookie-access", idToken: "cookie-id" },
+      expiresAt: Date.now() - 1,
+      account: { accountId: "acct-1", email: "user@example.com" },
+    });
+    let refreshes = 0;
+    const integration: ProviderAuthIntegration = {
+      id: "codex",
+      catalogId: "openai-codex",
+      async begin() {
+        throw new Error("not used");
+      },
+      async poll() {
+        throw new Error("not used");
+      },
+      async refresh(value) {
+        refreshes++;
+        return value;
+      },
+      runtimeCredential(value) {
+        return value.secrets.accessToken;
+      },
+      async test() {
+        return { ok: true, status: 200, ms: 1, models: [] };
+      },
+    };
+    const service = new ProviderCredentialService(
+      db,
+      crypto,
+      (id) => (id === integration.id ? integration : undefined),
+    );
+    await assert.rejects(
+      () => service.resolveManaged(provider.id),
+      /re-import the Codex session/,
+    );
+    assert.equal(refreshes, 0);
+    assert.equal(
+      getProviderOAuthView(db, provider.id)?.status,
+      "reauth_required",
+    );
+  } finally {
+    closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

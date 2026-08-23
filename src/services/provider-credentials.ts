@@ -159,6 +159,13 @@ export class ProviderCredentialService {
     if (!integration)
       throw new Error("Unknown provider authentication integration");
     try {
+      // Cookie-derived credentials (no refresh token) cannot be refreshed -
+      // fail fast inside the try so the expired-refresh failure path below
+      // marks the row reauth_required and the operator knows to re-import.
+      if (!stored.credential.secrets.refreshToken)
+        throw new Error(
+          "Provider authentication cannot be refreshed; please re-import the Codex session",
+        );
       const fresh = await integration.refresh(stored.credential);
       if (!rotateProviderOAuth(this.db, this.crypto, stored, fresh)) {
         const latest = getProviderOAuth(

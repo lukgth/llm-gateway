@@ -87,7 +87,7 @@ export type ProviderAuthState =
 export interface ProviderAuthSession {
   id: string;
   catalogId: string;
-  flow: "device_code";
+  flow: "device_code" | "import";
   state: ProviderAuthState;
   expiresAt: string;
   nextPollAt?: string;
@@ -301,7 +301,7 @@ export interface TemplateField {
 
 export interface ProviderAuthentication {
   kind: "oauth";
-  flow: "device_code";
+  flow: "device_code" | "import";
   title: string;
   description: string;
   actionLabel?: string;

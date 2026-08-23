@@ -70,7 +70,7 @@ export interface TemplateField {
 
 export interface ProviderAuthentication {
   kind: "oauth";
-  flow: "device_code";
+  flow: "device_code" | "import";
   title: string;
   description: string;
   actionLabel?: string;

@@ -36,6 +36,7 @@ import {
   AnthropicCompatibleAdapter,
 } from "./base";
 import { openai } from "./catalog/openai";
+import { openaiCodex } from "./catalog/openai-codex";
 import { anthropic } from "./catalog/anthropic";
 import { claudeCode } from "./catalog/claude-code";
 import { nvidiaNim } from "./catalog/nvidia-nim";
@@ -65,6 +66,7 @@ import { commandcode } from "./catalog/commandcode";
 // first, generic escape-hatch templates last.
 const ADAPTERS: ProviderAdapter[] = [
   openai,
+  openaiCodex,
   anthropic,
   claudeCode,
   nvidiaNim,

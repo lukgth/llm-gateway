@@ -412,7 +412,7 @@ export abstract class ProviderAdapter {
       providerFmt: kind,
       upstreamModel: ctx.model,
       apiKey: ctx.apiKey,
-      keyMetadata: {},
+      keyMetadata: ctx.keyMetadata,
       headers: { ...ctx.headers },
     };
     (rawBody as Json).model = ctx.model;
@@ -433,7 +433,7 @@ export abstract class ProviderAdapter {
       model: ctx.model,
       body: transformed,
       apiKey: ctx.apiKey,
-      keyMetadata: {},
+      keyMetadata: ctx.keyMetadata ?? {},
       clientFmt: kind,
       providerFmt: kind,
       endpointKind: kind,

@@ -6,6 +6,7 @@ import { openDatabase, closeDatabase } from "../db";
 import { createProvider } from "../repo/providers";
 import { listProviderKeys } from "../repo/provider-keys";
 import { runBatchTest, MAX_BATCH_KEYS } from "./batch-test";
+import { destroyCachedDirectAgents } from "../gateway/proxy-agent";
 import type { BatchTestProgress, BatchTestDone } from "./batch-test";
 
 function neverCancelled() {
@@ -206,6 +207,7 @@ test("runBatchTest: happy path streams per-key progress with correct index/keyId
     assert.deepEqual(done, { total: 3, ok: 2 });
   } finally {
     closeDatabase(db);
+    destroyCachedDirectAgents();
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
@@ -258,6 +260,7 @@ test("runBatchTest: cancellation stops dispatching new tests early", async () =>
     );
   } finally {
     closeDatabase(db);
+    destroyCachedDirectAgents();
     await new Promise<void>((r) => server.close(() => r()));
   }
 });

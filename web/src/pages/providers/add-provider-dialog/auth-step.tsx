@@ -32,7 +32,8 @@ export function AuthStep({
   }, [onSession, session, tpl.id]);
 
   useEffect(() => {
-    if (!session || session.state !== "pending") return;
+    // Import flow handles its own polling (browser sign-in).
+    if (!session || session.state !== "pending" || tpl.authentication?.flow === "import") return;
     const next = session.nextPollAt
       ? Math.max(250, Date.parse(session.nextPollAt) - Date.now())
       : 1_000;
@@ -66,68 +67,91 @@ export function AuthStep({
         </div>
       </div>
 
-      {!session && (
-        <div className="space-y-3 rounded-lg border border-border p-5 text-center">
-          <p className="text-sm text-muted-foreground">
-            This provider uses a device code, so no provider token is exposed to
-            this browser.
-          </p>
-          <Button onClick={() => void start()} disabled={starting}>
-            {starting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ExternalLink className="h-4 w-4" />
-            )}
-            {auth.actionLabel ?? "Connect account"}
-          </Button>
-        </div>
-      )}
-
-      {session?.state === "pending" && verification && (
-        <div className="space-y-4 rounded-lg border border-border p-4">
-          <div className="flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            <span className="text-sm font-medium">Waiting for approval</span>
-            <Badge variant="secondary" className="ml-auto">
-              Device code
-            </Badge>
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground">Verification code</div>
-            <div className="mt-1 flex items-center gap-2">
-              <code className="flex-1 rounded-md bg-muted px-3 py-2 text-center text-lg font-semibold tracking-widest">
-                {verification.userCode}
-              </code>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => {
-                  void navigator.clipboard.writeText(verification.userCode);
-                  toast.success("Code copied");
-                }}
-                aria-label="Copy verification code"
-              >
-                <Copy className="h-4 w-4" />
+      {auth.flow === "import" ? (
+        <ImportFlow tpl={tpl} session={session} onSession={onSession} />
+      ) : (
+        <>
+          {!session && (
+            <div className="space-y-3 rounded-lg border border-border p-5 text-center">
+              <p className="text-sm text-muted-foreground">
+                This provider uses a device code, so no provider token is exposed to
+                this browser.
+              </p>
+              <Button onClick={() => void start()} disabled={starting}>
+                {starting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ExternalLink className="h-4 w-4" />
+                )}
+                {auth.actionLabel ?? "Connect account"}
               </Button>
             </div>
-          </div>
-          <Button
-            className="w-full"
-            onClick={() =>
-              window.open(
-                verification.uriComplete ?? verification.uri,
-                "_blank",
-                "noopener,noreferrer",
-              )
-            }
-          >
-            <ExternalLink className="h-4 w-4" />
-            Open sign-in
-          </Button>
-          <p className="text-center text-xs text-muted-foreground">
-            Complete sign-in in the new tab. This screen updates automatically.
-          </p>
-        </div>
+          )}
+
+          {session?.state === "pending" && verification && (
+            <div className="space-y-4 rounded-lg border border-border p-4">
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span className="text-sm font-medium">Waiting for approval</span>
+                <Badge variant="secondary" className="ml-auto">
+                  Device code
+                </Badge>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Verification code</div>
+                <div className="mt-1 flex items-center gap-2">
+                  <code className="flex-1 rounded-md bg-muted px-3 py-2 text-center text-lg font-semibold tracking-widest">
+                    {verification.userCode}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(verification.userCode);
+                      toast.success("Code copied");
+                    }}
+                    aria-label="Copy verification code"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <Button
+                className="w-full"
+                onClick={() =>
+                  window.open(
+                    verification.uriComplete ?? verification.uri,
+                    "_blank",
+                    "noopener,noreferrer",
+                  )
+                }
+              >
+                <ExternalLink className="h-4 w-4" />
+                Open sign-in
+              </Button>
+              <p className="text-center text-xs text-muted-foreground">
+                Complete sign-in in the new tab. This screen updates automatically.
+              </p>
+            </div>
+          )}
+
+          {terminal && (
+            <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+              <div className="text-sm font-medium">Authentication did not complete</div>
+              <p className="text-xs text-muted-foreground">
+                {session.error?.message ?? "Start a new device authorization."}
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => void start()}
+                disabled={starting}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Restart authentication
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       {session?.state === "ready" && (
@@ -136,28 +160,119 @@ export function AuthStep({
             <Check className="h-4 w-4" />
             <span className="text-sm font-medium">Account connected</span>
           </div>
-          {(session.account?.email || session.account?.label) && (
+          {(session.account?.email || session.account?.label || session.account?.accountId) && (
             <p className="mt-1 pl-6 text-xs text-muted-foreground">
-              {session.account.email ?? session.account.label}
+              {session.account.email ??
+                session.account.label ??
+                session.account.accountId}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Import flow (OpenAI Codex): paste the contents of ~/.codex/auth.json. The
+// only login path for Codex - web-session tokens are read-only on the Codex
+// backend, and browser sign-in is for local gateways only. Errors surface only
+// server-provided, secret-free messages.
+function ImportFlow({
+  tpl,
+  session,
+  onSession,
+}: {
+  tpl: ProviderTemplate;
+  session: ProviderAuthSession | null;
+  onSession: (session: ProviderAuthSession | null) => void;
+}) {
+  const [value, setValue] = useState("");
+  const [importing, setImporting] = useState(false);
+
+  const import_ = useCallback(async () => {
+    if (!value.trim() || importing) return;
+    setImporting(true);
+    try {
+      onSession(await api.importProviderAuth(value));
+      setValue("");
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setImporting(false);
+    }
+  }, [value, importing, onSession]);
+
+  const ready = session?.state === "ready";
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border p-4">
+      <div className="flex items-center gap-2">
+        <Loader2
+          className={`h-4 w-4 ${ready ? "text-emerald-600" : "animate-spin text-muted-foreground"}`}
+        />
+        <span className="text-sm font-medium">{tpl.authentication!.title}</span>
+        <Badge variant="secondary" className="ml-auto">
+          Import
+        </Badge>
+      </div>
+
+      {!ready && (
+        <>
+          <p className="text-xs text-muted-foreground">
+            Paste the contents of <code>~/.codex/auth.json</code> (the file
+            Codex CLI writes after <code>codex login</code>) from a machine where
+            you are signed in to Codex. It contains a refresh token, so the
+            gateway keeps it renewed automatically.
+          </p>
+
+          <textarea
+            aria-label="Codex auth.json contents"
+            spellCheck={false}
+            autoComplete="off"
+            rows={8}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            placeholder='{ "tokens": { "access_token": "…", "refresh_token": "…" } }'
+          />
+
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              Credentials are encrypted server-side; this page never stores them.
+            </p>
+            <Button onClick={() => void import_()} disabled={!value.trim() || importing}>
+              {importing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ExternalLink className="hidden" />
+              )}
+              {tpl.authentication!.actionLabel ?? "Import Codex credentials"}
+            </Button>
+          </div>
+        </>
+      )}
+
+      {ready && (
+        <div className="space-y-1 text-emerald-700 dark:text-emerald-300">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Check className="h-4 w-4" />
+            Credentials imported
+          </div>
+          {(session.account?.email ||
+            session.account?.label ||
+            session.account?.accountId) && (
+            <p className="pl-6 text-xs text-muted-foreground">
+              {session.account.email ??
+                session.account.label ??
+                session.account.accountId}
             </p>
           )}
         </div>
       )}
 
-      {terminal && (
-        <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
-          <div className="text-sm font-medium">Authentication did not complete</div>
-          <p className="text-xs text-muted-foreground">
-            {session.error?.message ?? "Start a new device authorization."}
-          </p>
-          <Button
-            variant="outline"
-            onClick={() => void start()}
-            disabled={starting}
-          >
-            <RefreshCw className="h-4 w-4" />
-            Restart authentication
-          </Button>
+      {session && !ready && !!session.error && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-muted-foreground">
+          {session.error.message}
         </div>
       )}
     </div>

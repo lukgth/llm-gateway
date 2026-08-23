@@ -2,6 +2,7 @@ import type { AdminRequest } from "../../auth/admin-auth";
 import { KeyHealthStore } from "../../gateway/key-health";
 import { getProvider } from "../../repo/providers";
 import { getProviderTemplate } from "../../providers";
+import { providerAuthIntegration } from "../../services/provider-auth/registry";
 import { keyStats } from "../../repo/request-logs";
 import {
   batchProviderOAuth,
@@ -68,6 +69,38 @@ export function registerProviderAuthRoutes(ctx: RouteCtx): void {
       const catalogId = str((req.body as Record<string, unknown>)?.catalogId);
       if (!catalogId) throw new Error("catalogId is required");
       res.status(201).json(await providerAuth.begin(catalogId, owner(req)));
+    } catch (error) {
+      bad(res, error);
+    }
+  });
+
+  // Import pre-existing credentials (Codex auth.json or a ChatGPT session
+  // cookie value). Returns a ready, token-free session view; the value is
+  // consumed by the normal provider-create/add/reconnect paths and is never
+  // echoed back - failures go through bad() with secret-free messages.
+  r.post("/provider-auth/sessions/import", requireAdmin, async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const catalogId = str(body.catalogId);
+      if (!catalogId) throw new Error("catalogId is required");
+      const kind = str(body.kind);
+      if (kind !== "auth_json")
+        throw new Error("kind must be auth_json or session_cookie");
+      const value = typeof body.value === "string" ? body.value : "";
+      if (!value.trim()) throw new Error("value is required");
+      const template = getProviderTemplate(catalogId);
+      if (!template)
+        throw new Error("Unknown provider");
+      if (
+        providerAuthIntegration(catalogId)?.import === undefined ||
+        template.authentication?.flow !== "import"
+      )
+        throw new Error("Provider does not support importing credentials");
+      res
+        .status(201)
+        .json(
+          await providerAuth.import(catalogId, { kind, value }, owner(req)),
+        );
     } catch (error) {
       bad(res, error);
     }

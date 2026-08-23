@@ -21,7 +21,7 @@ export interface ProviderFamily {
 // Display order == the order groups render in, both here and on /providers.
 export const PROVIDER_FAMILIES: readonly ProviderFamily[] = [
   { label: "Anthropic", brand: "anthropic", ids: ["anthropic", "claude-code"] },
-  { label: "OpenAI", brand: "openai", ids: ["openai"] },
+  { label: "OpenAI", brand: "openai", ids: ["openai", "openai-codex"] },
   { label: "DeepSeek", brand: "deepseek", ids: ["deepseek"] },
   { label: "Google", brand: "gemini", ids: ["google-gemini"] },
   { label: "NVIDIA", brand: "nvidia", ids: ["nvidia-nim"] },

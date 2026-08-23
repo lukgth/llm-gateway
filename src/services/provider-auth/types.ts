@@ -11,7 +11,8 @@ export type ProviderAuthState =
 
 export interface ProviderAuthSecrets {
   accessToken: string;
-  refreshToken: string;
+  refreshToken?: string;
+  idToken?: string;
 }
 
 export interface ProviderAuthAccount {
@@ -44,6 +45,14 @@ export type ProviderAuthPollResult =
   | { state: "failed"; message: string }
   | { state: "ready"; credential: ProviderAuthCredential };
 
+// A credential supplied directly by an administrator instead of acquired
+// through an interactive flow - e.g. pasting an existing auth.json or a raw
+// session cookie. Only integrations that declare `import` accept these.
+export interface ProviderAuthImport {
+  kind: "auth_json" | "session_cookie" | "callback_url";
+  value: string;
+}
+
 export interface ProviderAuthIntegration {
   id: string;
   catalogId: string;
@@ -52,13 +61,14 @@ export interface ProviderAuthIntegration {
   refresh(credential: ProviderAuthCredential): Promise<ProviderAuthCredential>;
   runtimeCredential(credential: ProviderAuthCredential): string;
   test(credential: ProviderAuthCredential): Promise<ProviderTestProbe>;
+  import?(input: ProviderAuthImport): Promise<ProviderAuthCredential>;
 }
 
 export interface ProviderAuthSessionView {
   id: string;
   catalogId: string;
-  flow: "device_code";
   state: ProviderAuthState;
+  flow: "device_code" | "import";
   expiresAt: string;
   nextPollAt?: string;
   verification?: {

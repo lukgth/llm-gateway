@@ -486,6 +486,7 @@ function makeModelsCtx(
   format: ModelsFormat,
   apiKeyOverride?: string | null,
   log?: ProbeLogCtx,
+  keyMetadata: Readonly<Record<string, string>> = {},
 ): Omit<ModelsCtx, "provider"> {
   const basePath = p.basePath || "";
   const modelsPath = p.modelsPath || "/v1/models";
@@ -505,6 +506,7 @@ function makeModelsCtx(
     url: resolve(),
     headers: modelsRequestHeaders(p, apiKey ?? undefined),
     apiKey,
+    keyMetadata,
     format,
     transport: modelsTransport(p, log),
   };
@@ -519,12 +521,14 @@ export async function fetchProviderModels(
   db: DB,
   logger?: Logger,
   managedKey?: string | null,
+  keyMetadata: Readonly<Record<string, string>> = {},
 ): Promise<UpstreamModel[]> {
   const adapter = adapterForProvider(p);
   const keys = managedKey ? [managedKey] : listEnabledCredentials(db, p.id);
   const pl = providerLikeFrom(p, keys);
   return adapter.fetchModels({
     provider: p,
+    keyMetadata,
     ...makeModelsCtx(pl, adapter.nativeFormat, undefined, {
       logger,
       providerId: p.id,
@@ -578,6 +582,7 @@ function adapterRequestTransport(
 function makeTestModelCtx(
   p: Provider,
   apiKey: string | null,
+  keyMetadata: Readonly<Record<string, string>> = {},
 ): Omit<TestModelCtx, "provider" | "model"> {
   const basePath = p.basePath || "";
   const resolve: ResolveUrl = (target) =>
@@ -598,6 +603,7 @@ function makeTestModelCtx(
     url: resolve(),
     headers: modelsRequestHeaders(pl, apiKey ?? undefined),
     apiKey,
+    keyMetadata,
     request: adapterRequestTransport(p),
   };
 }
@@ -619,6 +625,7 @@ export async function testProviderModel(
   logger?: Logger,
   ownTransforms?: ModelTransformConfig[],
   managedKey?: string | null,
+  keyMetadata: Readonly<Record<string, string>> = {},
 ): Promise<TestModelResult> {
   const adapter = adapterForProvider(p);
   const keys = managedKey
@@ -629,7 +636,8 @@ export async function testProviderModel(
   return adapter.testModel({
     provider: p,
     model: upstreamId,
-    ...makeTestModelCtx(p, keys[0] ?? null),
+    keyMetadata,
+    ...makeTestModelCtx(p, keys[0] ?? null, keyMetadata),
     logStage: makeLogStage(db, logger, p.id),
     ownTransforms,
   });
@@ -760,6 +768,7 @@ function makeTestProviderCtx(
   keys: string[],
   keyOverride?: string,
   logger?: Logger,
+  keyMetadata: Readonly<Record<string, string>> = {},
 ): Omit<TestProviderCtx, "provider"> {
   const basePath = p.basePath || "";
   const resolve: ResolveUrl = (target) =>
@@ -781,6 +790,7 @@ function makeTestProviderCtx(
     url: resolve(),
     headers: modelsRequestHeaders(pl, keyOverride),
     apiKey,
+    keyMetadata,
     request: adapterRequestTransport(p, { logger, providerId: p.id }),
   };
 }
@@ -800,6 +810,7 @@ export async function testSavedProvider(
   keyUsed?: string,
   logger?: Logger,
   managedKey?: string | null,
+  keyMetadata: Readonly<Record<string, string>> = {},
 ): Promise<{
   ok: boolean;
   status: number | null;
@@ -810,7 +821,13 @@ export async function testSavedProvider(
 }> {
   const adapter = adapterForProvider(p);
   const keys = managedKey ? [managedKey] : listEnabledCredentials(db, p.id);
-  const ctx = makeTestProviderCtx(p, keys, keyUsed ?? managedKey ?? undefined, logger);
+  const ctx = makeTestProviderCtx(
+    p,
+    keys,
+    keyUsed ?? managedKey ?? undefined,
+    logger,
+    keyMetadata,
+  );
   const result = await adapter.testProvider({ provider: p, ...ctx });
   return {
     ...result,

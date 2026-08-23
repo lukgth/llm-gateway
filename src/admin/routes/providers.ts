@@ -287,6 +287,7 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
         key,
         logger,
         managedCredential?.value,
+        managedCredential?.metadata,
       );
       res.json(result);
     } catch (e) {
@@ -316,6 +317,7 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
         db,
         logger,
         managed?.value,
+        managed?.metadata,
       );
       res.json({ models });
     } catch (e) {
@@ -644,6 +646,7 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
         logger,
         pm.transforms,
         managed?.value,
+        managed?.metadata,
       );
       res.json(result);
     } catch (e) {

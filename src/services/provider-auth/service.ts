@@ -9,6 +9,7 @@ import type { ProviderAuthCrypto } from "./crypto";
 import { providerAuthIntegration } from "./registry";
 import type {
   ProviderAuthCredential,
+  ProviderAuthImport,
   ProviderAuthIntegration,
   ProviderAuthSessionView,
   ProviderAuthState,
@@ -19,6 +20,7 @@ interface Session {
   owner: string;
   integration: ProviderAuthIntegration;
   transaction: unknown;
+  flow: "device_code" | "import";
   state: ProviderAuthState;
   expiresAt: number;
   intervalMs: number;
@@ -59,6 +61,7 @@ export class ProviderAuthService {
       owner,
       integration,
       transaction: started.transaction,
+      flow: "device_code",
       state: "pending",
       expiresAt: started.expiresAt,
       intervalMs: Math.max(1_000, started.intervalMs),
@@ -66,6 +69,42 @@ export class ProviderAuthService {
       verificationUri: started.verificationUri,
       verificationUriComplete: started.verificationUriComplete,
       userCode: started.userCode,
+    };
+    this.sessions.set(id, session);
+    return this.view(session);
+  }
+
+  async import(
+    catalogId: string,
+    input: ProviderAuthImport,
+    owner: string,
+  ): Promise<ProviderAuthSessionView> {
+    this.sweep();
+    const integration = this.integrationForCatalog(catalogId);
+    if (!integration)
+      throw new Error("Provider does not support managed authentication");
+    if (!integration.import)
+      throw new Error("Provider does not support importing credentials");
+    const credential = await integration.import(input);
+    if (credential.expiresAt <= Date.now())
+      throw new Error("The imported credential is already expired");
+    // Imported credentials arrive fully resolved - no device transaction,
+    // no polling, no verification. The session is immediately ready for the
+    // existing one-shot adopt/add/reconnect paths.
+    const id = randomBytes(32).toString("base64url");
+    const session: Session = {
+      id,
+      owner,
+      integration,
+      flow: "import",
+      transaction: null,
+      state: "ready",
+      expiresAt: credential.expiresAt,
+      intervalMs: 0,
+      nextPollAt: 0,
+      verificationUri: "",
+      userCode: "",
+      credential,
     };
     this.sessions.set(id, session);
     return this.view(session);
@@ -224,7 +263,7 @@ export class ProviderAuthService {
     return {
       id: session.id,
       catalogId: session.integration.catalogId,
-      flow: "device_code",
+      flow: session.flow,
       state: session.state,
       expiresAt: new Date(session.expiresAt).toISOString(),
       ...(session.state === "pending"

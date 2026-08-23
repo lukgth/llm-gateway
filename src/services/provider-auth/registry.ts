@@ -1,8 +1,10 @@
 import { clinefreeAuth } from "./integrations/clinefree";
+import { codexAuth } from "./integrations/codex";
 import type { ProviderAuthIntegration } from "./types";
 
 const INTEGRATIONS = new Map<string, ProviderAuthIntegration>([
   [clinefreeAuth.catalogId, clinefreeAuth],
+  [codexAuth.catalogId, codexAuth],
 ]);
 
 export function providerAuthIntegration(

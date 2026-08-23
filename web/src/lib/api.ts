@@ -158,6 +158,11 @@ export const api = {
       "/api/provider-auth/sessions",
       json("POST", { catalogId }),
     ),
+  importProviderAuth: (value: string) =>
+    req<ProviderAuthSession>(
+      "/api/provider-auth/sessions/import",
+      json("POST", { catalogId: "openai-codex", kind: "auth_json", value }),
+    ),
   providerAuthStatus: (sessionId: string) =>
     req<ProviderAuthSession>(`/api/provider-auth/sessions/${sessionId}`),
   pollProviderAuth: (sessionId: string) =>
