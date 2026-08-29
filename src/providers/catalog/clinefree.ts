@@ -43,27 +43,15 @@ function healBufferedChat(body: Record<string, unknown>): Record<string, unknown
     if (typeof message.content !== "string") continue;
     const parsed = parseDsmlToolCalls(message.content);
     if (!parsed.calls.length) continue;
-    const native = Array.isArray(message.tool_calls)
-      ? message.tool_calls.filter(isObject)
-      : [];
+    const native = Array.isArray(message.tool_calls) ? message.tool_calls.filter(isObject) : [];
     const toolCalls = [...native];
     parsed.calls.forEach((call, index) => {
       const existing = toolCalls[index];
-      if (
-        existing &&
-        isObject(existing.function) &&
-        existing.function.name === call.name
-      ) {
-        if (!hasUsableArguments(existing.function.arguments)) {
-          existing.function.arguments = call.arguments;
-        }
+      if (existing && isObject(existing.function) && existing.function.name === call.name) {
+        if (!hasUsableArguments(existing.function.arguments)) existing.function.arguments = call.arguments;
         return;
       }
-      toolCalls.push({
-        id: call.id,
-        type: "function",
-        function: { name: call.name, arguments: call.arguments },
-      });
+      toolCalls.push({ id: call.id, type: "function", function: { name: call.name, arguments: call.arguments } });
     });
     message.content = parsed.text || null;
     message.tool_calls = toolCalls;
