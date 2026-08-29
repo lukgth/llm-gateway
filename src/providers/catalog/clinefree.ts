@@ -8,7 +8,17 @@ import {
   type TestProviderCtx,
   type TestProviderResult,
 } from "../base";
-import { WireKind } from "../../types";
+import { WireKind, type Provider } from "../../types";
+import type {
+  AnyResponseTransform,
+  AnyStreamTransform,
+} from "../../formats/pipeline";
+import { onResponse } from "../../formats/pipeline";
+import {
+  DSML_COMPAT_META,
+  DsmlChatStreamTransform,
+  parseDsmlToolCalls,
+} from "../../formats/dsml";
 import type { UpstreamModel } from "../../formats/wire/models";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 import {
@@ -16,6 +26,51 @@ import {
   clineFingerprintHeaders,
   parseClineFreeModels,
 } from "../clinefree";
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasUsableArguments(value: unknown): boolean {
+  return typeof value === "string" && value !== "" && value !== "{}";
+}
+
+function healBufferedChat(body: Record<string, unknown>): Record<string, unknown> {
+  const choices = Array.isArray(body.choices) ? body.choices : [];
+  for (const choiceValue of choices) {
+    if (!isObject(choiceValue) || !isObject(choiceValue.message)) continue;
+    const message = choiceValue.message;
+    if (typeof message.content !== "string") continue;
+    const parsed = parseDsmlToolCalls(message.content);
+    if (!parsed.calls.length) continue;
+    const native = Array.isArray(message.tool_calls)
+      ? message.tool_calls.filter(isObject)
+      : [];
+    const toolCalls = [...native];
+    parsed.calls.forEach((call, index) => {
+      const existing = toolCalls[index];
+      if (
+        existing &&
+        isObject(existing.function) &&
+        existing.function.name === call.name
+      ) {
+        if (!hasUsableArguments(existing.function.arguments)) {
+          existing.function.arguments = call.arguments;
+        }
+        return;
+      }
+      toolCalls.push({
+        id: call.id,
+        type: "function",
+        function: { name: call.name, arguments: call.arguments },
+      });
+    });
+    message.content = parsed.text || null;
+    message.tool_calls = toolCalls;
+    choiceValue.finish_reason = "tool_calls";
+  }
+  return body;
+}
 
 class ClineFreeAdapter extends OpenAICompatibleAdapter {
   override chatCompletions(ctx: BuildCtx): BuiltRequest {
@@ -28,6 +83,36 @@ class ClineFreeAdapter extends OpenAICompatibleAdapter {
       },
       body: ctx.body,
     };
+  }
+
+  // Temporary compatibility workaround: api.cline.bot currently leaks DeepSeek V4 DSML tool markup and wraps buffered completions; remove this adapter-specific healing once Cline's serving path decodes DSML and returns standard OpenAI responses.
+  override responseTransforms(_provider: Provider): AnyResponseTransform[] {
+    return [
+      onResponse("chat", "clinefree:unwrap-response", (body) => {
+        const data = (body as Record<string, unknown>).data;
+        if (isObject(data) && Array.isArray(data.choices)) return data as never;
+        return body;
+      }),
+      onResponse(
+        "chat",
+        "clinefree:dsml-tool-calls",
+        (body) => healBufferedChat(body as unknown as Record<string, unknown>) as never,
+        DSML_COMPAT_META,
+      ),
+    ];
+  }
+
+  // Temporary compatibility workaround: api.cline.bot currently leaks DeepSeek V4 DSML tool markup; remove this adapter-specific healing once Cline's serving path decodes DSML and returns standard OpenAI tool calls.
+  override streamTransforms(_provider: Provider): AnyStreamTransform[] {
+    return [
+      {
+        name: "clinefree:dsml-tool-calls",
+        phase: "response",
+        format: "chat",
+        create: () => new DsmlChatStreamTransform(),
+        ...DSML_COMPAT_META,
+      },
+    ];
   }
 
   override async fetchModels(ctx: ModelsCtx): Promise<UpstreamModel[]> {
