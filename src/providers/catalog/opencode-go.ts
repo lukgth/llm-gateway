@@ -1,11 +1,14 @@
 import {
   OpenAICompatibleAdapter,
+  type BuildCtx,
+  type BuiltRequest,
   type UsageCtx,
   type KeyUsageResult,
 } from "../base";
 import { WireKind } from "../../types";
 import type { ProviderKeyUsageWindow } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
+import { withOpenCodeAttribution } from "../opencode";
 
 // OpenCode Go - a paid subscription tier at opencode.ai/go, distinct from Zen.
 // Supports both /chat/completions and /messages.
@@ -42,6 +45,26 @@ function windowFrom(
 }
 
 class OpenCodeGoAdapter extends OpenAICompatibleAdapter {
+  // Both advertised wire kinds (Chat + Messages) carry canonical OpenCode
+  // attribution (`x-opencode-session` + `x-opencode-client: cli`) on top of
+  // the engine-composed headers, delegating to the inherited
+  // OpenAI-compatible builder without changing URL or body. keyUsage() is
+  // intentionally untouched: it is a provider quota endpoint with no
+  // completion body/session context.
+  override chatCompletions(ctx: BuildCtx): BuiltRequest {
+    return super.chatCompletions({
+      ...ctx,
+      headers: withOpenCodeAttribution(ctx.headers, ctx.body),
+    });
+  }
+
+  override messages(ctx: BuildCtx): BuiltRequest {
+    return super.messages({
+      ...ctx,
+      headers: withOpenCodeAttribution(ctx.headers, ctx.body),
+    });
+  }
+
   supportsKeyUsage(_ctx: UsageCtx): boolean {
     return true;
   }
