@@ -83,6 +83,16 @@ class OpenAICodexAdapter extends OpenAICompatibleAdapter {
     ctx.body["store"] = false;
     if (typeof ctx.body["instructions"] !== "string")
       ctx.body["instructions"] = "";
+    if (typeof ctx.body["input"] === "string") {
+      const input = ctx.body["input"];
+      ctx.body["input"] = [
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: input }],
+        },
+      ];
+    }
     return this.codexBuild(ctx);
   }
 

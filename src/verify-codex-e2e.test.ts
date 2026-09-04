@@ -189,6 +189,13 @@ test("E2E: import auth.json -> create provider -> Responses request hits Codex i
     const body = captured.body as Record<string, unknown>;
     assert.equal(body.store, false);
     assert.equal(typeof body.instructions, "string");
+    assert.deepEqual(body.input, [
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "hi" }],
+      },
+    ]);
     assert.ok(statusCode === 200 || statusCode === 0); // buffered success
   } finally {
     closeDatabase(db);

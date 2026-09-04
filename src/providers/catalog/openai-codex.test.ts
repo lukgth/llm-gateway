@@ -129,11 +129,31 @@ test("responses build forces store:false + instructions string and sets canonica
   const built = openaiCodex.responses(ctx);
   assert.equal(built.body["store"], false);
   assert.equal(built.body["instructions"], "");
+  assert.deepEqual(built.body["input"], []);
   assert.equal(built.headers["originator"], CODEX_ORIGINATOR);
   assert.equal(built.headers["version"], CODEX_CLIENT_VERSION);
   assert.equal(built.headers["user-agent"], codexUserAgent());
   assert.equal(built.headers["authorization"], "Bearer codex-access-token");
   assert.equal(built.headers["chatgpt-account-id"], "acct-123");
+});
+
+test("responses build wraps bare-string input in a Responses message list", () => {
+  const ctx = buildCtx({
+    body: {
+      model: "gpt-5-codex",
+      input: "Reply with exactly: hi",
+    } as BuildCtx["body"],
+  });
+  const built = openaiCodex.responses(ctx);
+  assert.deepEqual(built.body["input"], [
+    {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "Reply with exactly: hi" }],
+    },
+  ]);
+  assert.equal(built.body["store"], false);
+  assert.equal(built.body["instructions"], "");
 });
 
 test("chat build preserves an existing string instructions value", () => {
