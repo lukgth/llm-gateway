@@ -120,6 +120,24 @@ const CAPS_46_CLASS: ModelCapabilities = {
 export const ANTHROPIC_STOCK_MODELS: AnthropicStockModel[] = [
   {
     type: "model",
+    id: "claude-fable-5-1",
+    display_name: "Claude Fable 5.1",
+    created_at: "2026-09-01T00:00:00Z",
+    max_input_tokens: 1000000,
+    max_tokens: 128000,
+    capabilities: CAPS_MYTHOS_CLASS,
+  },
+  {
+    type: "model",
+    id: "claude-mythos-5-1",
+    display_name: "Claude Mythos 5.1",
+    created_at: "2026-09-01T00:00:00Z",
+    max_input_tokens: 1000000,
+    max_tokens: 128000,
+    capabilities: CAPS_MYTHOS_CLASS,
+  },
+  {
+    type: "model",
     id: "claude-opus-5",
     display_name: "Claude Opus 5",
     created_at: "2026-07-24T00:00:00Z",

@@ -81,6 +81,25 @@ test("defaultPricingFor: resolves exact values for every newly added id", () => 
     ["kimi-k2.7-code-highspeed", 1.9, 8, 0.38],
     ["minimax-m3", 0.3, 1.2, 0.06],
     ["minimax-m2.7", 0.3, 1.2, 0.06],
+    ["claude-fable-5-1", 10, 50, 0.25],
+    ["claude-mythos-5-1", 10, 50, 0.25],
+    ["gpt-6-astra", 10, 50, 1],
+    ["gpt-5.6-sol", 4, 20, 0.4],
+    ["deepseek-v4-flash-vision-exp", 0.44, 1.32, 0.014],
+    ["glm-5.3-flash", 0.15, 0.5, 0.03],
+    ["gemini-3.8-flash", 1.5, 7.5, 0.15],
+    ["qwen3.8-max-0902", 2, 6, undefined],
+    ["qwen3.8-flash", 0.15, 0.47, undefined],
+    ["qwen3.7-max", 2.5, 7.5, undefined],
+    ["qwen3.6-max-preview", 1.3, 7.8, undefined],
+    ["qwen3.7-flash", 0.03, 0.13, undefined],
+    ["qwen3.7-plus", 0.5, 2, undefined],
+    ["muse-spark-1.3", 1.25, 4.25, 0.15],
+    ["muse-spark-1.3-contributor", 0.1, 0.2, 0.002],
+    ["muse-spark-1.2", 1.25, 4.25, 0.15],
+    ["muse-spark-1.2-contributor", 0.1, 0.2, 0.002],
+    ["muse-spark-1.1", 1.25, 4.25, 0.15],
+    ["kimi-k2.6", 0.95, 4, 0.16],
   ];
   for (const [id, prompt, completion, cached] of cases) {
     const m = defaultPricingFor(id);
@@ -139,19 +158,32 @@ test("defaultPricingFor: glm-5.3 resolves the same published rate as glm-5.2", (
   assert.equal(fiveTwo!.cachedPer1m, 0.26);
 });
 
-test("defaultPricingFor: resolves both Muse Spark tiers", () => {
-  const normal = defaultPricingFor("muse-spark-2.1");
-  assert.ok(normal);
-  assert.equal(normal!.promptPer1m, 1.25);
-  assert.equal(normal!.completionPer1m, 4.25);
-  assert.equal(normal!.cachedPer1m, 0.15);
-
-  const contributor = defaultPricingFor("muse-spark-2.1-contributor");
-  assert.ok(contributor);
-  assert.equal(contributor!.promptPer1m, 0.1);
-  assert.equal(contributor!.completionPer1m, 0.2);
-  assert.equal(contributor!.cachedPer1m, 0.002);
-  assert.equal(contributor!.brand, "meta");
+test("defaultPricingFor: resolves all Muse Spark tiers", () => {
+  for (const id of [
+    "muse-spark-1.3",
+    "muse-spark-1.2",
+    "muse-spark-1.1",
+    "muse-spark-2.1",
+  ]) {
+    const m = defaultPricingFor(id);
+    assert.ok(m, `expected to resolve ${id}`);
+    assert.equal(m!.promptPer1m, 1.25, `${id} promptPer1m`);
+    assert.equal(m!.completionPer1m, 4.25, `${id} completionPer1m`);
+    assert.equal(m!.cachedPer1m, 0.15, `${id} cachedPer1m`);
+    assert.equal(m!.brand, "meta");
+  }
+  for (const id of [
+    "muse-spark-1.3-contributor",
+    "muse-spark-1.2-contributor",
+    "muse-spark-2.1-contributor",
+  ]) {
+    const m = defaultPricingFor(id);
+    assert.ok(m, `expected to resolve ${id}`);
+    assert.equal(m!.promptPer1m, 0.1, `${id} promptPer1m`);
+    assert.equal(m!.completionPer1m, 0.2, `${id} completionPer1m`);
+    assert.equal(m!.cachedPer1m, 0.002, `${id} cachedPer1m`);
+    assert.equal(m!.brand, "meta");
+  }
 });
 
 test("defaultPricingFor: covers every provider family referenced in the catalog brand set", () => {
@@ -169,4 +201,33 @@ test("defaultPricingFor: covers every provider family referenced in the catalog 
   ]) {
     assert.ok(brands.has(expected), `expected a ${expected} entry`);
   }
+});
+
+test("defaultPricingFor: 5.1 generation uses the 0.025x cache-read rate", () => {
+  // $0.25, not the standard 0.1x ($1.00) - a regression here silently
+  // quadruples cached-cost estimates for the newest Claude models.
+  for (const id of ["claude-fable-5-1", "claude-mythos-5-1"]) {
+    const m = defaultPricingFor(id);
+    assert.ok(m, `expected to resolve ${id}`);
+    assert.equal(m!.promptPer1m, 10);
+    assert.equal(m!.completionPer1m, 50);
+    assert.equal(m!.cachedPer1m, 0.25);
+  }
+});
+
+test("defaultPricingFor: gpt-6-astra resolves the new flagship rate", () => {
+  const m = defaultPricingFor("gpt-6-astra");
+  assert.ok(m);
+  assert.equal(m!.promptPer1m, 10);
+  assert.equal(m!.completionPer1m, 50);
+  assert.equal(m!.cachedPer1m, 1);
+  assert.equal(m!.brand, "openai");
+});
+
+test("defaultPricingFor: glm-5.3-flash stores the list price, not the promo", () => {
+  const m = defaultPricingFor("glm-5.3-flash");
+  assert.ok(m);
+  assert.equal(m!.promptPer1m, 0.15);
+  assert.equal(m!.completionPer1m, 0.5);
+  assert.equal(m!.cachedPer1m, 0.03);
 });
