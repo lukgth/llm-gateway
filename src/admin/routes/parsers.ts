@@ -168,6 +168,8 @@ export function parseModelInput(
                 completionPer1m:
                   p.completionPer1m == null ? null : num(p.completionPer1m),
                 cachedPer1m: p.cachedPer1m == null ? null : num(p.cachedPer1m),
+                cacheWritePer1m:
+                  p.cacheWritePer1m == null ? null : num(p.cacheWritePer1m),
               };
             })(),
   };

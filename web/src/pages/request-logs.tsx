@@ -368,6 +368,14 @@ const LogRow = memo(function LogRow({
               {fmtNum(l.cachedTokens)} cached
             </span>
           )}
+          {(l.cacheWriteTokens ?? 0) > 0 && (
+            <span
+              className="block text-[0.6rem] text-muted-foreground/70"
+              title="Prompt tokens spent writing the cache"
+            >
+              {fmtNum(l.cacheWriteTokens ?? 0)} written
+            </span>
+          )}
         </TableCell>
         <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
           {fmtTokensPerSecond(l.outputTokens, l.latencyMs)}

@@ -429,6 +429,7 @@ test("settleUsage: cached tokens are billed at a discount but excluded from the 
       promptPer1m: 1,
       completionPer1m: 2,
       cachedPer1m: 0.1,
+      cacheWritePer1m: 0.1,
     });
     const { id: apiKeyId } = createApiKey(db, {
       name: "test-key",
@@ -488,6 +489,115 @@ test("settleUsage: cached tokens are billed at a discount but excluded from the 
     assert.ok(
       Math.abs((log!.costUsd as number) - 0.00086) < 1e-9,
       `expected cost ~0.00086, got ${log?.costUsd}`,
+    );
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("settleUsage: cache reads and writes are both excluded from quota but billed at the cache rate", async () => {
+  // Upstream reports 1000 prompt tokens (600 cache reads + 200 cache writes)
+  // + 100 completion tokens. Realized input = max(0, 1000-600-200) = 200;
+  // daily quota counter must be 200 + 100 = 300 while the log retains both
+  // buckets and cost bills each bucket at the cached rate.
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "x",
+          usage: {
+            prompt_tokens: 1000,
+            completion_tokens: 100,
+            prompt_tokens_details: {
+              cached_tokens: 600,
+              cache_write_tokens: 200,
+            },
+          },
+        }),
+      );
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "up",
+      name: "up",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["k-secret"],
+      catalogId: "openai",
+      authScheme: "bearer",
+      retryAttempts: 1,
+    });
+    const m = createModel(db, {
+      alias: "test-model",
+      providers: [{ providerId: "up", upstreamModel: "up-1" }],
+    });
+    const model = getModel(db, m.id)!;
+    upsertPricing(db, {
+      alias: "test-model",
+      promptPer1m: 1,
+      completionPer1m: 2,
+      cachedPer1m: 0.1,
+      cacheWritePer1m: 0.1,
+    });
+    const { id: apiKeyId } = createApiKey(db, {
+      name: "test-key",
+      tokensPerDay: null,
+    });
+    const apiKey = {
+      id: apiKeyId,
+      name: "test-key",
+      keyPrefix: "k-",
+      userId: null,
+      userName: null,
+      tokensPerDay: null,
+      enabled: true,
+      accessAllModels: true,
+      modelIds: [],
+      lastUsedAt: null,
+      createdAt: new Date().toISOString(),
+    };
+
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const { res, state } = mockRes();
+    const ctx = ctxFor(model, {
+      model: "test-model",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    ctx.apiKey = apiKey;
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctx,
+    );
+    assert.equal(state.statusCode || 200, 200);
+
+    // Realized input = max(0, 1000-600-200) = 200; plus 100 output = 300.
+    const usage = getUsage(db, apiKeyId);
+    assert.equal(usage.tokens, 300);
+
+    const log = listRequestLogs(db)[0];
+    assert.equal(log?.inputTokens, 1000);
+    assert.equal(log?.outputTokens, 100);
+    assert.equal(log?.cachedTokens, 600);
+    assert.equal(log?.cacheWriteTokens, 200);
+
+    // cost = (200*1 + 600*0.1 + 200*0.1 + 100*2)/1e6 = 480/1e6 = 0.00048
+    assert.ok(log?.costUsd != null);
+    assert.ok(
+      Math.abs((log!.costUsd as number) - 0.00048) < 1e-9,
+      `expected cost ~0.00048, got ${log?.costUsd}`,
     );
   } finally {
     closeDatabase(db);

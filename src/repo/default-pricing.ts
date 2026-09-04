@@ -28,6 +28,10 @@ export interface DefaultModelPricing {
    *  model editor's own placeholder ("defaults to prompt rate") already
    *  covers that case, so this table doesn't need to repeat promptPer1m here. */
   cachedPer1m?: number;
+  /** Omitted when the provider charges no distinct cache-write price (or
+   *  publishes none): computeCostUsd falls back to the cached rate, so reads
+   *  and writes cost the same unless this is set. */
+  cacheWritePer1m?: number;
 }
 
 export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
@@ -40,6 +44,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 10,
     completionPer1m: 50,
     cachedPer1m: 1,
+    cacheWritePer1m: 12.5,
   },
   {
     id: "claude-mythos-5",
@@ -48,6 +53,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 10,
     completionPer1m: 50,
     cachedPer1m: 1,
+    cacheWritePer1m: 12.5,
   },
   {
     // Released Sep 1 2026. Cache reads are billed at 0.025x base input
@@ -59,6 +65,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 10,
     completionPer1m: 50,
     cachedPer1m: 0.25,
+    cacheWritePer1m: 12.5,
   },
   {
     // Same model as Fable 5.1 with different safeguards; Glasswing-only
@@ -70,6 +77,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 10,
     completionPer1m: 50,
     cachedPer1m: 0.25,
+    cacheWritePer1m: 12.5,
   },
   {
     id: "claude-opus-5",
@@ -78,6 +86,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 5,
     completionPer1m: 25,
     cachedPer1m: 0.5,
+    cacheWritePer1m: 6.25,
   },
   {
     id: "claude-opus-4-8",
@@ -86,6 +95,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 5,
     completionPer1m: 25,
     cachedPer1m: 0.5,
+    cacheWritePer1m: 6.25,
   },
   {
     id: "claude-opus-4-7",
@@ -94,6 +104,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 5,
     completionPer1m: 25,
     cachedPer1m: 0.5,
+    cacheWritePer1m: 6.25,
   },
   {
     id: "claude-opus-4-6",
@@ -102,6 +113,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 5,
     completionPer1m: 25,
     cachedPer1m: 0.5,
+    cacheWritePer1m: 6.25,
   },
   {
     id: "claude-opus-4-5",
@@ -110,6 +122,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 5,
     completionPer1m: 25,
     cachedPer1m: 0.5,
+    cacheWritePer1m: 6.25,
   },
   {
     // Current standard rate (the previously announced temporary $3/$15 promo
@@ -120,6 +133,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 2,
     completionPer1m: 10,
     cachedPer1m: 0.2,
+    cacheWritePer1m: 2.5,
   },
   {
     id: "claude-sonnet-4-6",
@@ -128,6 +142,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 3,
     completionPer1m: 15,
     cachedPer1m: 0.3,
+    cacheWritePer1m: 3.75,
   },
   {
     id: "claude-sonnet-4-5",
@@ -136,6 +151,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 3,
     completionPer1m: 15,
     cachedPer1m: 0.3,
+    cacheWritePer1m: 3.75,
   },
   {
     id: "claude-haiku-4-5",
@@ -144,6 +160,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 1,
     completionPer1m: 5,
     cachedPer1m: 0.1,
+    cacheWritePer1m: 1.25,
   },
 
   // --- OpenAI -----------------------------------------------------------
@@ -160,6 +177,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 10,
     completionPer1m: 50,
     cachedPer1m: 1,
+    cacheWritePer1m: 12.5,
   },
   {
     // Promotional $4/$20 pricing (at least through Nov 21 2026); the table
@@ -171,6 +189,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 4,
     completionPer1m: 20,
     cachedPer1m: 0.4,
+    cacheWritePer1m: 5,
   },
   {
     // Promotional pricing (at least through Nov 21 2026); unchanged numbers.
@@ -181,6 +200,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 2,
     completionPer1m: 12,
     cachedPer1m: 0.2,
+    cacheWritePer1m: 2.5,
   },
   {
     // Promotional pricing (at least through Nov 21 2026); unchanged numbers.
@@ -191,6 +211,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 0.2,
     completionPer1m: 1.2,
     cachedPer1m: 0.02,
+    cacheWritePer1m: 0.25,
   },
   {
     id: "gpt-5.5",

@@ -32,6 +32,7 @@ interface ModelRow {
   pricing_prompt_per_1m?: number | null;
   pricing_completion_per_1m?: number | null;
   pricing_cached_per_1m?: number | null;
+  pricing_cache_write_per_1m?: number | null;
 }
 
 interface LinkRow {
@@ -97,6 +98,7 @@ function mapModel(r: ModelRow, links: LinkJoinedRow[]): Model {
             promptPer1m: r.pricing_prompt_per_1m ?? null,
             completionPer1m: r.pricing_completion_per_1m ?? null,
             cachedPer1m: r.pricing_cached_per_1m ?? null,
+            cacheWritePer1m: r.pricing_cache_write_per_1m ?? null,
           }
         : null,
   };
@@ -112,7 +114,8 @@ export function listModels(db: DB, includeDisabled = true): Model[] {
     .prepare(
       `SELECT m.*, mp.prompt_per_1m AS pricing_prompt_per_1m,
               mp.completion_per_1m AS pricing_completion_per_1m,
-              mp.cached_per_1m AS pricing_cached_per_1m
+              mp.cached_per_1m AS pricing_cached_per_1m,
+              mp.cache_write_per_1m AS pricing_cache_write_per_1m
        FROM models m LEFT JOIN model_pricing mp ON mp.alias = m.alias
        ORDER BY m.sort_order, m.alias`,
     )
@@ -127,7 +130,8 @@ export function getModel(db: DB, id: string): Model | null {
     .prepare(
       `SELECT m.*, mp.prompt_per_1m AS pricing_prompt_per_1m,
               mp.completion_per_1m AS pricing_completion_per_1m,
-              mp.cached_per_1m AS pricing_cached_per_1m
+              mp.cached_per_1m AS pricing_cached_per_1m,
+              mp.cache_write_per_1m AS pricing_cache_write_per_1m
        FROM models m LEFT JOIN model_pricing mp ON mp.alias = m.alias
        WHERE m.id = ?`,
     )
@@ -168,6 +172,7 @@ export interface ModelInput {
     promptPer1m?: number | null;
     completionPer1m?: number | null;
     cachedPer1m?: number | null;
+    cacheWritePer1m?: number | null;
   } | null;
 }
 
@@ -193,6 +198,7 @@ export function createModel(db: DB, input: ModelInput): Model {
         promptPer1m: input.pricing.promptPer1m ?? null,
         completionPer1m: input.pricing.completionPer1m ?? null,
         cachedPer1m: input.pricing.cachedPer1m ?? null,
+        cacheWritePer1m: input.pricing.cacheWritePer1m ?? null,
       });
     }
   });
@@ -256,6 +262,7 @@ export function updateModel(
           promptPer1m: input.pricing.promptPer1m ?? null,
           completionPer1m: input.pricing.completionPer1m ?? null,
           cachedPer1m: input.pricing.cachedPer1m ?? null,
+          cacheWritePer1m: input.pricing.cacheWritePer1m ?? null,
         });
       }
     }

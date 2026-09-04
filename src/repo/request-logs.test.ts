@@ -191,18 +191,19 @@ test("dashboardStats excludes cached tokens from realized totals (top-level, byM
     assert.equal(s.tokensToday, 950);
     assert.equal(s.inputTokensToday, 1100);
     assert.equal(s.cachedTokensToday, 400);
-
+    assert.equal(s.cacheWriteTokensToday, 0);
     const model = s.byModel.find((m) => m.model === "claude-opus");
     assert.ok(model, "expected claude-opus in byModel");
     assert.equal(model!.tokens, 950);
     assert.equal(model!.cached, 400); // reported separately, not folded in
-
+    assert.equal(model!.cacheWrite, 0);
     const provider = s.byProvider.find(
       (p) => p.providerId === "anthropic-prod",
     );
     assert.ok(provider, "expected anthropic-prod in byProvider");
     assert.equal(provider!.tokens, 950);
     assert.equal(provider!.cached, 400);
+    assert.equal(provider!.cacheWrite, 0);
   } finally {
     closeDatabase(db);
   }
@@ -224,6 +225,38 @@ test("dashboardStats never goes negative when cached exceeds input (defensive fl
     const s = dashboardStats(db);
     // realized input = max(0, 50 - 80) = 0; total = 0 + 30 = 30.
     assert.equal(s.tokensToday, 30);
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test("dashboardStats excludes cache reads and writes from realized totals", () => {
+  const db = openDatabase(":memory:");
+  try {
+    // 1000 input (600 reads + 200 writes) + 100 output -> 300 realized.
+    insertRequestLog(db, {
+      ...base,
+      model: "claude-opus",
+      providerId: "anthropic-prod",
+      providerName: "Anthropic",
+      inputTokens: 1000,
+      outputTokens: 100,
+      cachedTokens: 600,
+      cacheWriteTokens: 200,
+      upstreamKeyHash: null,
+      upstreamKeyMask: null,
+    });
+    const s = dashboardStats(db);
+    assert.equal(s.tokensToday, 300);
+    assert.equal(s.cachedTokensToday, 600);
+    assert.equal(s.cacheWriteTokensToday, 200);
+    assert.equal(s.byModel[0]?.tokens, 300);
+    assert.equal(s.byModel[0]?.cached, 600);
+    assert.equal(s.byModel[0]?.cacheWrite, 200);
+    const logged = listRequestLogs(db)[0];
+    assert.equal(logged?.inputTokens, 1000);
+    assert.equal(logged?.cachedTokens, 600);
+    assert.equal(logged?.cacheWriteTokens, 200);
   } finally {
     closeDatabase(db);
   }

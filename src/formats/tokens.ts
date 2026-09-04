@@ -167,60 +167,117 @@ export function readMaxOutputTokens(
 // Returns {} when no usage info is present (e.g. passthrough / streaming).
 //
 // `input` is the TOTAL input tokens including cached - the same convention
-// OpenAI's `prompt_tokens` uses. Anthropic reports cached tokens separately
-// (cache_read_input_tokens) and its `input_tokens` excludes them, so this
-// function adds them back to normalise to one convention.
+// OpenAI's `prompt_tokens` uses. Anthropic reports cache buckets separately
+// (cache_read_input_tokens / cache_creation_input_tokens) and its
+// `input_tokens` excludes them, so this function adds them back to normalise
+// to one convention.
 //
-// `cached` is the subset of `input` that were prompt-cache hits, surfaced
-// separately for cost visibility. `computeCostUsd` subtracts `cached` from
-// `input` to derive the uncached billable portion - so `input` MUST include
-// cached tokens or the subtraction double-counts.
+// `cached` is the subset of `input` that were prompt-cache hits (reads),
+// `cacheWrite` the subset that were prompt-cache writes/creations, surfaced
+// separately for cost visibility. `computeCostUsd` subtracts both from `input`
+// to derive the uncached billable portion - so `input` MUST include both
+// buckets or the subtraction double-counts.
 export function readResponseUsage(body: unknown): {
   input?: number;
   output?: number;
   cached?: number;
+  cacheWrite?: number;
 } {
   if (!body || typeof body !== "object") return {};
   const u = (body as { usage?: unknown }).usage;
   if (!u || typeof u !== "object") return {};
   const o = u as Record<string, unknown>;
-  const out: { input?: number; output?: number; cached?: number } = {};
+  const out: {
+    input?: number;
+    output?: number;
+    cached?: number;
+    cacheWrite?: number;
+  } = {};
   // OpenAI Chat: prompt_tokens already includes cached - use as-is.
   if (typeof o.prompt_tokens === "number") out.input = o.prompt_tokens;
   if (typeof o.completion_tokens === "number") out.output = o.completion_tokens;
   // Anthropic / Responses: input_tokens + output_tokens.
   if (typeof o.input_tokens === "number") out.input = o.input_tokens;
   if (typeof o.output_tokens === "number") out.output = o.output_tokens;
+  // Gemini native generateContent: usageMetadata.promptTokenCount is already
+  // the total prompt size; cachedContentTokenCount is the cache-read subset.
+  if (typeof o.promptTokenCount === "number") out.input = o.promptTokenCount;
+  if (typeof o.candidatesTokenCount === "number")
+    out.output = o.candidatesTokenCount;
+  if (typeof o.totalTokenCount === "number" && out.input === undefined) {
+    const rest = o.totalTokenCount - (out.output ?? 0);
+    if (rest >= 0) out.input = rest;
+  }
   const cached = readCachedTokens(o);
   if (cached != null) {
     out.cached = cached;
-    // Anthropic's input_tokens excludes cached tokens. Normalise so `input`
-    // always means "total input including cached" (the convention
-    // computeCostUsd expects). For OpenAI, prompt_tokens already includes
-    // cached, so the addition is harmless only if we detect the Anthropic
-    // shape: input_tokens is set AND cache_read_input_tokens is present (the
-    // field readCachedTokens reads for Anthropic).
-    if (
-      typeof o.input_tokens === "number" &&
-      typeof o.cache_read_input_tokens === "number"
-    ) {
-      out.input = o.input_tokens + cached;
-    }
+  }
+  const cacheWrite = readCacheWriteTokens(o);
+  if (cacheWrite != null) {
+    out.cacheWrite = cacheWrite;
+  }
+  // Anthropic's input_tokens excludes cache buckets. Normalise so `input`
+  // always means "total input including cached" (the convention
+  // computeCostUsd expects). For OpenAI, prompt_tokens already includes
+  // both buckets, so only add when detecting the Anthropic shape.
+  if (typeof o.input_tokens === "number") {
+    let add = 0;
+    if (typeof o.cache_read_input_tokens === "number") add += cached ?? 0;
+    if (typeof o.cache_creation_input_tokens === "number")
+      add += cacheWrite ?? 0;
+    if (add > 0 && out.input != null) out.input = o.input_tokens + add;
   }
   return out;
 }
 
+function numOrNull(v: unknown): number | null {
+  if (typeof v !== "number" || !Number.isFinite(v) || v < 0) return null;
+  return v;
+}
+
 // Pull cached (prompt-cache-hit) input tokens from a usage object across the
-// three shapes. Returns null when the field isn't present.
+// shapes. Returns null when the field isn't present. Negative or non-numeric
+// values are treated as absent.
 export function readCachedTokens(o: Record<string, unknown>): number | null {
   // Anthropic: usage.cache_read_input_tokens
-  if (typeof o.cache_read_input_tokens === "number")
-    return o.cache_read_input_tokens;
+  const anthropic = numOrNull(o.cache_read_input_tokens);
+  if (anthropic != null) return anthropic;
+  // Gemini native: usage.cachedContentTokenCount
+  const gemini = numOrNull(o.cachedContentTokenCount);
+  if (gemini != null) return gemini;
   // OpenAI Chat/Responses: usage.prompt_tokens_details.cached_tokens
   const details = o.prompt_tokens_details ?? o.input_tokens_details;
+  if (details && typeof details === "object" && "cached_tokens" in details) {
+    const nested = numOrNull(details.cached_tokens);
+    if (nested != null) return nested;
+  }
+  return null;
+}
+
+// Pull cache-write (creation) input tokens from a usage object across the
+// shapes. Returns null when the field isn't present. Negative or non-numeric
+// values are treated as absent.
+export function readCacheWriteTokens(
+  o: Record<string, unknown>,
+): number | null {
+  // Anthropic: usage.cache_creation_input_tokens. OpenAI-compatible gateways
+  // (Cline) also report a top-level usage.cache_write_tokens.
+  const topLevel = numOrNull(
+    o.cache_creation_input_tokens ?? o.cache_write_tokens,
+  );
+  if (topLevel != null) return topLevel;
+  // Nested OpenAI details: prompt_tokens_details.cache_write_tokens (and the
+  // legacy cache_creation_tokens variant the chat->messages bridge reads).
+  const details = o.prompt_tokens_details ?? o.input_tokens_details;
   if (details && typeof details === "object") {
-    const c = (details as Record<string, unknown>).cached_tokens;
-    if (typeof c === "number") return c;
+    if ("cache_write_tokens" in details) {
+      const nested = numOrNull(details.cache_write_tokens);
+      if (nested != null) return nested;
+    }
+    if ("cache_creation_tokens" in details) {
+      const legacy = numOrNull(details.cache_creation_tokens);
+      if (legacy != null) return legacy;
+    }
   }
   return null;
 }

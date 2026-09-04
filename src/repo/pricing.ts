@@ -1,5 +1,8 @@
 // Model pricing repository. One row per exposed-model alias, carrying
-// per-million-token rates for prompt, completion, and cached tokens.
+// per-million-token rates for prompt, completion, cached (read), and
+// cache-write tokens. The write rate is optional per model and defaults to
+// the cached rate, so reads and writes cost the same unless the operator
+// sets a distinct write price.
 
 import type { Database as DB } from "better-sqlite3";
 
@@ -8,6 +11,7 @@ export interface ModelPricing {
   promptPer1m: number | null;
   completionPer1m: number | null;
   cachedPer1m: number | null;
+  cacheWritePer1m: number | null;
   updatedAt: string;
 }
 
@@ -16,6 +20,7 @@ interface PricingRow {
   prompt_per_1m: number | null;
   completion_per_1m: number | null;
   cached_per_1m: number | null;
+  cache_write_per_1m: number | null;
   updated_at: string;
 }
 
@@ -25,6 +30,7 @@ function mapPricing(r: PricingRow): ModelPricing {
     promptPer1m: r.prompt_per_1m,
     completionPer1m: r.completion_per_1m,
     cachedPer1m: r.cached_per_1m,
+    cacheWritePer1m: r.cache_write_per_1m,
     updatedAt: r.updated_at,
   };
 }
@@ -54,18 +60,20 @@ export function upsertPricing(
 ): ModelPricing {
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO model_pricing (alias, prompt_per_1m, completion_per_1m, cached_per_1m, updated_at)
-     VALUES (@alias, @promptPer1m, @completionPer1m, @cachedPer1m, @now)
+    `INSERT INTO model_pricing (alias, prompt_per_1m, completion_per_1m, cached_per_1m, cache_write_per_1m, updated_at)
+     VALUES (@alias, @promptPer1m, @completionPer1m, @cachedPer1m, @cacheWritePer1m, @now)
      ON CONFLICT(alias) DO UPDATE SET
        prompt_per_1m = @promptPer1m,
        completion_per_1m = @completionPer1m,
        cached_per_1m = @cachedPer1m,
+       cache_write_per_1m = @cacheWritePer1m,
        updated_at = @now`,
   ).run({
     alias: p.alias,
     promptPer1m: p.promptPer1m,
     completionPer1m: p.completionPer1m,
     cachedPer1m: p.cachedPer1m,
+    cacheWritePer1m: p.cacheWritePer1m,
     now,
   });
   return { ...p, updatedAt: now };
@@ -76,27 +84,35 @@ export function deletePricing(db: DB, alias: string): boolean {
   return r.changes > 0;
 }
 
-// Compute per-request dollar cost from actual tokens. Cached tokens are
-// billed at cachedPer1m when set, otherwise at promptPer1m (OpenAI convention).
-// Any missing required rate makes the whole row's cost null (no partial estimates).
+// Compute per-request dollar cost from actual tokens. Cached (read) tokens are
+// billed at cachedPer1m when set, otherwise at promptPer1m (OpenAI
+// convention). Cache-write tokens use cacheWritePer1m when set, otherwise
+// fall back to the cached rate - so reads and writes cost the same unless a
+// distinct write price is configured. Any missing required rate makes the
+// whole row's cost null (no partial estimates).
 export function computeCostUsd(
   pricing: ModelPricing | null | undefined,
   inputTokens: number | null,
   outputTokens: number | null,
   cachedTokens: number | null,
+  cacheWriteTokens: number | null = null,
 ): number | null {
   if (!pricing) return null;
-  const { promptPer1m, completionPer1m, cachedPer1m } = pricing;
+  const { promptPer1m, completionPer1m, cachedPer1m, cacheWritePer1m } =
+    pricing;
   if (promptPer1m == null || completionPer1m == null) return null;
 
   const cachedRate = cachedPer1m ?? promptPer1m;
+  const writeRate = cacheWritePer1m ?? cachedRate;
   const cached = cachedTokens ?? 0;
-  const inputBillable = Math.max(0, (inputTokens ?? 0) - cached);
+  const cacheWrite = cacheWriteTokens ?? 0;
+  const inputBillable = Math.max(0, (inputTokens ?? 0) - cached - cacheWrite);
   const output = outputTokens ?? 0;
 
   return (
     (inputBillable * promptPer1m +
       cached * cachedRate +
+      cacheWrite * writeRate +
       output * completionPer1m) /
     1_000_000
   );
@@ -114,6 +130,7 @@ if (process.argv[1]?.endsWith("pricing.ts")) {
     promptPer1m: 0.15,
     completionPer1m: 0.6,
     cachedPer1m: 0.075,
+    cacheWritePer1m: null,
     updatedAt: "",
   };
   // Full pricing: 1000 input, 500 output, 200 cached
@@ -147,6 +164,23 @@ if (process.argv[1]?.endsWith("pricing.ts")) {
   // Null tokens → 0 cost with valid pricing
   const c5 = computeCostUsd(full, null, null, null);
   assert(c5 === 0, `null tokens with valid pricing: got ${c5}`);
+
+  // Write fallback: cacheWritePer1m null → billed at cached rate 0.075
+  // inputBillable = 1000 - 200 - 100 = 700
+  // cost = (700 * 0.15 + 200 * 0.075 + 100 * 0.075 + 500 * 0.6) / 1e6 = 0.0004275
+  const c6 = computeCostUsd({ ...full, cacheWritePer1m: null }, 1000, 500, 200, 100);
+  assert(
+    c6 !== null && Math.abs(c6 - 0.0004275) < 1e-9,
+    `write fallback: got ${c6}`,
+  );
+
+  // Distinct write rate: cacheWritePer1m 0.5
+  // cost = (700 * 0.15 + 200 * 0.075 + 100 * 0.5 + 500 * 0.6) / 1e6 = 0.00047
+  const c7 = computeCostUsd({ ...full, cacheWritePer1m: 0.5 }, 1000, 500, 200, 100);
+  assert(
+    c7 !== null && Math.abs(c7 - 0.00047) < 1e-9,
+    `distinct write rate: got ${c7}`,
+  );
 
   console.log("All pricing tests passed.");
 }

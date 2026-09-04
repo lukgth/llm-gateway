@@ -542,6 +542,7 @@ export interface Model {
     promptPer1m: number | null;
     completionPer1m: number | null;
     cachedPer1m: number | null;
+    cacheWritePer1m: number | null;
   } | null;
 }
 
@@ -555,6 +556,7 @@ export interface DefaultModelPricing {
   promptPer1m: number;
   completionPer1m: number;
   cachedPer1m?: number;
+  cacheWritePer1m?: number;
 }
 
 export interface User {
@@ -598,6 +600,8 @@ export interface RequestLog {
   inputTokens: number | null;
   outputTokens: number | null;
   cachedTokens: number | null;
+  /** Prompt tokens spent writing the cache (absent/null in older payloads). */
+  cacheWriteTokens?: number | null;
   latencyMs: number | null;
   client: string | null;
   path: string | null;
@@ -642,6 +646,8 @@ export interface DashboardStats {
   tokensToday: number;
   inputTokensToday: number;
   cachedTokensToday: number;
+  /** Prompt tokens spent writing the cache today (absent in older payloads). */
+  cacheWriteTokensToday?: number;
   errorRateToday: number;
   costUsdToday: number;
   byModel: Array<{
@@ -649,6 +655,7 @@ export interface DashboardStats {
     requests: number;
     tokens: number;
     cached: number;
+    cacheWrite?: number;
     costUsd: number;
   }>;
   byProvider: Array<{
@@ -658,6 +665,7 @@ export interface DashboardStats {
     requests: number;
     tokens: number;
     cached: number;
+    cacheWrite?: number;
     costUsd: number;
   }>;
   statusBands: { success: number; clientError: number; serverError: number };
@@ -681,11 +689,12 @@ export interface UsageRow {
   limit: number | null;
   used: number;
   cached: number;
+  cacheWrite?: number;
   day: string;
 }
 
 export interface UsageResponse {
-  today: { total: number; input: number; cached: number; keys: UsageRow[] };
+  today: { total: number; input: number; cached: number; cacheWrite?: number; keys: UsageRow[] };
   history: Array<{ day: string; tokens: number }>;
 }
 
@@ -765,6 +774,7 @@ export interface ModelInput {
     promptPer1m?: number | null;
     completionPer1m?: number | null;
     cachedPer1m?: number | null;
+    cacheWritePer1m?: number | null;
   };
 }
 
@@ -829,6 +839,7 @@ export interface UsageBreakdownRow {
   providerName: string | null;
   tokens: number;
   cached: number;
+  cacheWrite?: number;
   requests: number;
   costUsd: number;
 }

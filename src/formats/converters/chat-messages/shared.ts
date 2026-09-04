@@ -93,8 +93,11 @@ export function anthropicUsageToChat(u: AnthropicUsage | undefined): ChatUsage {
     completion_tokens: output,
     total_tokens: prompt + output,
   };
-  if (cacheRead > 0) {
-    usage.prompt_tokens_details = { cached_tokens: cacheRead };
+  if (cacheRead > 0 || cacheCreate > 0) {
+    usage.prompt_tokens_details = {};
+    if (cacheRead > 0) usage.prompt_tokens_details.cached_tokens = cacheRead;
+    if (cacheCreate > 0)
+      usage.prompt_tokens_details.cache_write_tokens = cacheCreate;
   }
   return usage;
 }
@@ -109,6 +112,7 @@ export function chatUsageToAnthropic(
         prompt_tokens_details?: {
           cached_tokens?: number;
           cache_creation_tokens?: number;
+          cache_write_tokens?: number;
         };
       }
     | undefined,
@@ -116,7 +120,10 @@ export function chatUsageToAnthropic(
   const prompt = num(u?.prompt_tokens);
   const output = num(u?.completion_tokens);
   const cacheRead = num(u?.prompt_tokens_details?.cached_tokens);
-  const cacheCreate = num(u?.prompt_tokens_details?.cache_creation_tokens);
+  const cacheCreate = Math.max(
+    num(u?.prompt_tokens_details?.cache_creation_tokens),
+    num(u?.prompt_tokens_details?.cache_write_tokens),
+  );
   const input = Math.max(0, prompt - cacheRead - cacheCreate);
   const usage: AnthropicUsage = {
     input_tokens: input,

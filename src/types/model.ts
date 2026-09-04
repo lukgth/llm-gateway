@@ -44,5 +44,6 @@ export interface Model {
     promptPer1m: number | null;
     completionPer1m: number | null;
     cachedPer1m: number | null;
+    cacheWritePer1m: number | null;
   } | null;
 }

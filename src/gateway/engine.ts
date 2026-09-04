@@ -457,6 +457,7 @@ export class ForwardingEngine {
         null,
         null,
         null,
+        null,
         `build chain failed: ${(err as Error).message}`,
         startedAt,
       );
@@ -470,6 +471,7 @@ export class ForwardingEngine {
         null,
         null,
         502,
+        null,
         null,
         null,
         null,
@@ -855,6 +857,7 @@ export class ForwardingEngine {
               input: result.inputTokens ?? undefined,
               output: result.outputTokens ?? undefined,
               cached: result.cachedTokens ?? undefined,
+              cacheWrite: result.cacheWriteTokens ?? undefined,
             });
             this.recordLog(
               ctx,
@@ -864,6 +867,7 @@ export class ForwardingEngine {
               result.inputTokens ?? (ctx.inputTokens || null),
               result.outputTokens ?? null,
               result.cachedTokens ?? null,
+              result.cacheWriteTokens ?? null,
               result.error ?? null,
               startedAt,
               result.debugResponse ?? null,
@@ -932,6 +936,7 @@ export class ForwardingEngine {
       first?.upstreamModel ?? null,
       status,
       ctx.inputTokens || null,
+      null,
       null,
       null,
       logError,
@@ -1628,6 +1633,7 @@ export class ForwardingEngine {
         inputTokens: usage.input ?? ctx.inputTokens,
         outputTokens: usage.output ?? null,
         cachedTokens: usage.cached ?? null,
+        cacheWriteTokens: usage.cacheWrite ?? null,
         debugResponse: usage.debugResponse ?? null,
       };
     }
@@ -1716,6 +1722,7 @@ export class ForwardingEngine {
         upstreamModel,
         502,
         ctx.inputTokens || null,
+        null,
         null,
         null,
         "stream conversion unsupported",
@@ -1815,6 +1822,7 @@ export class ForwardingEngine {
         usage.input ?? (ctx.inputTokens || null),
         usage.output ?? null,
         usage.cached ?? null,
+        usage.cacheWrite ?? null,
         error,
         startedAt,
         debugResponse,
@@ -1919,6 +1927,7 @@ export class ForwardingEngine {
     input?: number;
     output?: number;
     cached?: number;
+    cacheWrite?: number;
     debugResponse?: string | null;
   }> {
     const text = await readErrorBody(upRes, MAX_BUFFER_BYTES);
@@ -2143,7 +2152,7 @@ export class ForwardingEngine {
   private settleUsage(
     ctx: ForwardContext,
     provider: Provider | null,
-    usage: { input?: number; output?: number; cached?: number },
+    usage: { input?: number; output?: number; cached?: number; cacheWrite?: number },
   ): void {
     if (!ctx.apiKey) return;
     // These are raw better-sqlite3 writes; a transient DB error must not escape
@@ -2164,7 +2173,7 @@ export class ForwardingEngine {
       //    actually processed at full cost.
       const realizedInput = Math.max(
         0,
-        (usage.input ?? 0) - (usage.cached ?? 0),
+        (usage.input ?? 0) - (usage.cached ?? 0) - (usage.cacheWrite ?? 0),
       );
       const total = realizedInput + (usage.output ?? 0);
       if (total > 0) {
@@ -2173,6 +2182,7 @@ export class ForwardingEngine {
           usage.input ?? null,
           usage.output ?? null,
           usage.cached ?? null,
+          usage.cacheWrite ?? null,
         );
         addUsage(this.db, ctx.apiKey.id, total);
         addBreakdown(
@@ -2823,6 +2833,7 @@ export class ForwardingEngine {
       result.usage.input ?? (ctx.inputTokens || null),
       result.usage.output ?? null,
       result.usage.cached ?? null,
+      result.usage.cacheWrite ?? null,
       result.error ?? null,
       startedAt,
       null,
@@ -2839,6 +2850,7 @@ export class ForwardingEngine {
     inputTokens: number | null,
     outputTokens: number | null,
     cachedTokens: number | null,
+    cacheWriteTokens: number | null,
     error: string | null,
     startedAt?: number,
     debugResponse?: string | null,
@@ -2853,6 +2865,7 @@ export class ForwardingEngine {
         inputTokens,
         outputTokens,
         cachedTokens,
+        cacheWriteTokens,
       );
       insertRequestLog(this.db, {
         apiKeyId: ctx.apiKey?.id ?? null,
@@ -2868,6 +2881,7 @@ export class ForwardingEngine {
         inputTokens,
         outputTokens,
         cachedTokens,
+        cacheWriteTokens,
         latencyMs: startedAt ? Date.now() - startedAt : null,
         client: ctx.client,
         path: ctx.clientPath,

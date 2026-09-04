@@ -153,6 +153,63 @@ test("cached is omitted from usage() when never reported", () => {
   const o = new SseUsageObserver();
   feed(o, [sseLine({ usage: { input_tokens: 10, output_tokens: 5 } })]);
   assert.equal(o.usage(0).cached, undefined);
+  assert.equal(o.usage(0).cacheWrite, undefined);
+});
+
+test("tracks cache writes for Anthropic message_start usage", () => {
+  const o = new SseUsageObserver();
+  feed(o, [
+    sseLine({
+      usage: {
+        input_tokens: 100,
+        cache_read_input_tokens: 600,
+        cache_creation_input_tokens: 200,
+      },
+    }),
+  ]);
+  const usage = o.usage(0);
+  assert.equal(usage.cached, 600);
+  assert.equal(usage.cacheWrite, 200);
+  assert.equal(usage.input, 900);
+});
+
+test("tracks OpenAI/Cline nested write metadata without double-addition", () => {
+  const o = new SseUsageObserver();
+  feed(o, [
+    sseLine({
+      usage: {
+        prompt_tokens: 900,
+        completion_tokens: 8,
+        prompt_tokens_details: { cached_tokens: 600, cache_write_tokens: 200 },
+      },
+    }),
+  ]);
+  const usage = o.usage(0);
+  assert.equal(usage.cached, 600);
+  assert.equal(usage.cacheWrite, 200);
+  assert.equal(usage.input, 900);
+});
+
+test("cache buckets keep the max across usage events", () => {
+  const o = new SseUsageObserver();
+  feed(o, [
+    sseLine({
+      usage: {
+        input_tokens: 100,
+        cache_read_input_tokens: 10,
+        cache_creation_input_tokens: 5,
+      },
+    }),
+    sseLine({
+      usage: {
+        input_tokens: 50,
+        cache_read_input_tokens: 600,
+        cache_creation_input_tokens: 200,
+      },
+    }),
+  ]);
+  assert.equal(o.usage(0).cached, 600);
+  assert.equal(o.usage(0).cacheWrite, 200);
 });
 
 // --- fallback estimate (no usage reported at all) -----------------------------

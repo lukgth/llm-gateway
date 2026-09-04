@@ -21,6 +21,12 @@ test("DEFAULT_MODEL_PRICING: every entry has positive prompt/completion rates an
         `${m.id} cachedPer1m (${m.cachedPer1m}) should be > 0 and <= promptPer1m (${m.promptPer1m})`,
       );
     }
+    if (m.cacheWritePer1m != null) {
+      assert.ok(
+        m.cacheWritePer1m > 0,
+        `${m.id} cacheWritePer1m (${m.cacheWritePer1m}) should be > 0`,
+      );
+    }
   }
 });
 
@@ -230,4 +236,36 @@ test("defaultPricingFor: glm-5.3-flash stores the list price, not the promo", ()
   assert.equal(m!.promptPer1m, 0.15);
   assert.equal(m!.completionPer1m, 0.5);
   assert.equal(m!.cachedPer1m, 0.03);
+});
+
+test("defaultPricingFor: cache-write rates match published 5-minute/default-tier prices", () => {
+  const cases: Array<[string, number]> = [
+    // Anthropic 5m writes at 1.25x base.
+    // https://platform.claude.com/docs/en/about-claude/pricing
+    ["claude-fable-5", 12.5],
+    ["claude-mythos-5-1", 12.5],
+    ["claude-opus-5", 6.25],
+    ["claude-opus-4-5", 6.25],
+    ["claude-sonnet-5", 2.5],
+    ["claude-sonnet-4-5", 3.75],
+    ["claude-haiku-4-5", 1.25],
+    // OpenAI GPT-5.6 generation and later, writes at 1.25x uncached input.
+    // https://developers.openai.com/api/docs/guides/prompt-caching
+    ["gpt-6-astra", 12.5],
+    ["gpt-5.6-sol", 5],
+    ["gpt-5.6-terra", 2.5],
+    ["gpt-5.6-luna", 0.25],
+  ];
+  for (const [id, write] of cases) {
+    const m = defaultPricingFor(id);
+    assert.ok(m, `expected to resolve ${id}`);
+    assert.equal(m!.cacheWritePer1m, write, `${id} cacheWritePer1m`);
+  }
+  // Earlier OpenAI generations and providers with no published write price
+  // omit the field, so computeCostUsd falls back to the cached rate.
+  for (const id of ["gpt-5.5", "deepseek-v4-flash", "gemini-3.7-flash"]) {
+    const m = defaultPricingFor(id);
+    assert.ok(m, `expected to resolve ${id}`);
+    assert.equal(m!.cacheWritePer1m, undefined, `${id} cacheWritePer1m`);
+  }
 });

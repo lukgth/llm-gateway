@@ -88,3 +88,74 @@ test("buffered healing repairs degenerate native arguments without duplicating c
   assert.equal((message.tool_calls as unknown[]).length, 1);
   assert.notEqual(((message.tool_calls as Array<Record<string, unknown>>)[0].function as Record<string, unknown>).arguments, "{}");
 });
+
+function applyRequest(body: Record<string, unknown>): Record<string, unknown> {
+  const stages = clinefree.requestTransforms(provider);
+  assert.deepEqual(
+    stages.map((stage) => stage.name),
+    ["clinefree:prompt-cache"],
+  );
+  return applyBodyTransforms(stages as never, body, context) as Record<
+    string,
+    unknown
+  >;
+}
+
+test("Cline Free request adds ephemeral cache_control at top level and latest user message", () => {
+  const out = applyRequest({
+    model: "m",
+    messages: [
+      { role: "system", content: "S" },
+      { role: "user", content: "U" },
+    ],
+  });
+  assert.deepEqual(out.cache_control, { type: "ephemeral" });
+  const messages = out.messages as Array<Record<string, unknown>>;
+  assert.deepEqual(messages[1].cache_control, { type: "ephemeral" });
+  assert.equal(messages[0].cache_control, undefined);
+  assert.equal(out.prompt_cache_retention, undefined);
+  assert.equal(out.prompt_cache_key, undefined);
+});
+
+test("Cline Free request preserves client-supplied cache markers", () => {
+  const out = applyRequest({
+    model: "m",
+    cache_control: { type: "ephemeral", ttl: "1h" },
+    messages: [
+      { role: "user", content: "first" },
+      {
+        role: "user",
+        content: "latest",
+        cache_control: { type: "ephemeral", ttl: "5m" },
+      },
+    ],
+  });
+  assert.deepEqual(out.cache_control, { type: "ephemeral", ttl: "1h" });
+  const messages = out.messages as Array<Record<string, unknown>>;
+  assert.equal(messages[0].cache_control, undefined);
+  assert.deepEqual(messages[1].cache_control, {
+    type: "ephemeral",
+    ttl: "5m",
+  });
+});
+
+test("Cline Free request without a user message gets only the top-level marker", () => {
+  const out = applyRequest({
+    model: "m",
+    messages: [{ role: "assistant", content: "hi" }],
+  });
+  assert.deepEqual(out.cache_control, { type: "ephemeral" });
+  const messages = out.messages as Array<Record<string, unknown>>;
+  assert.equal(messages[0].cache_control, undefined);
+});
+
+test("Cline Free request leaves Anthropic-shaped bodies untouched", () => {
+  const body = {
+    model: "m",
+    system: "S",
+    messages: [{ role: "user", content: "U" }],
+  };
+  const out = applyRequest({ ...body });
+  assert.equal(out.cache_control, undefined);
+  assert.deepEqual(out.messages, body.messages);
+});

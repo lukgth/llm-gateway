@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS request_logs (
   input_tokens  INTEGER,
   output_tokens INTEGER,
   cached_tokens INTEGER,
+  cache_write_tokens INTEGER,
   latency_ms    INTEGER,
   client        TEXT,
   path          TEXT,
@@ -329,6 +330,7 @@ CREATE TABLE IF NOT EXISTS model_pricing (
   prompt_per_1m     REAL,
   completion_per_1m REAL,
   cached_per_1m     REAL,
+  cache_write_per_1m REAL,
   updated_at        TEXT NOT NULL
 );
 
@@ -494,6 +496,7 @@ function migrate(db: DB): void {
   CREATE INDEX IF NOT EXISTS idx_api_key_models_model ON api_key_models(model_id);`);
   addColumnIfMissing(db, "request_logs", "client", "TEXT");
   addColumnIfMissing(db, "request_logs", "cached_tokens", "INTEGER");
+  addColumnIfMissing(db, "request_logs", "cache_write_tokens", "INTEGER");
   addColumnIfMissing(db, "request_logs", "debug_request", "TEXT");
   addColumnIfMissing(db, "request_logs", "debug_response", "TEXT");
   addColumnIfMissing(db, "request_logs", "upstream_key_hash", "TEXT");
@@ -530,8 +533,15 @@ function migrate(db: DB): void {
     prompt_per_1m REAL,
     completion_per_1m REAL,
     cached_per_1m REAL,
+    cache_write_per_1m REAL,
     updated_at TEXT NOT NULL
   );`);
+  addColumnIfMissing(
+    db,
+    "model_pricing",
+    "cache_write_per_1m",
+    "REAL",
+  );
   migrateProviderKeysToTable(db);
   migrateApiKeysDropFull(db);
 }

@@ -10,17 +10,17 @@ import {
 } from "../base";
 import { WireKind, type Provider } from "../../types";
 import type {
+  AnyRequestTransform,
   AnyResponseTransform,
   AnyStreamTransform,
 } from "../../formats/pipeline";
-import { onResponse } from "../../formats/pipeline";
+import { onRequest, onResponse } from "../../formats/pipeline";
 import {
   DSML_COMPAT_META,
   DsmlChatStreamTransform,
   parseDsmlToolCalls,
 } from "../../formats/dsml";
 import type { UpstreamModel } from "../../formats/wire/models";
-import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 import {
   STATIC_CLINE_FREE_MODELS,
   clineFingerprintHeaders,
@@ -59,6 +59,31 @@ function healBufferedChat(body: Record<string, unknown>): Record<string, unknown
   }
   return body;
 }
+// Provider-local prompt-cache markers for api.cline.bot (Cline wire contract).
+// Emits Anthropic-style `cache_control: { type: "ephemeral" }` at the top level
+// and on the latest user message. Chat-shaped bodies only; Anthropic-shaped
+// bodies (top-level `system`) pass through untouched. Client-supplied markers
+// win; never emits `prompt_cache_retention` / `prompt_cache_key`.
+function applyClineFreePromptCache(
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  if (body.system !== undefined) return body;
+  if (!Array.isArray(body.messages)) return body;
+  if (body.cache_control === undefined) {
+    body.cache_control = { type: "ephemeral" };
+  }
+  const messages = body.messages as unknown[];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (!isObject(msg)) continue;
+    if (msg.role !== "user") continue;
+    if (msg.cache_control === undefined) {
+      msg.cache_control = { type: "ephemeral" };
+    }
+    break;
+  }
+  return body;
+}
 
 class ClineFreeAdapter extends OpenAICompatibleAdapter {
   override chatCompletions(ctx: BuildCtx): BuiltRequest {
@@ -71,6 +96,16 @@ class ClineFreeAdapter extends OpenAICompatibleAdapter {
       },
       body: ctx.body,
     };
+  }
+
+  override requestTransforms(_provider: Provider): AnyRequestTransform[] {
+    return [
+      onRequest("chat", "clinefree:prompt-cache", (body) =>
+        applyClineFreePromptCache(
+          body as unknown as Record<string, unknown>,
+        ) as never,
+      ),
+    ];
   }
 
   // Temporary compatibility workaround: api.cline.bot currently leaks DeepSeek V4 DSML tool markup and wraps buffered completions; remove this adapter-specific healing once Cline's serving path decodes DSML and returns standard OpenAI responses.
@@ -185,7 +220,4 @@ export const clinefree = new ClineFreeAdapter({
       hint: "Managed by the Cline Free integration.",
     },
   ],
-  quirks: {
-    defaultTransforms: OPENAI_DEFAULT_TRANSFORMS,
-  },
 });

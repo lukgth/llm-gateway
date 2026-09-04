@@ -47,8 +47,10 @@ export interface RequestLog {
   status: number | null;
   inputTokens: number | null;
   outputTokens: number | null;
-  /** Prompt tokens served from cache (subset of inputTokens); null if unknown. */
+  /** Prompt tokens served from cache (reads; subset of inputTokens); null if unknown. */
   cachedTokens: number | null;
+  /** Prompt tokens spent writing the cache (subset of inputTokens); null if unknown. */
+  cacheWriteTokens: number | null;
   latencyMs: number | null;
   client: string | null;
   path: string | null;

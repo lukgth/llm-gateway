@@ -19,13 +19,14 @@
 // seen is the final total.
 
 import { Transform, type TransformCallback } from "stream";
-import { readCachedTokens } from "../formats/tokens";
+import { readCachedTokens, readCacheWriteTokens } from "../formats/tokens";
 import type { ResponseSummary } from "./debug-capture";
 
 export interface StreamUsage {
   input?: number;
   output?: number;
   cached?: number;
+  cacheWrite?: number;
 }
 
 // Per-string cap while accumulating streamed text/args, so a runaway stream
@@ -38,6 +39,7 @@ export class SseUsageObserver extends Transform {
   private seenInput: number | null = null;
   private seenOutput: number | null = null;
   private seenCached: number | null = null;
+  private seenCacheWrite: number | null = null;
   private fallbackChars = 0;
 
   // --- optional debug capture (off unless enabled) ---
@@ -79,6 +81,9 @@ export class SseUsageObserver extends Transform {
       input,
       output,
       ...(this.seenCached != null ? { cached: this.seenCached } : {}),
+      ...(this.seenCacheWrite != null
+        ? { cacheWrite: this.seenCacheWrite }
+        : {}),
     };
   }
 
@@ -193,23 +198,34 @@ export class SseUsageObserver extends Transform {
     let input = num(o.input_tokens) ?? num(o.prompt_tokens) ?? null;
     const output = num(o.output_tokens) ?? num(o.completion_tokens) ?? null;
     const cached = readCachedTokens(o);
-    // Anthropic's input_tokens excludes cached tokens. Normalise so `input`
+    const cacheWrite = readCacheWriteTokens(o);
+    // Anthropic's input_tokens excludes cache buckets. Normalise so `input`
     // always means "total input including cached" - the convention
     // computeCostUsd expects. For OpenAI, prompt_tokens already includes
-    // cached, so only add when detecting the Anthropic shape.
+    // both buckets, so only add when detecting the Anthropic shape.
     if (
       input != null &&
-      cached != null &&
       typeof o.input_tokens === "number" &&
-      typeof o.cache_read_input_tokens === "number"
+      (typeof o.cache_read_input_tokens === "number" ||
+        typeof o.cache_creation_input_tokens === "number")
     ) {
-      input = input + cached;
+      if (typeof o.cache_read_input_tokens === "number" && cached != null) {
+        input = input + cached;
+      }
+      if (
+        typeof o.cache_creation_input_tokens === "number" &&
+        cacheWrite != null
+      ) {
+        input = input + cacheWrite;
+      }
     }
     if (input != null) this.seenInput = Math.max(this.seenInput ?? 0, input);
     if (output != null)
       this.seenOutput = Math.max(this.seenOutput ?? 0, output);
     if (cached != null)
       this.seenCached = Math.max(this.seenCached ?? 0, cached);
+    if (cacheWrite != null)
+      this.seenCacheWrite = Math.max(this.seenCacheWrite ?? 0, cacheWrite);
   }
 
   private readDelta(obj: Record<string, unknown>): void {

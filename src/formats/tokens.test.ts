@@ -13,6 +13,7 @@ import {
   readMaxOutputTokens,
   readResponseUsage,
   readCachedTokens,
+  readCacheWriteTokens,
 } from "./tokens";
 
 // --- countTextTokens ---------------------------------------------------------
@@ -195,6 +196,86 @@ test("readResponseUsage: OpenAI cached tokens already included in prompt_tokens"
   assert.deepEqual(usage, { input: 100, output: 20, cached: 60 });
 });
 
+test("readResponseUsage: Anthropic read+write folded into input total", () => {
+  const usage = readResponseUsage({
+    usage: {
+      input_tokens: 100,
+      output_tokens: 8,
+      cache_read_input_tokens: 600,
+      cache_creation_input_tokens: 200,
+    },
+  });
+  assert.deepEqual(usage, {
+    input: 900,
+    output: 8,
+    cached: 600,
+    cacheWrite: 200,
+  });
+});
+
+test("readResponseUsage: OpenAI read+write extracted without double-addition", () => {
+  const usage = readResponseUsage({
+    usage: {
+      prompt_tokens: 900,
+      completion_tokens: 8,
+      prompt_tokens_details: { cached_tokens: 600, cache_write_tokens: 200 },
+    },
+  });
+  assert.deepEqual(usage, {
+    input: 900,
+    output: 8,
+    cached: 600,
+    cacheWrite: 200,
+  });
+});
+
+test("readResponseUsage: OpenAI top-level + Responses-nested write fields", () => {
+  const topLevel = readResponseUsage({
+    usage: {
+      prompt_tokens: 900,
+      completion_tokens: 8,
+      cache_write_tokens: 200,
+    },
+  });
+  assert.equal(topLevel.cacheWrite, 200);
+  assert.equal(topLevel.input, 900);
+  const nested = readResponseUsage({
+    usage: {
+      input_tokens: 900,
+      output_tokens: 8,
+      input_tokens_details: { cache_write_tokens: 200 },
+    },
+  });
+  assert.equal(nested.cacheWrite, 200);
+  assert.equal(nested.input, 900);
+});
+
+test("readResponseUsage: Gemini cached-content reads", () => {
+  const usage = readResponseUsage({
+    usage: {
+      promptTokenCount: 900,
+      candidatesTokenCount: 8,
+      cachedContentTokenCount: 600,
+    },
+  });
+  assert.deepEqual(usage, { input: 900, output: 8, cached: 600 });
+});
+
+test("readResponseUsage: absent or invalid cache fields stay absent", () => {
+  assert.deepEqual(readResponseUsage({ usage: { prompt_tokens: 5 } }), {
+    input: 5,
+  });
+  assert.deepEqual(
+    readResponseUsage({
+      usage: {
+        prompt_tokens: 900,
+        prompt_tokens_details: { cached_tokens: -1, cache_write_tokens: "x" },
+      },
+    }),
+    { input: 900 },
+  );
+});
+
 // --- readCachedTokens ---------------------------------------------------------
 
 test("readCachedTokens: Anthropic cache_read_input_tokens", () => {
@@ -205,6 +286,29 @@ test("readCachedTokens: OpenAI prompt_tokens_details.cached_tokens (Chat)", () =
   assert.equal(
     readCachedTokens({ prompt_tokens_details: { cached_tokens: 30 } }),
     30,
+  );
+});
+
+test("readCachedTokens: negative values are absent", () => {
+  assert.equal(readCachedTokens({ cache_read_input_tokens: -1 }), null);
+});
+
+test("readCacheWriteTokens: Anthropic, OpenAI, and nested shapes", () => {
+  assert.equal(
+    readCacheWriteTokens({ cache_creation_input_tokens: 7 }),
+    7,
+  );
+  assert.equal(readCacheWriteTokens({ cache_write_tokens: 9 }), 9);
+  assert.equal(
+    readCacheWriteTokens({
+      prompt_tokens_details: { cache_write_tokens: 11 },
+    }),
+    11,
+  );
+  assert.equal(readCacheWriteTokens({}), null);
+  assert.equal(
+    readCacheWriteTokens({ cache_creation_input_tokens: -2 }),
+    null,
   );
 });
 
