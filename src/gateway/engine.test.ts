@@ -1479,6 +1479,183 @@ test("cross-format round-trip: a chat CLIENT against a responses-native PROVIDER
   }
 });
 
+test("buffered Responses client extracts response.completed from an SSE upstream", async () => {
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      const response = {
+        id: "resp_sse",
+        object: "response",
+        status: "completed",
+        model: "up-1",
+        output: [
+          {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "buffered result" }],
+          },
+        ],
+        usage: { input_tokens: 7, output_tokens: 3 },
+      };
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(
+        `event: response.created\ndata: ${JSON.stringify({ type: "response.created", response: { id: "resp_sse", status: "in_progress" } })}\n\n` +
+          `event: response.completed\ndata: ${JSON.stringify({ type: "response.completed", response })}\n\n`,
+      );
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "up",
+      name: "up",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["k"],
+      endpoints: [WireKind.Responses],
+      retryAttempts: 1,
+    });
+    const model = getModel(
+      db,
+      createModel(db, {
+        alias: "test-model",
+        providers: [{ providerId: "up", upstreamModel: "up-1" }],
+      }).id,
+    )!;
+    const { id: apiKeyId } = createApiKey(db, {
+      name: "test-key",
+      tokensPerDay: null,
+    });
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const { res, state } = mockRes();
+    const ctx = ctxFor(
+      model,
+      { model: "test-model", input: "hi", stream: false },
+      "/v1/responses",
+    );
+    ctx.apiKey = {
+      id: apiKeyId,
+      name: "test-key",
+      keyPrefix: "k-",
+      userId: null,
+      userName: null,
+      tokensPerDay: null,
+      enabled: true,
+      accessAllModels: true,
+      modelIds: [],
+      lastUsedAt: null,
+      createdAt: new Date().toISOString(),
+    };
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctx,
+    );
+
+    assert.equal(state.statusCode, 200);
+    assert.equal(state.headers["content-type"], "application/json");
+    const body = state.body as {
+      id?: string;
+      output?: Array<{ content?: Array<{ text?: string }> }>;
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    assert.equal(body.id, "resp_sse");
+    assert.equal(body.output?.[0]?.content?.[0]?.text, "buffered result");
+    assert.equal(body.usage?.input_tokens, 7);
+    assert.equal(body.usage?.output_tokens, 3);
+    const log = listRequestLogs(db)[0];
+    assert.equal(log?.inputTokens, 7);
+    assert.equal(log?.outputTokens, 3);
+    assert.equal(getUsage(db, apiKeyId).tokens, 10);
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("buffered Responses client fails deterministically on incomplete or malformed SSE", async () => {
+  let requests = 0;
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(
+        requests++ === 0
+          ? 'data: {"type":"response.output_text.delta","delta":"partial"}\n\n'
+          : "data: {not-json}\n\n",
+      );
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "up",
+      name: "up",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["k"],
+      endpoints: [WireKind.Responses],
+      retryAttempts: 1,
+    });
+    const model = getModel(
+      db,
+      createModel(db, {
+        alias: "test-model",
+        providers: [{ providerId: "up", upstreamModel: "up-1" }],
+      }).id,
+    )!;
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const first = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      first.res as never,
+      ctxFor(
+        model,
+        { model: "test-model", input: "hi", stream: false },
+        "/v1/responses",
+      ),
+    );
+    assert.equal(first.state.statusCode, 502);
+    assert.match(
+      JSON.stringify(first.state.body),
+      /ended before response\.completed/,
+    );
+
+    const second = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      second.res as never,
+      ctxFor(
+        model,
+        { model: "test-model", input: "hi", stream: false },
+        "/v1/responses",
+      ),
+    );
+    assert.equal(second.state.statusCode, 502);
+    assert.match(
+      JSON.stringify(second.state.body),
+      /malformed upstream Responses SSE/,
+    );
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
 test("anthropic:thinking-signature strips a client-echoed thinking block (real OR synthetic signature) before it reaches a native messages upstream", async () => {
   // End-to-end proof for the strip-thinking-signatures request hook: a
   // messages CLIENT continuing a prior turn echoes back an assistant message

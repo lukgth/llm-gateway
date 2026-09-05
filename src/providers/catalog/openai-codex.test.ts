@@ -115,11 +115,15 @@ test("preferredEndpoint always prefers Responses (route-level guard filters unac
   );
   assert.equal(unpinned.endpointKind, WireKind.Responses);
 });
-test("responses build forces store:false + instructions string and sets canonical identity headers", () => {
+test("responses build forces stream/store, normalizes instructions, and sets identity headers", () => {
   const ctx = buildCtx({
     body: {
       model: "gpt-5-codex",
       input: [],
+      stream: false,
+      max_output_tokens: 100,
+      max_tokens: 101,
+      max_completion_tokens: 102,
     } as BuildCtx["body"],
     headers: {
       authorization: "Bearer codex-access-token",
@@ -127,9 +131,13 @@ test("responses build forces store:false + instructions string and sets canonica
     },
   });
   const built = openaiCodex.responses(ctx);
+  assert.equal(built.body["stream"], true);
   assert.equal(built.body["store"], false);
   assert.equal(built.body["instructions"], "");
   assert.deepEqual(built.body["input"], []);
+  assert.equal("max_output_tokens" in built.body, false);
+  assert.equal("max_tokens" in built.body, false);
+  assert.equal("max_completion_tokens" in built.body, false);
   assert.equal(built.headers["originator"], CODEX_ORIGINATOR);
   assert.equal(built.headers["version"], CODEX_CLIENT_VERSION);
   assert.equal(built.headers["user-agent"], codexUserAgent());
@@ -145,6 +153,7 @@ test("responses build wraps bare-string input in a Responses message list", () =
     } as BuildCtx["body"],
   });
   const built = openaiCodex.responses(ctx);
+  assert.equal(built.body["stream"], true);
   assert.deepEqual(built.body["input"], [
     {
       type: "message",
@@ -158,7 +167,14 @@ test("responses build wraps bare-string input in a Responses message list", () =
 
 test("chat build preserves an existing string instructions value", () => {
   const ctx = buildCtx({
-    body: { model: "m", instructions: "be brief", store: true },
+    body: {
+      model: "m",
+      instructions: "be brief",
+      store: true,
+      max_output_tokens: 100,
+      max_tokens: 101,
+      max_completion_tokens: 102,
+    },
     endpointKind: WireKind.Chat,
     providerFmt: WireKind.Chat,
     clientFmt: WireKind.Chat,
@@ -166,6 +182,9 @@ test("chat build preserves an existing string instructions value", () => {
   });
   const built = openaiCodex.chatCompletions(ctx);
   assert.equal(built.body["instructions"], "be brief");
+  assert.equal("max_output_tokens" in built.body, false);
+  assert.equal("max_tokens" in built.body, false);
+  assert.equal("max_completion_tokens" in built.body, false);
   assert.equal(built.headers["chatgpt-account-id"], "acct-123");
 });
 

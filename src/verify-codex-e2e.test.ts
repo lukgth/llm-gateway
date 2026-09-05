@@ -1,8 +1,8 @@
 // Deterministic end-to-end verification (plan Verification steps 3 + 4):
 //   1. Import a synthetic unexpired auth.json through the real route,
 //      create the openai-codex provider from its ready session, send a
-//      Responses request through the REAL engine, and assert the fake
-//      upstream sees the Codex identity + converted success response.
+//      non-streaming Responses request through the REAL engine, and assert
+//      Codex receives stream=true while the client gets buffered JSON.
 //   2. Cookie scenario: inject a fake ChatGPT session fetch, submit only a
 //      cookie value, and assert the exact cookie header + ready session +
 //      absence of cookie/token in views and errors.
@@ -48,8 +48,31 @@ const AUTH_JSON = JSON.stringify({
 });
 
 
-test("E2E: import auth.json -> create provider -> Responses request hits Codex identity on the wire", async () => {
+test("E2E: a non-stream Responses request uses Codex streaming upstream and returns buffered JSON", async () => {
   const captured: Record<string, unknown> = {};
+  const completedResponse = {
+    id: "resp-e2e",
+    object: "response",
+    created_at: 1_725_000_000,
+    model: "gpt-5-codex",
+    status: "completed",
+    output: [
+      {
+        id: "msg-e2e",
+        type: "message",
+        status: "completed",
+        role: "assistant",
+        content: [{ type: "output_text", text: "all good", annotations: [] }],
+      },
+    ],
+    usage: {
+      input_tokens: 1,
+      input_tokens_details: { cached_tokens: 0 },
+      output_tokens: 2,
+      output_tokens_details: { reasoning_tokens: 0 },
+      total_tokens: 3,
+    },
+  };
   const server = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => chunks.push(c));
@@ -61,18 +84,30 @@ test("E2E: import auth.json -> create provider -> Responses request hits Codex i
       } catch {
         captured.body = null;
       }
-      res.writeHead(200, { "content-type": "application/json" });
+      res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8" });
       res.end(
-        JSON.stringify({
-          id: "resp-e2e",
-          output: [
-            {
-              type: "message",
-              content: [{ type: "output_text", text: "all good" }],
-            },
-          ],
-          usage: { input_tokens: 1, output_tokens: 1 },
-        }),
+        [
+          {
+            type: "response.created",
+            sequence_number: 0,
+            response: { ...completedResponse, status: "in_progress", output: [], usage: null },
+          },
+          {
+            type: "response.output_text.delta",
+            sequence_number: 1,
+            item_id: "msg-e2e",
+            output_index: 0,
+            content_index: 0,
+            delta: "all good",
+          },
+          {
+            type: "response.completed",
+            sequence_number: 2,
+            response: completedResponse,
+          },
+        ]
+          .map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
+          .join(""),
       );
     });
   });
@@ -139,6 +174,7 @@ test("E2E: import auth.json -> create provider -> Responses request hits Codex i
     );
 
     let statusCode = 0;
+    let responseHeaders: http.OutgoingHttpHeaders = {};
     let bodyText = "";
     const res = new Writable({
       write(chunk, _enc, cb) {
@@ -146,8 +182,12 @@ test("E2E: import auth.json -> create provider -> Responses request hits Codex i
         cb();
       },
     }) as never;
-    (res as { writeHead: (code: number) => void }).writeHead = (code: number) => {
+    (res as { writeHead: (code: number, headers?: http.OutgoingHttpHeaders) => void }).writeHead = (
+      code: number,
+      headers = {},
+    ) => {
       statusCode = code;
+      responseHeaders = headers;
     };
     Object.defineProperty(res, "headersSent", {
       get: () => statusCode > 0,
@@ -166,6 +206,7 @@ test("E2E: import auth.json -> create provider -> Responses request hits Codex i
         requestBody: {
           model: "e2e-codex-model",
           input: "hi",
+          max_output_tokens: 321,
         },
         resolvedModel: modelRow,
         alias: modelRow.alias,
@@ -178,7 +219,7 @@ test("E2E: import auth.json -> create provider -> Responses request hits Codex i
       } as never,
     );
 
-    // 4. Assertions: exact wire shape.
+    // 4. Assertions: exact wire shape and buffered client response.
     assert.equal(captured.path, "/backend-api/codex/responses");
     const headers = captured.headers as Record<string, string | undefined>;
     assert.match(String(headers.authorization), /^Bearer /);
@@ -187,6 +228,8 @@ test("E2E: import auth.json -> create provider -> Responses request hits Codex i
     assert.equal(headers.version, "0.149.0");
     assert.match(headers["user-agent"] ?? "", /^codex_cli_rs\/0\.149\.0 \(.+\) reqwest\//);
     const body = captured.body as Record<string, unknown>;
+    assert.equal(body.stream, true);
+    assert.equal("max_output_tokens" in body, false);
     assert.equal(body.store, false);
     assert.equal(typeof body.instructions, "string");
     assert.deepEqual(body.input, [
@@ -196,7 +239,14 @@ test("E2E: import auth.json -> create provider -> Responses request hits Codex i
         content: [{ type: "input_text", text: "hi" }],
       },
     ]);
-    assert.ok(statusCode === 200 || statusCode === 0); // buffered success
+
+    assert.equal(statusCode, 200);
+    assert.match(String(responseHeaders["content-type"]), /^application\/json\b/);
+    const clientBody = JSON.parse(bodyText) as typeof completedResponse;
+    assert.equal(clientBody.id, "resp-e2e");
+    assert.equal(clientBody.status, "completed");
+    assert.equal(clientBody.output[0]?.content[0]?.text, "all good");
+    assert.deepEqual(clientBody.usage, completedResponse.usage);
   } finally {
     closeDatabase(db);
     fs.rmSync(dir, { recursive: true, force: true });

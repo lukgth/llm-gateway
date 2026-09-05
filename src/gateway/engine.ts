@@ -20,6 +20,7 @@ import http from "http";
 import https from "https";
 import { URL } from "url";
 import { pipeline as streamPipeline, PassThrough } from "stream";
+import { SseFrameReader, parseSseData } from "../formats/sse/frame";
 import type { IncomingMessage } from "http";
 import type { Request, Response } from "express";
 import type { Database as DB } from "better-sqlite3";
@@ -144,6 +145,46 @@ const MAX_CREDIT_ROTATIONS = 100;
 // avoid burning attempts on it, but keep it in the pool (a top-up makes it
 // usable again with no restart needed).
 const CREDIT_BALANCE_COOLDOWN_MS = 60 * 60 * 1000;
+
+async function readCompletedResponsesSse(
+  upRes: IncomingMessage,
+): Promise<Record<string, unknown>> {
+  const text = await readErrorBody(upRes, MAX_BUFFER_BYTES);
+  if (Buffer.byteLength(text) >= MAX_BUFFER_BYTES)
+    throw new Error("upstream Responses stream too large");
+
+  const reader = new SseFrameReader();
+  const frames = reader.feed(Buffer.from(text, "utf8"));
+  const tail = reader.flush();
+  if (tail !== null) frames.push(tail);
+
+  let completed: Record<string, unknown> | null = null;
+  for (const frame of frames) {
+    const { data, event } = parseSseData(frame);
+    if (data === null || data === "[DONE]") continue;
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(data);
+    } catch {
+      throw new Error("malformed upstream Responses SSE event");
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload))
+      throw new Error("malformed upstream Responses SSE event");
+
+    const record = payload as Record<string, unknown>;
+    if (record.type !== "response.completed" && event !== "response.completed")
+      continue;
+    const response = record.response;
+    if (!response || typeof response !== "object" || Array.isArray(response))
+      throw new Error("response.completed missing full response");
+    completed = response as Record<string, unknown>;
+  }
+
+  if (completed === null)
+    throw new Error("upstream Responses stream ended before response.completed");
+  return completed;
+}
 
 export class ForwardingEngine {
   private readonly keyHealth: KeyHealthStore;
@@ -1613,6 +1654,37 @@ export class ForwardingEngine {
       );
       return { committed: true, deferred: true, status };
     }
+    if (
+      !ctx.isStream &&
+      route.providerFmt === "responses" &&
+      isEventStream(headers)
+    ) {
+      const completed = await readCompletedResponsesSse(upRes);
+      const bufferedHeaders = {
+        ...headers,
+        "content-type": "application/json",
+      };
+      const usage = await this.bufferConvert(
+        upRes,
+        res,
+        ctx,
+        provider,
+        route,
+        status,
+        bufferedHeaders,
+        attemptCtx,
+        completed,
+      );
+      return {
+        committed: true,
+        status,
+        inputTokens: usage.input ?? ctx.inputTokens,
+        outputTokens: usage.output ?? null,
+        cachedTokens: usage.cached ?? null,
+        cacheWriteTokens: usage.cacheWrite ?? null,
+        debugResponse: usage.debugResponse ?? null,
+      };
+    }
     if (isJson(headers)) {
       const usage = await this.bufferConvert(
         upRes,
@@ -1923,6 +1995,7 @@ export class ForwardingEngine {
     status: number,
     headers: IncomingMessage["headers"],
     attemptCtx: TransformCtx,
+    parsedBody?: Record<string, unknown>,
   ): Promise<{
     input?: number;
     output?: number;
@@ -1930,33 +2003,41 @@ export class ForwardingEngine {
     cacheWrite?: number;
     debugResponse?: string | null;
   }> {
-    const text = await readErrorBody(upRes, MAX_BUFFER_BYTES);
-    if (Buffer.byteLength(text) >= MAX_BUFFER_BYTES) {
-      if (!res.headersSent)
-        res.status(502).json({
-          error: {
-            type: "upstream_error",
-            message: "Upstream response too large to convert",
-            source: "gateway",
-          },
-        });
-      return {};
-    }
-
-    const stripped = Buffer.from(stripInvisible(text), "utf8");
-
     let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(stripped.toString("utf8")) as Record<string, unknown>;
-    } catch {
-      this.sendRaw(
-        res,
-        status,
-        headers,
-        stripped,
-        provider.catalogId === "claude-code",
-      );
-      return {};
+    let stripped: Buffer;
+    if (parsedBody) {
+      parsed = parsedBody;
+      stripped = Buffer.from(JSON.stringify(parsed), "utf8");
+    } else {
+      const text = await readErrorBody(upRes, MAX_BUFFER_BYTES);
+      if (Buffer.byteLength(text) >= MAX_BUFFER_BYTES) {
+        if (!res.headersSent)
+          res.status(502).json({
+            error: {
+              type: "upstream_error",
+              message: "Upstream response too large to convert",
+              source: "gateway",
+            },
+          });
+        return {};
+      }
+
+      stripped = Buffer.from(stripInvisible(text), "utf8");
+      try {
+        parsed = JSON.parse(stripped.toString("utf8")) as Record<
+          string,
+          unknown
+        >;
+      } catch {
+        this.sendRaw(
+          res,
+          status,
+          headers,
+          stripped,
+          provider.catalogId === "claude-code",
+        );
+        return {};
+      }
     }
 
     // Read the upstream-reported usage from the PROVIDER-shape body. Settlement

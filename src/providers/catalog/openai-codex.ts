@@ -64,6 +64,9 @@ class OpenAICodexAdapter extends OpenAICompatibleAdapter {
   // account headers on top of the engine-composed set (which carried the
   // bearer Authorization from the selected managed credential).
   private codexBuild(ctx: BuildCtx): BuiltRequest {
+    delete ctx.body["max_output_tokens"];
+    delete ctx.body["max_tokens"];
+    delete ctx.body["max_completion_tokens"];
     this.stripConflicting(ctx.headers);
     Object.assign(ctx.headers, codexIdentityHeaders());
     if (ctx.apiKey)
@@ -93,6 +96,7 @@ class OpenAICodexAdapter extends OpenAICompatibleAdapter {
         },
       ];
     }
+    ctx.body["stream"] = true;
     return this.codexBuild(ctx);
   }
 
