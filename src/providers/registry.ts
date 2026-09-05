@@ -36,6 +36,7 @@ import {
   AnthropicCompatibleAdapter,
 } from "./base";
 import { openai } from "./catalog/openai";
+import { openaiCodex } from "./catalog/openai-codex";
 import { anthropic } from "./catalog/anthropic";
 import { claudeCode } from "./catalog/claude-code";
 import { nvidiaNim } from "./catalog/nvidia-nim";
@@ -56,19 +57,23 @@ import { qwencloud, qwencloudCn } from "./catalog/qwencloud";
 import { moonshot } from "./catalog/moonshot";
 import { dashscopeCoding } from "./catalog/dashscope-coding";
 import { clinepass } from "./catalog/clinepass";
+import { clinefree } from "./catalog/clinefree";
 import { minimax } from "./catalog/minimax";
 import { xai } from "./catalog/xai";
+import { commandcode } from "./catalog/commandcode";
 
 // Order here is the order shown in the catalog grid: branded stock providers
 // first, generic escape-hatch templates last.
 const ADAPTERS: ProviderAdapter[] = [
   openai,
+  openaiCodex,
   anthropic,
   claudeCode,
   nvidiaNim,
   openrouter,
   opencode,
   opencodeGo,
+  commandcode,
   xiaomiMimo,
   deepseek,
   glm,
@@ -78,6 +83,7 @@ const ADAPTERS: ProviderAdapter[] = [
   dashscopeCoding,
   moonshot,
   clinepass,
+  clinefree,
   minimax,
   xai,
   gemini,

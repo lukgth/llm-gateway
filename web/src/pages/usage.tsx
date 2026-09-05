@@ -38,7 +38,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fmtCacheHint, fmtNum, fmtTokens, fmtUsd } from "@/lib/utils";
+import { fmtCacheHint, fmtNum, fmtTokens, fmtUsd, fmtWriteHint } from "@/lib/utils";
 import {
   ModelIcon,
   ProviderIcon,
@@ -100,8 +100,8 @@ export default function Usage() {
             <CardContent className="p-0">
               <TableSkeleton
                 rows={6}
-                cols={7}
-                widths={["10%", "50%", "40%", "60%", "30%", "30%", "30%"]}
+                cols={8}
+                widths={["10%", "50%", "40%", "60%", "30%", "30%", "30%", "30%"]}
               />
             </CardContent>
           </Card>
@@ -111,21 +111,22 @@ export default function Usage() {
             <Skeleton className="h-4 w-56" />
           </CardHeader>
           <CardContent className="p-0">
-            <TableSkeleton
-              rows={6}
-              cols={9}
-              widths={[
-                "50%",
-                "40%",
-                "60%",
-                "60%",
-                "30%",
-                "30%",
-                "30%",
-                "30%",
-                "30%",
-              ]}
-            />
+              <TableSkeleton
+                rows={6}
+                cols={10}
+                widths={[
+                  "50%",
+                  "40%",
+                  "60%",
+                  "60%",
+                  "30%",
+                  "30%",
+                  "30%",
+                  "30%",
+                  "30%",
+                  "30%",
+                ]}
+              />
           </CardContent>
         </Card>
       </div>
@@ -161,7 +162,7 @@ export default function Usage() {
         <Stat
           label="Tokens today"
           value={fmtNum(data.today.total)}
-          hint={fmtCacheHint(data.today.cached, data.today.input)}
+          hint={`${fmtCacheHint(data.today.cached, data.today.input)} · ${fmtWriteHint(data.today.cacheWrite ?? 0)}`}
           accent
         />
         <Stat label="Tracked keys" value={fmtNum(data.today.keys.length)} />
@@ -219,6 +220,7 @@ export default function Usage() {
                     <TableHead className="w-40">Quota / Day</TableHead>
                     <TableHead className="w-28 text-right">Used</TableHead>
                     <TableHead className="w-28 text-right">Cached</TableHead>
+                    <TableHead className="w-28 text-right">Written</TableHead>
                     <TableHead className="w-32 text-right">Remaining</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -268,6 +270,7 @@ export default function Usage() {
                   <TableHead className="text-right">Requests</TableHead>
                   <TableHead className="text-right">Tokens</TableHead>
                   <TableHead className="text-right">Cached</TableHead>
+                  <TableHead className="text-right">Written</TableHead>
                   <TableHead className="text-right">Cost</TableHead>
                   <TableHead className="text-right">Share</TableHead>
                 </TableRow>
@@ -316,6 +319,12 @@ export default function Usage() {
                       title={r.cached > 0 ? fmtNum(r.cached) : undefined}
                     >
                       {r.cached > 0 ? fmtTokens(r.cached) : "-"}
+                    </TableCell>
+                    <TableCell
+                      className="text-right tabular-nums text-muted-foreground"
+                      title={(r.cacheWrite ?? 0) > 0 ? fmtNum(r.cacheWrite ?? 0) : undefined}
+                    >
+                      {(r.cacheWrite ?? 0) > 0 ? fmtTokens(r.cacheWrite ?? 0) : "-"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {r.costUsd > 0 ? fmtUsd(r.costUsd) : "-"}
@@ -596,6 +605,12 @@ const KeyUsageRow = memo(function KeyUsageRow({
         >
           {k.cached > 0 ? fmtTokens(k.cached) : "-"}
         </TableCell>
+        <TableCell
+          className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
+          title={(k.cacheWrite ?? 0) > 0 ? fmtNum(k.cacheWrite ?? 0) : undefined}
+        >
+          {(k.cacheWrite ?? 0) > 0 ? fmtTokens(k.cacheWrite ?? 0) : "-"}
+        </TableCell>
         <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
           {k.limit ? (
             over ? (
@@ -610,12 +625,12 @@ const KeyUsageRow = memo(function KeyUsageRow({
       </TableRow>
       {open && (
         <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={7} className="bg-muted/30 p-0">
+          <TableCell colSpan={8} className="bg-muted/30 p-0">
             {detail === null ? (
               <TableSkeleton
                 rows={3}
-                cols={7}
-                widths={["70%", "40%", "30%", "30%", "30%", "20%", "20%"]}
+                cols={8}
+                widths={["70%", "40%", "30%", "30%", "30%", "30%", "20%", "20%"]}
               />
             ) : detail.length === 0 ? (
               <p className="p-3 text-xs text-muted-foreground">
@@ -632,6 +647,7 @@ const KeyUsageRow = memo(function KeyUsageRow({
                     </TableHead>
                     <TableHead className="w-[13%] text-right">Tokens</TableHead>
                     <TableHead className="w-[13%] text-right">Cached</TableHead>
+                    <TableHead className="w-[13%] text-right">Written</TableHead>
                     <TableHead className="w-[10%] text-right">Cost</TableHead>
                     <TableHead className="w-[8%] text-right pr-4">
                       Share
@@ -678,6 +694,12 @@ const KeyUsageRow = memo(function KeyUsageRow({
                           title={d.cached > 0 ? fmtNum(d.cached) : undefined}
                         >
                           {d.cached > 0 ? fmtTokens(d.cached) : "-"}
+                        </TableCell>
+                        <TableCell
+                          className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
+                          title={(d.cacheWrite ?? 0) > 0 ? fmtNum(d.cacheWrite ?? 0) : undefined}
+                        >
+                          {(d.cacheWrite ?? 0) > 0 ? fmtTokens(d.cacheWrite ?? 0) : "-"}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
                           {d.costUsd > 0 ? fmtUsd(d.costUsd) : "-"}

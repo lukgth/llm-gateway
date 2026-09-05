@@ -58,6 +58,7 @@ interface LogRow {
   input_tokens: number | null;
   output_tokens: number | null;
   cached_tokens: number | null;
+  cache_write_tokens: number | null;
   latency_ms: number | null;
   client: string | null;
   path: string | null;
@@ -90,6 +91,7 @@ function mapLog(r: LogRow): RequestLog {
     inputTokens: r.input_tokens,
     outputTokens: r.output_tokens,
     cachedTokens: r.cached_tokens,
+    cacheWriteTokens: r.cache_write_tokens,
     latencyMs: r.latency_ms,
     client: r.client,
     path: r.path,
@@ -128,6 +130,7 @@ export interface InsertLogInput {
   inputTokens: number | null;
   outputTokens: number | null;
   cachedTokens: number | null;
+  cacheWriteTokens?: number | null;
   latencyMs: number | null;
   client: string | null;
   path: string | null;
@@ -146,11 +149,11 @@ export function insertRequestLog(db: DB, input: InsertLogInput): void {
     `INSERT INTO request_logs
       (ts, api_key_id, api_key_name, user_id, model, provider_id, provider_name,
        upstream_model, upstream_key_hash, upstream_key_mask, status, input_tokens,
-       output_tokens, cached_tokens, latency_ms, client, path, stream, error,
+       output_tokens, cached_tokens, cache_write_tokens, latency_ms, client, path, stream, error,
        debug_request, debug_response, cost_usd)
     VALUES (@ts, @api_key_id, @api_key_name, @user_id, @model, @provider_id, @provider_name,
       @upstream_model, @upstream_key_hash, @upstream_key_mask, @status, @input_tokens,
-      @output_tokens, @cached_tokens, @latency_ms, @client, @path, @stream, @error,
+      @output_tokens, @cached_tokens, @cache_write_tokens, @latency_ms, @client, @path, @stream, @error,
       @debug_request, @debug_response, @cost_usd)`,
   ).run({
     ts: new Date().toISOString(),
@@ -167,6 +170,7 @@ export function insertRequestLog(db: DB, input: InsertLogInput): void {
     input_tokens: input.inputTokens,
     output_tokens: input.outputTokens,
     cached_tokens: input.cachedTokens,
+    cache_write_tokens: input.cacheWriteTokens ?? null,
     latency_ms: input.latencyMs,
     client: input.client,
     path: input.path,
@@ -235,7 +239,7 @@ export function listRequestLogs(db: DB, opts: ListOpts = {}): RequestLog[] {
       `SELECT rl.id, rl.ts, rl.api_key_id, rl.api_key_name, rl.user_id, rl.model,
               rl.provider_id, rl.provider_name, rl.upstream_model,
               rl.upstream_key_mask, rl.status, rl.input_tokens, rl.output_tokens,
-              rl.cached_tokens, rl.latency_ms,
+              rl.cached_tokens, rl.cache_write_tokens, rl.latency_ms,
               rl.client, rl.path, rl.stream, rl.error,
               (rl.debug_request IS NOT NULL) AS debug_request,
               (rl.debug_response IS NOT NULL) AS debug_response,
@@ -358,6 +362,7 @@ export interface DashboardStats {
   tokensToday: number;
   inputTokensToday: number;
   cachedTokensToday: number;
+  cacheWriteTokensToday: number;
   errorRateToday: number;
   costUsdToday: number;
   byModel: Array<{
@@ -365,6 +370,7 @@ export interface DashboardStats {
     requests: number;
     tokens: number;
     cached: number;
+    cacheWrite: number;
     costUsd: number;
   }>;
   byProvider: Array<{
@@ -374,6 +380,7 @@ export interface DashboardStats {
     requests: number;
     tokens: number;
     cached: number;
+    cacheWrite: number;
     costUsd: number;
   }>;
   statusBands: { success: number; clientError: number; serverError: number };
@@ -386,13 +393,12 @@ export function dashboardStats(db: DB): DashboardStats {
   // transient, retryable condition, NOT a failure - exclude it from the error
   // rate and the 5xx band, and surface it in its own `throttledToday` count.
   const throttle = throttleSql();
-  // Realized tokens = input (minus any cache-hit portion, which never touched
-  // the model at full cost) + output. cached_tokens is a SUBSET of
-  // input_tokens (see readResponseUsage's doc comment), so it must be
-  // subtracted here rather than summed on top, or a cache hit would inflate
+  // Realized tokens = input (minus both cache buckets, which are subsets of
+  // input_tokens - see readResponseUsage's doc comment) + output. Subtract
+  // both here rather than summing on top, or cache activity would inflate
   // the reported/quota-debited total past what was actually processed.
   const realizedTokensSql =
-    "MAX(0, COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) + COALESCE(output_tokens,0)";
+    "MAX(0, COALESCE(input_tokens,0) - COALESCE(cached_tokens,0) - COALESCE(cache_write_tokens,0)) + COALESCE(output_tokens,0)";
   const agg = db
     .prepare(
       `SELECT
@@ -402,19 +408,21 @@ export function dashboardStats(db: DB): DashboardStats {
         COALESCE(SUM(${realizedTokensSql}), 0) AS tokens,
         COALESCE(SUM(COALESCE(input_tokens, 0)), 0) AS inputTokens,
         COALESCE(SUM(COALESCE(cached_tokens, 0)), 0) AS cachedTokens,
+        COALESCE(SUM(COALESCE(cache_write_tokens, 0)), 0) AS cacheWriteTokens,
         COALESCE(SUM(COALESCE(cost_usd, 0)), 0) AS cost,
          COALESCE(SUM(CASE WHEN status >= 200 AND status < 300 THEN 1 ELSE 0 END), 0) AS success,
          COALESCE(SUM(CASE WHEN status >= 400 AND status < 500 THEN 1 ELSE 0 END), 0) AS clientErr,
          COALESCE(SUM(CASE WHEN status >= 500 AND NOT ${throttle} THEN 1 ELSE 0 END), 0) AS serverErr
        FROM request_logs WHERE date(ts) = @today`,
     )
-    .get({ today }) as {
+  .get({ today }) as {
     requests: number;
     errors: number;
     throttled: number;
     tokens: number;
     inputTokens: number;
     cachedTokens: number;
+    cacheWriteTokens: number;
     cost: number;
     success: number;
     clientErr: number;
@@ -426,6 +434,7 @@ export function dashboardStats(db: DB): DashboardStats {
       `SELECT model, COUNT(*) AS requests,
          COALESCE(SUM(${realizedTokensSql}),0) AS tokens,
          COALESCE(SUM(COALESCE(cached_tokens,0)),0) AS cached,
+         COALESCE(SUM(COALESCE(cache_write_tokens,0)),0) AS cacheWrite,
          COALESCE(SUM(COALESCE(cost_usd,0)),0) AS costUsd
        FROM request_logs WHERE date(ts) = @today AND model IS NOT NULL
        GROUP BY model ORDER BY requests DESC LIMIT 10`,
@@ -435,6 +444,7 @@ export function dashboardStats(db: DB): DashboardStats {
     requests: number;
     tokens: number;
     cached: number;
+    cacheWrite: number;
     costUsd: number;
   }>;
 
@@ -447,8 +457,9 @@ export function dashboardStats(db: DB): DashboardStats {
          COALESCE(p.name, rl.provider_name) AS provider,
          p.catalog_id AS catalogId,
          COUNT(*) AS requests,
-        COALESCE(SUM(MAX(0, COALESCE(rl.input_tokens,0) - COALESCE(rl.cached_tokens,0)) + COALESCE(rl.output_tokens,0)),0) AS tokens,
+        COALESCE(SUM(MAX(0, COALESCE(rl.input_tokens,0) - COALESCE(rl.cached_tokens,0) - COALESCE(rl.cache_write_tokens,0)) + COALESCE(rl.output_tokens,0)),0) AS tokens,
         COALESCE(SUM(COALESCE(rl.cached_tokens, 0)), 0) AS cached,
+        COALESCE(SUM(COALESCE(rl.cache_write_tokens, 0)), 0) AS cacheWrite,
         COALESCE(SUM(COALESCE(rl.cost_usd,0)),0) AS costUsd
        FROM request_logs rl
        LEFT JOIN providers p ON p.id = rl.provider_id
@@ -462,6 +473,7 @@ export function dashboardStats(db: DB): DashboardStats {
     requests: number;
     tokens: number;
     cached: number;
+    cacheWrite: number;
     costUsd: number;
   }>;
 
@@ -491,6 +503,7 @@ export function dashboardStats(db: DB): DashboardStats {
     tokensToday: agg.tokens || 0,
     inputTokensToday: agg.inputTokens || 0,
     cachedTokensToday: agg.cachedTokens || 0,
+    cacheWriteTokensToday: agg.cacheWriteTokens || 0,
     errorRateToday: rateDenom > 0 ? (agg.errors / rateDenom) * 100 : 0,
     costUsdToday: agg.cost || 0,
     byModel,

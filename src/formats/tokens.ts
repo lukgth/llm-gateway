@@ -162,65 +162,120 @@ export function readMaxOutputTokens(
   return undefined;
 }
 
-// Extract upstream-reported token usage from a parsed response body.
-// Works across Anthropic, OpenAI Chat, and OpenAI Responses shapes.
-// Returns {} when no usage info is present (e.g. passthrough / streaming).
-//
-// `input` is the TOTAL input tokens including cached - the same convention
-// OpenAI's `prompt_tokens` uses. Anthropic reports cached tokens separately
-// (cache_read_input_tokens) and its `input_tokens` excludes them, so this
-// function adds them back to normalise to one convention.
-//
-// `cached` is the subset of `input` that were prompt-cache hits, surfaced
-// separately for cost visibility. `computeCostUsd` subtracts `cached` from
-// `input` to derive the uncached billable portion - so `input` MUST include
-// cached tokens or the subtraction double-counts.
-export function readResponseUsage(body: unknown): {
+export interface NormalizedUsage {
   input?: number;
   output?: number;
   cached?: number;
-} {
-  if (!body || typeof body !== "object") return {};
-  const u = (body as { usage?: unknown }).usage;
-  if (!u || typeof u !== "object") return {};
-  const o = u as Record<string, unknown>;
-  const out: { input?: number; output?: number; cached?: number } = {};
-  // OpenAI Chat: prompt_tokens already includes cached - use as-is.
-  if (typeof o.prompt_tokens === "number") out.input = o.prompt_tokens;
-  if (typeof o.completion_tokens === "number") out.output = o.completion_tokens;
-  // Anthropic / Responses: input_tokens + output_tokens.
-  if (typeof o.input_tokens === "number") out.input = o.input_tokens;
-  if (typeof o.output_tokens === "number") out.output = o.output_tokens;
+  cacheWrite?: number;
+}
+
+// Extract upstream-reported token usage from a parsed response body.
+// Returns {} when no usage info is present (e.g. passthrough / streaming).
+export function readResponseUsage(body: unknown): NormalizedUsage {
+  if (!body || typeof body !== "object" || !("usage" in body)) return {};
+  return normalizeUsage(body.usage);
+}
+
+// Normalize one provider usage object for buffered and streaming responses.
+// `input` is the TOTAL input tokens including cached - the same convention
+// OpenAI's `prompt_tokens` uses. Anthropic reports cache buckets separately
+// (cache_read_input_tokens / cache_creation_input_tokens) and its
+// `input_tokens` excludes them, so this function adds them back to normalise
+// to one convention.
+//
+// `cached` is the subset of `input` that were prompt-cache hits (reads),
+// `cacheWrite` the subset that were prompt-cache writes/creations, surfaced
+// separately for cost visibility. `computeCostUsd` subtracts both from `input`
+// to derive the uncached billable portion - so `input` MUST include both
+// buckets or the subtraction double-counts.
+export function normalizeUsage(usage: unknown): NormalizedUsage {
+  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return {};
+  const o = usage as Record<string, unknown>;
+  const out: NormalizedUsage = {};
+  // Prefer Responses/Anthropic fields over Chat, and native Gemini fields
+  // when present. Invalid counts are absent, not authoritative zeroes.
+  const anthropicInput = numOrNull(o.input_tokens);
+  const geminiInput = numOrNull(o.promptTokenCount);
+  const input = geminiInput ?? anthropicInput ?? numOrNull(o.prompt_tokens);
+  const output =
+    numOrNull(o.candidatesTokenCount) ??
+    numOrNull(o.output_tokens) ??
+    numOrNull(o.completion_tokens);
+  if (input != null) out.input = input;
+  if (output != null) out.output = output;
+  const total = numOrNull(o.totalTokenCount);
+  if (total != null && out.input === undefined) {
+    const rest = total - (out.output ?? 0);
+    if (rest >= 0) out.input = rest;
+  }
   const cached = readCachedTokens(o);
   if (cached != null) {
     out.cached = cached;
-    // Anthropic's input_tokens excludes cached tokens. Normalise so `input`
-    // always means "total input including cached" (the convention
-    // computeCostUsd expects). For OpenAI, prompt_tokens already includes
-    // cached, so the addition is harmless only if we detect the Anthropic
-    // shape: input_tokens is set AND cache_read_input_tokens is present (the
-    // field readCachedTokens reads for Anthropic).
-    if (
-      typeof o.input_tokens === "number" &&
-      typeof o.cache_read_input_tokens === "number"
-    ) {
-      out.input = o.input_tokens + cached;
-    }
+  }
+  const cacheWrite = readCacheWriteTokens(o);
+  if (cacheWrite != null) {
+    out.cacheWrite = cacheWrite;
+  }
+  // Anthropic's input_tokens excludes cache buckets. Normalise so `input`
+  // always means "total input including cached" (the convention
+  // computeCostUsd expects). For OpenAI, prompt_tokens already includes
+  // both buckets, so only add when detecting the Anthropic shape.
+  if (anthropicInput != null && geminiInput == null) {
+    const read = numOrNull(o.cache_read_input_tokens) ?? 0;
+    const write = numOrNull(o.cache_creation_input_tokens) ?? 0;
+    out.input = anthropicInput + read + write;
   }
   return out;
 }
 
+function numOrNull(v: unknown): number | null {
+  if (typeof v !== "number" || !Number.isFinite(v) || v < 0) return null;
+  return v;
+}
+
 // Pull cached (prompt-cache-hit) input tokens from a usage object across the
-// three shapes. Returns null when the field isn't present.
+// shapes. Returns null when the field isn't present. Negative or non-numeric
+// values are treated as absent.
 export function readCachedTokens(o: Record<string, unknown>): number | null {
   // Anthropic: usage.cache_read_input_tokens
-  if (typeof o.cache_read_input_tokens === "number")
-    return o.cache_read_input_tokens;
+  const anthropic = numOrNull(o.cache_read_input_tokens);
+  if (anthropic != null) return anthropic;
+  // Gemini native: usage.cachedContentTokenCount
+  const gemini = numOrNull(o.cachedContentTokenCount);
+  if (gemini != null) return gemini;
   // OpenAI Chat/Responses: usage.prompt_tokens_details.cached_tokens
   const details = o.prompt_tokens_details ?? o.input_tokens_details;
+  if (details && typeof details === "object" && "cached_tokens" in details) {
+    const nested = numOrNull(details.cached_tokens);
+    if (nested != null) return nested;
+  }
+  return null;
+}
+
+// Pull cache-write (creation) input tokens from a usage object across the
+// shapes. Returns null when the field isn't present. Negative or non-numeric
+// values are treated as absent.
+export function readCacheWriteTokens(
+  o: Record<string, unknown>,
+): number | null {
+  // Anthropic: usage.cache_creation_input_tokens. OpenAI-compatible gateways
+  // (Cline) also report a top-level usage.cache_write_tokens.
+  const topLevel = numOrNull(
+    o.cache_creation_input_tokens ?? o.cache_write_tokens,
+  );
+  if (topLevel != null) return topLevel;
+  // Nested OpenAI details: prompt_tokens_details.cache_write_tokens (and the
+  // legacy cache_creation_tokens variant the chat->messages bridge reads).
+  const details = o.prompt_tokens_details ?? o.input_tokens_details;
   if (details && typeof details === "object") {
-    const c = (details as Record<string, unknown>).cached_tokens;
-    if (typeof c === "number") return c;
+    if ("cache_write_tokens" in details) {
+      const nested = numOrNull(details.cache_write_tokens);
+      if (nested != null) return nested;
+    }
+    if ("cache_creation_tokens" in details) {
+      const legacy = numOrNull(details.cache_creation_tokens);
+      if (legacy != null) return legacy;
+    }
   }
   return null;
 }

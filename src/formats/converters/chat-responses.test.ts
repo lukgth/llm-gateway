@@ -574,6 +574,144 @@ test("streaming (inverse): function_call output item + argument deltas -> chat t
   );
 });
 
+test("streaming (inverse): Codex done-only function_call emits a complete chat tool call", async () => {
+  const raw = await runTransform(
+    new StreamingResponsesToChatBridgeTransform(),
+    [
+      responsesSseFrame({
+        type: "response.created",
+        response: { id: "resp_codex_tool", model: "m", created_at: 100 },
+      }),
+      responsesSseFrame({
+        type: "response.output_item.done",
+        output_index: 0,
+        item: {
+          type: "function_call",
+          call_id: "call_codex",
+          name: "search",
+          arguments: '{"q":"x"}',
+        },
+      }),
+      responsesSseFrame({
+        type: "response.completed",
+        response: {
+          id: "resp_codex_tool",
+          end_turn: false,
+          usage: { input_tokens: 3, output_tokens: 4, total_tokens: 7 },
+        },
+      }),
+    ],
+  );
+  const chunks = parseChatSse(raw);
+  const toolCalls = chunks.flatMap((chunk) => {
+    const choices = chunk.choices as Array<{
+      delta?: {
+        tool_calls?: Array<{
+          id?: string;
+          function?: { name?: string; arguments?: string };
+        }>;
+      };
+    }>;
+    return choices[0]?.delta?.tool_calls ?? [];
+  });
+  assert.deepEqual(toolCalls, [
+    {
+      index: 0,
+      id: "call_codex",
+      type: "function",
+      function: { name: "search", arguments: '{"q":"x"}' },
+    },
+  ]);
+  const last = chunks[chunks.length - 1];
+  assert.equal(
+    (last.choices as Array<{ finish_reason?: string }>)[0].finish_reason,
+    "tool_calls",
+  );
+});
+
+test("streaming (inverse): Codex end_turn terminal preserves ordinary text stop", async () => {
+  const raw = await runTransform(
+    new StreamingResponsesToChatBridgeTransform(),
+    [
+      responsesSseFrame({
+        type: "response.output_text.delta",
+        delta: "hello",
+      }),
+      responsesSseFrame({
+        type: "response.completed",
+        response: { id: "resp_codex_text", end_turn: true },
+      }),
+    ],
+  );
+  const chunks = parseChatSse(raw);
+  const content = chunks
+    .map((chunk) => {
+      const choices = chunk.choices as Array<{
+        delta?: { content?: string };
+      }>;
+      return choices[0]?.delta?.content;
+    })
+    .filter((delta): delta is string => !!delta)
+    .join("");
+  assert.equal(content, "hello");
+  const last = chunks[chunks.length - 1];
+  assert.equal(
+    (last.choices as Array<{ finish_reason?: string }>)[0].finish_reason,
+    "stop",
+  );
+});
+
+test("streaming (inverse): output_item.done does not replay streamed tool arguments", async () => {
+  const raw = await runTransform(
+    new StreamingResponsesToChatBridgeTransform(),
+    [
+      responsesSseFrame({
+        type: "response.output_item.added",
+        output_index: 2,
+        item: { type: "function_call", call_id: "call_2", name: "search" },
+      }),
+      responsesSseFrame({
+        type: "response.function_call_arguments.delta",
+        output_index: 2,
+        delta: '{"q":',
+      }),
+      responsesSseFrame({
+        type: "response.function_call_arguments.delta",
+        output_index: 2,
+        delta: '"x"}',
+      }),
+      responsesSseFrame({
+        type: "response.output_item.done",
+        output_index: 2,
+        item: {
+          type: "function_call",
+          call_id: "call_2",
+          name: "search",
+          arguments: '{"q":"x"}',
+        },
+      }),
+      responsesSseFrame({
+        type: "response.completed",
+        response: { id: "resp_5", end_turn: false },
+      }),
+    ],
+  );
+  const chunks = parseChatSse(raw);
+  const streamedArguments = chunks
+    .flatMap((chunk) => {
+      const choices = chunk.choices as Array<{
+        delta?: {
+          tool_calls?: Array<{ function?: { arguments?: string } }>;
+        };
+      }>;
+      return choices[0]?.delta?.tool_calls ?? [];
+    })
+    .map((call) => call.function?.arguments)
+    .filter((args): args is string => !!args);
+  assert.deepEqual(streamedArguments, ['{"q":', '"x"}']);
+  assert.equal(streamedArguments.join(""), '{"q":"x"}');
+});
+
 test("streaming (inverse): _flush() emits a terminal chunk + [DONE] even if response.completed never arrived", async () => {
   const raw = await runTransform(
     new StreamingResponsesToChatBridgeTransform(),

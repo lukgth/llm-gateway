@@ -12,6 +12,21 @@ import { lastUsedByKey } from "../../repo/request-logs";
 import { seedFromKey, makeUsageCtx } from "./provider-probe";
 import { KeyHealthStore } from "../../gateway/key-health";
 
+// The usage dashboard audits EVERY provider's live keyUsage() probe, and any
+// could hang: an unreachable route (blackholed / dropped SYN) stalls in the
+// TCP/TLS handshake until the flat 30s interactive probe timeout
+// (PROBE_TIMEOUT_MS in provider-probe.ts). Because the report awaits every
+// provider before responding, one unreachable provider used to hold the whole
+// /providers/usage endpoint past the fronting proxy's read timeout and turn
+// the panel into a 504 with nothing rendered. This is the per-provider report
+// budget, picked comfortably under the ~10s+ read timeouts common on reverse
+// proxies. Healthy-fast adapters (<1s) are unaffected.
+const REPORT_BUDGET_MS = 8_000;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // Build the usage report for ONE provider by asking its adapter for each key's
 // windows (keys read from provider_keys table). The adapter keyUsage() is async
 // (a real one queries the provider's usage endpoint), so we await every key in
@@ -20,6 +35,7 @@ import { KeyHealthStore } from "../../gateway/key-health";
 export async function buildUsageReport(
   p: Provider,
   db: DB,
+  budgetMs: number = REPORT_BUDGET_MS,
 ): Promise<ProviderUsageReport> {
   const adapter = adapterForProvider(p);
   const healthStore = new KeyHealthStore(db);
@@ -75,49 +91,70 @@ export async function buildUsageReport(
   }
 
   let anyDummy = false;
-  const keys = await Promise.all(
-    rows.map(
-      async ({ key, enabled, metadata, keyHash, health, lastUsedAt }) => {
-        const mask = maskProviderKey(key);
-        try {
-          const { windows, expiresAt, dummy, unavailable, message } =
-            await adapter.keyUsage({
-              provider: p,
-              apiKey: key,
-              keyMetadata: metadata,
-              mask,
+  const runQueries = async () =>
+    Promise.all(
+      rows.map(
+        async ({ key, enabled, metadata, keyHash, health, lastUsedAt }) => {
+          const mask = maskProviderKey(key);
+          try {
+            const { windows, expiresAt, dummy, unavailable, message } =
+              await adapter.keyUsage({
+                provider: p,
+                apiKey: key,
+                keyMetadata: metadata,
+                mask,
+                enabled,
+                seed: seedFromKey(key),
+                unifiedUsage: getUnifiedUsage(db, p.id, keyHash),
+                ...makeUsageCtx(p),
+              });
+            if (dummy) anyDummy = true;
+            return {
+              keyMask: mask,
               enabled,
-              seed: seedFromKey(key),
-              unifiedUsage: getUnifiedUsage(db, p.id, keyHash),
-              ...makeUsageCtx(p),
-            });
-          if (dummy) anyDummy = true;
-          return {
-            keyMask: mask,
-            enabled,
-            health,
-            windows,
-            ...(lastUsedAt ? { lastUsedAt } : {}),
-            ...(expiresAt ? { expiresAt } : {}),
-            ...(unavailable ? { unavailable: true } : {}),
-            ...(message ? { message } : {}),
-          };
-        } catch (e) {
-          // An adapter's live query threw - surface it as an unavailable key with
-          // the error detail rather than failing the whole page.
-          return {
-            keyMask: mask,
-            enabled,
-            health,
-            windows: [],
-            ...(lastUsedAt ? { lastUsedAt } : {}),
-            unavailable: true,
-            message: `Usage query failed: ${(e as Error).message}`,
-          };
-        }
-      },
+              health,
+              windows,
+              ...(lastUsedAt ? { lastUsedAt } : {}),
+              ...(expiresAt ? { expiresAt } : {}),
+              ...(unavailable ? { unavailable: true } : {}),
+              ...(message ? { message } : {}),
+            };
+          } catch (e) {
+            // An adapter's live query threw - surface it as an unavailable key with
+            // the error detail rather than failing the whole page.
+            return {
+              keyMask: mask,
+              enabled,
+              health,
+              windows: [],
+              ...(lastUsedAt ? { lastUsedAt } : {}),
+              unavailable: true,
+              message: `Usage query failed: ${(e as Error).message}`,
+            };
+          }
+        },
+      ),
+    );
+
+  // Cap how long this provider may hold up the report. Run the real keyUsage()
+  // queries but, if they haven't answered within budgetMs, degrade every key to
+  // an unavailable placeholder so the provider stays visible + identifiable
+  // instead of stalling the whole panel. The abandoned queries keep running
+  // until their 30s probe timeout; their results are discarded.
+  const keys = await Promise.race([
+    runQueries(),
+    delay(budgetMs).then(() =>
+      rows.map(({ key, enabled, health, lastUsedAt }) => ({
+        keyMask: maskProviderKey(key),
+        enabled,
+        health,
+        windows: [],
+        ...(lastUsedAt ? { lastUsedAt } : {}),
+        unavailable: true,
+        message: `Usage query timed out after ${budgetMs}ms`,
+      })),
     ),
-  );
+  ]);
   const visibleKeys = keys.filter((key) => {
     // Dead/auth-failed keys don't belong in the usage dashboard - they are shown
     // in the provider Keys table where operators manage credentials. Rate-limited

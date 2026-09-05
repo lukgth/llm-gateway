@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import type { OverviewResponse } from "@/lib/types";
 import { useWsSubscription } from "@/hooks/use-ws";
-import { fmtCacheHint, fmtNum, fmtTokens, fmtUsd } from "@/lib/utils";
+import { fmtCacheHint, fmtNum, fmtTokens, fmtUsd, fmtWriteHint } from "@/lib/utils";
 import {
   PageHeader,
   Stat,
@@ -65,8 +65,8 @@ export default function Dashboard() {
             <CardContent className="p-0">
               <TableSkeleton
                 rows={5}
-                cols={4}
-                widths={["70%", "40%", "40%", "30%"]}
+                cols={5}
+                widths={["70%", "40%", "40%", "40%", "30%"]}
               />
             </CardContent>
           </Card>
@@ -76,11 +76,11 @@ export default function Dashboard() {
             <Skeleton className="h-4 w-36" />
           </CardHeader>
           <CardContent className="p-0">
-            <TableSkeleton
-              rows={5}
-              cols={4}
-              widths={["60%", "40%", "40%", "30%"]}
-            />
+              <TableSkeleton
+                rows={5}
+                cols={5}
+                widths={["60%", "40%", "40%", "40%", "30%"]}
+              />
           </CardContent>
         </Card>
       </div>
@@ -101,7 +101,7 @@ export default function Dashboard() {
         <Stat
           label="Tokens today"
           value={fmtNum(s.tokensToday)}
-          hint={fmtCacheHint(s.cachedTokensToday, s.inputTokensToday)}
+          hint={`${fmtCacheHint(s.cachedTokensToday, s.inputTokensToday)} · ${fmtWriteHint(s.cacheWriteTokensToday ?? 0)}`}
         />
         <Stat
           label="Error rate"
@@ -175,13 +175,14 @@ export default function Dashboard() {
               <Table className="min-w-[32rem] table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[26%]">Model</TableHead>
-                    <TableHead className="w-[18%] text-right">
+                    <TableHead className="w-[24%]">Model</TableHead>
+                    <TableHead className="w-[15%] text-right">
                       Requests
                     </TableHead>
-                    <TableHead className="w-[19%] text-right">Tokens</TableHead>
-                    <TableHead className="w-[19%] text-right">Cached</TableHead>
-                    <TableHead className="w-[18%] text-right">Cost</TableHead>
+                    <TableHead className="w-[16%] text-right">Tokens</TableHead>
+                    <TableHead className="w-[15%] text-right">Cached</TableHead>
+                    <TableHead className="w-[15%] text-right">Written</TableHead>
+                    <TableHead className="w-[15%] text-right">Cost</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -214,6 +215,12 @@ export default function Dashboard() {
                       >
                         {m.cached > 0 ? fmtTokens(m.cached) : "-"}
                       </TableCell>
+                      <TableCell
+                        className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
+                        title={(m.cacheWrite ?? 0) > 0 ? fmtNum(m.cacheWrite ?? 0) : undefined}
+                      >
+                        {(m.cacheWrite ?? 0) > 0 ? fmtTokens(m.cacheWrite ?? 0) : "-"}
+                      </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
                         {m.costUsd > 0 ? fmtUsd(m.costUsd) : "-"}
                       </TableCell>
@@ -243,12 +250,13 @@ export default function Dashboard() {
             <Table className="min-w-[40rem] table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[28%]">Provider</TableHead>
-                  <TableHead className="w-[13%] text-right">Requests</TableHead>
-                  <TableHead className="w-[16%] text-right">Tokens</TableHead>
-                  <TableHead className="w-[15%] text-right">Cached</TableHead>
-                  <TableHead className="w-[14%] text-right">Cost</TableHead>
-                  <TableHead className="w-[14%] text-right">Share</TableHead>
+                  <TableHead className="w-[24%]">Provider</TableHead>
+                  <TableHead className="w-[12%] text-right">Requests</TableHead>
+                  <TableHead className="w-[14%] text-right">Tokens</TableHead>
+                  <TableHead className="w-[13%] text-right">Cached</TableHead>
+                  <TableHead className="w-[13%] text-right">Written</TableHead>
+                  <TableHead className="w-[12%] text-right">Cost</TableHead>
+                  <TableHead className="w-[12%] text-right">Share</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -286,6 +294,12 @@ export default function Dashboard() {
                         title={p.cached > 0 ? fmtNum(p.cached) : undefined}
                       >
                         {p.cached > 0 ? fmtTokens(p.cached) : "-"}
+                      </TableCell>
+                      <TableCell
+                        className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
+                        title={(p.cacheWrite ?? 0) > 0 ? fmtNum(p.cacheWrite ?? 0) : undefined}
+                      >
+                        {(p.cacheWrite ?? 0) > 0 ? fmtTokens(p.cacheWrite ?? 0) : "-"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
                         {p.costUsd > 0 ? fmtUsd(p.costUsd) : "-"}

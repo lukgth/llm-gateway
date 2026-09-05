@@ -83,6 +83,7 @@ export default function ModelEditor() {
   const [promptPer1m, setPromptPer1m] = useState("");
   const [completionPer1m, setCompletionPer1m] = useState("");
   const [cachedPer1m, setCachedPer1m] = useState("");
+  const [cacheWritePer1m, setCacheWritePer1m] = useState("");
   const [loadingDefaultPricing, setLoadingDefaultPricing] = useState(false);
   const [chain, setChain] = useState<ChainRow[]>([]);
   const [saving, setSaving] = useState(false);
@@ -125,6 +126,7 @@ export default function ModelEditor() {
     setPromptPer1m(m?.pricing?.promptPer1m?.toString() ?? "");
     setCompletionPer1m(m?.pricing?.completionPer1m?.toString() ?? "");
     setCachedPer1m(m?.pricing?.cachedPer1m?.toString() ?? "");
+    setCacheWritePer1m(m?.pricing?.cacheWritePer1m?.toString() ?? "");
   }, []);
 
   useEffect(() => {
@@ -261,6 +263,7 @@ export default function ModelEditor() {
       setPromptPer1m(String(def.promptPer1m));
       setCompletionPer1m(String(def.completionPer1m));
       setCachedPer1m(def.cachedPer1m != null ? String(def.cachedPer1m) : "");
+      setCacheWritePer1m(def.cacheWritePer1m != null ? String(def.cacheWritePer1m) : "");
       toast.success(`Filled from ${def.label}'s published rates`);
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) {
@@ -330,6 +333,7 @@ export default function ModelEditor() {
         promptPer1m: promptPer1m ? Number(promptPer1m) : null,
         completionPer1m: completionPer1m ? Number(completionPer1m) : null,
         cachedPer1m: cachedPer1m ? Number(cachedPer1m) : null,
+        cacheWritePer1m: cacheWritePer1m ? Number(cacheWritePer1m) : null,
       },
     };
     try {
@@ -486,7 +490,7 @@ export default function ModelEditor() {
                 Use default
               </Button>
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <Field label="Prompt (input)">
                 <Input
                   type="number"
@@ -512,6 +516,15 @@ export default function ModelEditor() {
                   value={cachedPer1m}
                   onChange={(e) => setCachedPer1m(e.target.value)}
                   placeholder="- defaults to prompt rate"
+                />
+              </Field>
+              <Field label="Cache write">
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={cacheWritePer1m}
+                  onChange={(e) => setCacheWritePer1m(e.target.value)}
+                  placeholder="- defaults to cached rate"
                 />
               </Field>
             </div>

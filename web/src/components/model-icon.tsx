@@ -35,6 +35,7 @@ import opencodeSvg from "@lobehub/icons-static-svg/icons/opencode.svg?raw";
 import newapiSvg from "@lobehub/icons-static-svg/icons/newapi.svg?raw";
 import ollamaSvg from "@lobehub/icons-static-svg/icons/ollama.svg?raw";
 import clineSvg from "@lobehub/icons-static-svg/icons/cline.svg?raw";
+import commandcodeSvg from "../assets/brands/commandcode.svg?raw";
 
 // Ordered: more specific patterns before broader ones (e.g. "gemini" before
 // a generic "google", "kimi" before "k2").
@@ -62,6 +63,7 @@ const BRAND_RULES: Array<{ pattern: RegExp; svg: string; label: string }> = [
   { pattern: /grok|xai/i, svg: grokSvg, label: "Grok" },
   { pattern: /ollama/i, svg: ollamaSvg, label: "Ollama" },
   { pattern: /llama|meta\b/i, svg: metaSvg, label: "Meta" },
+  { pattern: /muse/i, svg: metaSvg, label: "Meta" },
   { pattern: /command-?r|cohere|aya\b/i, svg: cohereSvg, label: "Cohere" },
   { pattern: /phi-?\d|microsoft/i, svg: microsoftSvg, label: "Microsoft" },
   { pattern: /nemotron|nvidia/i, svg: nvidiaSvg, label: "NVIDIA" },
@@ -107,6 +109,7 @@ const PROVIDER_BRANDS: Record<string, { svg: string; label: string }> = {
   minimax: { svg: minimaxSvg, label: "MiniMax" },
   xai: { svg: grokSvg, label: "xAI" },
   kimi: { svg: kimiSvg, label: "Kimi" },
+  commandcode: { svg: commandcodeSvg, label: "Command Code" },
   // Catalog-ID aliases - pages that call ProviderIcon with brand={provider.catalogId}
   // need entries for IDs that differ from the template's brand field.
   "opencode-go": { svg: opencodeSvg, label: "OpenCode" },
@@ -117,6 +120,7 @@ const PROVIDER_BRANDS: Record<string, { svg: string; label: string }> = {
   "claude-code": { svg: claudeSvg, label: "Claude" },
   "xiaomi-mimo": { svg: mimoSvg, label: "MiMo" },
   clinepass: { svg: clineSvg, label: "Cline" },
+  clinefree: { svg: clineSvg, label: "Cline" },
   dashscope: { svg: qwenSvg, label: "Qwen" },
   qwencloud: { svg: qwenSvg, label: "Qwen" },
   "qwencloud-cn": { svg: qwenSvg, label: "Qwen" },

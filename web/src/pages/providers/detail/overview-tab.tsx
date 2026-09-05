@@ -69,12 +69,17 @@ export function OverviewTab({
       </span>,
     ],
     ["Auth scheme", authSchemeLabel(provider.authScheme)],
-    [
-      "API keys",
-      provider.keyCount.disabled > 0
-        ? `${provider.keyCount.enabled} active · ${provider.keyCount.disabled} off`
-        : `${provider.keyCount.total}`,
-    ],
+    provider.authMethod === "oauth"
+      ? [
+          "OAuth accounts",
+          `${provider.authentication.filter((account) => account.status === "active").length} active · ${provider.accountCount} total`,
+        ]
+      : [
+          "API keys",
+          provider.keyCount.disabled > 0
+            ? `${provider.keyCount.enabled} active · ${provider.keyCount.disabled} off`
+            : `${provider.keyCount.total}`,
+        ],
     ["Imported models", `${provider.importedModelCount ?? 0}`],
     ["Models routed", `${modelCount}`],
     [

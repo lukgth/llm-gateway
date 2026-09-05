@@ -42,6 +42,64 @@ export interface ProviderKey {
   updatedAt: string;
 }
 
+export interface ProviderOAuthView {
+  id: string;
+  providerId: string;
+  kind: "oauth";
+  integrationId: string;
+  credHash: string;
+  status: "active" | "disabled" | "reauth_required";
+  expiresAt: string;
+  account: { accountId?: string; email?: string; label?: string };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProviderOAuthAccount extends ProviderOAuthView {
+  accessToken: string;
+  health?: ProviderKeyHealth;
+  stats: { success: number; errors: number };
+}
+
+export interface BatchOAuthOps {
+  enable?: string[];
+  disable?: string[];
+  remove?: string[];
+}
+
+export interface BatchOAuthResult {
+  enabled: number;
+  disabled: number;
+  removed: number;
+  errors: Array<{ op: string; id: string; detail: string }>;
+  accounts: ProviderOAuthView[];
+}
+
+export type ProviderAuthState =
+  | "pending"
+  | "ready"
+  | "denied"
+  | "expired"
+  | "failed"
+  | "cancelled"
+  | "consumed";
+
+export interface ProviderAuthSession {
+  id: string;
+  catalogId: string;
+  flow: "device_code" | "import";
+  state: ProviderAuthState;
+  expiresAt: string;
+  nextPollAt?: string;
+  verification?: {
+    uri: string;
+    uriComplete?: string;
+    userCode: string;
+  };
+  account?: { accountId?: string; email?: string; label?: string };
+  error?: { code: string; message: string };
+}
+
 export interface ProviderKeyInput {
   credential: string;
   enabled?: boolean;
@@ -96,12 +154,11 @@ export interface KeyImportResult {
   mode: "append" | "replace";
 }
 
-export interface Provider {
+interface ProviderBase {
   id: string;
   name: string;
   baseUrl: string;
   host: string | null;
-  keyCount: KeyCount;
   authScheme: AuthScheme;
   extraHeaders: Record<string, string>;
   retryAttempts: number;
@@ -134,6 +191,24 @@ export interface Provider {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface ApiKeyProvider extends ProviderBase {
+  supportsOAuth: false;
+  authMethod: "api-key";
+  keyCount: KeyCount;
+  accountCount?: never;
+  authentication?: never;
+}
+
+export interface OAuthProvider extends ProviderBase {
+  supportsOAuth: true;
+  authMethod: "oauth";
+  accountCount: number;
+  authentication: ProviderOAuthView[];
+  keyCount?: never;
+}
+
+export type Provider = ApiKeyProvider | OAuthProvider;
 
 // --- Provider key-usage report (upstream quota view) ---
 export type UsageUnit =
@@ -224,6 +299,14 @@ export interface TemplateField {
   hint?: string;
 }
 
+export interface ProviderAuthentication {
+  kind: "oauth";
+  flow: "device_code" | "import";
+  title: string;
+  description: string;
+  actionLabel?: string;
+}
+
 export interface ProviderTemplate {
   id: string;
   label: string;
@@ -233,6 +316,8 @@ export interface ProviderTemplate {
   fields: TemplateField[];
   quirks?: ProviderQuirks;
   docsUrl?: string;
+  supportsOAuth: boolean;
+  authentication?: ProviderAuthentication;
 }
 
 // --- Model capabilities (Anthropic-style listing shape; snake_case mirrors
@@ -457,6 +542,7 @@ export interface Model {
     promptPer1m: number | null;
     completionPer1m: number | null;
     cachedPer1m: number | null;
+    cacheWritePer1m: number | null;
   } | null;
 }
 
@@ -470,6 +556,7 @@ export interface DefaultModelPricing {
   promptPer1m: number;
   completionPer1m: number;
   cachedPer1m?: number;
+  cacheWritePer1m?: number;
 }
 
 export interface User {
@@ -513,6 +600,8 @@ export interface RequestLog {
   inputTokens: number | null;
   outputTokens: number | null;
   cachedTokens: number | null;
+  /** Prompt tokens spent writing the cache (absent/null in older payloads). */
+  cacheWriteTokens?: number | null;
   latencyMs: number | null;
   client: string | null;
   path: string | null;
@@ -557,6 +646,8 @@ export interface DashboardStats {
   tokensToday: number;
   inputTokensToday: number;
   cachedTokensToday: number;
+  /** Prompt tokens spent writing the cache today (absent in older payloads). */
+  cacheWriteTokensToday?: number;
   errorRateToday: number;
   costUsdToday: number;
   byModel: Array<{
@@ -564,6 +655,7 @@ export interface DashboardStats {
     requests: number;
     tokens: number;
     cached: number;
+    cacheWrite?: number;
     costUsd: number;
   }>;
   byProvider: Array<{
@@ -573,6 +665,7 @@ export interface DashboardStats {
     requests: number;
     tokens: number;
     cached: number;
+    cacheWrite?: number;
     costUsd: number;
   }>;
   statusBands: { success: number; clientError: number; serverError: number };
@@ -596,11 +689,12 @@ export interface UsageRow {
   limit: number | null;
   used: number;
   cached: number;
+  cacheWrite?: number;
   day: string;
 }
 
 export interface UsageResponse {
-  today: { total: number; input: number; cached: number; keys: UsageRow[] };
+  today: { total: number; input: number; cached: number; cacheWrite?: number; keys: UsageRow[] };
   history: Array<{ day: string; tokens: number }>;
 }
 
@@ -656,6 +750,7 @@ export interface ProviderInput {
   proxy?: string | null;
   country?: string | null;
   providerConfig?: Record<string, unknown>;
+  authSessionId?: string;
 }
 
 export interface ModelInput {
@@ -679,6 +774,7 @@ export interface ModelInput {
     promptPer1m?: number | null;
     completionPer1m?: number | null;
     cachedPer1m?: number | null;
+    cacheWritePer1m?: number | null;
   };
 }
 
@@ -743,6 +839,7 @@ export interface UsageBreakdownRow {
   providerName: string | null;
   tokens: number;
   cached: number;
+  cacheWrite?: number;
   requests: number;
   costUsd: number;
 }

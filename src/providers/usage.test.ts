@@ -12,6 +12,12 @@ import { newapi } from "./catalog/newapi";
 import { openrouter } from "./catalog/openrouter";
 import { glm } from "./catalog/glm";
 import { claudeCode } from "./catalog/claude-code";
+import {
+  ollamaCloud,
+  ollamaNextWeeklyReset,
+  ollamaNextSessionReset,
+  ollamaWeeklyResetAnchor,
+} from "./catalog/ollama";
 
 // Fills in the request/resolve primitives every UsageCtx needs (a test that
 // only exercises the default keyUsage()/supportsKeyUsage() never calls them).
@@ -1044,4 +1050,262 @@ test("glm.keyUsage: malformed JSON -> unavailable, no throw", async () => {
     })),
   );
   assert.equal(res.unavailable, true);
+});
+
+// --- Ollama Cloud ------------------------------------------------------------
+
+function ollamaCloudCtx(
+  p: Provider,
+  request: UsageCtx["request"],
+  fields?: Partial<
+    Pick<UsageCtx, "enabled" | "seed" | "signal" | "basePath">
+  >,
+): UsageCtx {
+  return {
+    provider: p,
+    apiKey: "sk-secret",
+    keyMetadata: {},
+    mask: "sk-…abcd",
+    enabled: true,
+    seed: 1,
+    baseUrl: p.baseUrl,
+    basePath: p.basePath || "",
+    resolve: (target) => p.baseUrl + (typeof target === "string" ? target : ""),
+    request,
+    ...fields,
+  };
+}
+
+test("ollamaCloud.supportsKeyUsage is true (opts into the dashboard)", () => {
+  const p = prov({ catalogId: "ollama-cloud" });
+  assert.equal(
+    ollamaCloud.supportsKeyUsage(
+      ollamaCloudCtx(p, async () => {
+        throw new Error("unused");
+      }),
+    ),
+    true,
+  );
+});
+
+test("ollamaCloud.keyUsage: disabled key -> unavailable without a network call", async () => {
+  const p = prov({ catalogId: "ollama-cloud" });
+  let called = false;
+  const res = await ollamaCloud.keyUsage(
+    ollamaCloudCtx(
+      p,
+      async () => {
+        called = true;
+        throw new Error("must not be called");
+      },
+      { enabled: false },
+    ),
+  );
+  assert.equal(res.unavailable, true);
+  assert.equal(res.windows.length, 0);
+  assert.equal(called, false);
+});
+
+test("ollamaCloud.keyUsage: GET /api/usage with Bearer auth, accept, and the forwarded abort signal", async () => {
+  const controller = new AbortController();
+  const p = prov({
+    catalogId: "ollama-cloud",
+    baseUrl: "https://ollama.example.com",
+  });
+  let seenUrl = "";
+  let seenInit: Parameters<UsageCtx["request"]>[1] | undefined;
+  const res = await ollamaCloud.keyUsage(
+    ollamaCloudCtx(
+      p,
+      async (url, init) => {
+        seenUrl = url;
+        seenInit = init;
+        return jsonResponse(200, {
+          activity: { cost: "0.00000", period: { type: "last_4_weeks" } },
+          limits: {
+            session: { usage: 0.122 },
+            weekly: { usage: 0.045 },
+          },
+        });
+      },
+      { signal: controller.signal },
+    ),
+  );
+  assert.equal(seenUrl, "https://ollama.example.com/api/usage");
+  assert.equal(seenInit?.method, "GET");
+  assert.equal(seenInit?.headers.authorization, "Bearer sk-secret");
+  assert.equal(seenInit?.headers.accept, "application/json");
+  assert.equal(seenInit?.signal, controller.signal);
+  assert.equal(res.unavailable, undefined);
+});
+
+test("ollamaCloud.keyUsage: maps session/weekly ratios to percent-consumed windows with the exact cost message", async () => {
+  const p = prov({ catalogId: "ollama-cloud" });
+  const res = await ollamaCloud.keyUsage(
+    ollamaCloudCtx(p, async () =>
+      jsonResponse(200, {
+        activity: { cost: "0.00000", period: { type: "last_4_weeks" } },
+        limits: {
+          session: { usage: 0.122 },
+          weekly: { usage: 0.045 },
+        },
+      }),
+    ),
+  );
+  assert.equal(res.windows.length, 2);
+  const session = res.windows.find((w) => w.id === "session")!;
+  assert.equal(session.label, "5-hour usage");
+  assert.equal(session.used, 12.2);
+  assert.equal(session.limit, 100);
+  assert.equal(session.unit, "percent");
+  // Percentages are CONSUMED, not remaining - 12.2% used means 87.8% left.
+  assert.match(session.resetsAt ?? "", /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+  assert.equal(new Date(session.resetsAt!).getTime() > Date.now(), true);
+  const weekly = res.windows.find((w) => w.id === "weekly")!;
+  assert.equal(weekly.label, "Weekly usage");
+  assert.equal(weekly.used, 4.5);
+  assert.equal(weekly.limit, 100);
+  assert.equal(weekly.unit, "percent");
+  assert.match(weekly.resetsAt ?? "", /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+  assert.equal(new Date(weekly.resetsAt!).getTime() > Date.now(), true);
+  assert.equal(res.message, "Last 4 weeks cost: $0.00");
+});
+
+test("ollamaCloud.keyUsage: a single valid limit returns only that window", async () => {
+  const p = prov({ catalogId: "ollama-cloud" });
+  const res = await ollamaCloud.keyUsage(
+    ollamaCloudCtx(p, async () =>
+      jsonResponse(200, {
+        activity: { cost: "1.25", period: { type: "last_4_weeks" } },
+        limits: {
+          weekly: { usage: 0.5 },
+        },
+      }),
+    ),
+  );
+  assert.equal(res.windows.length, 1);
+  assert.equal(res.windows[0].id, "weekly");
+  assert.equal(res.windows[0].used, 50);
+  assert.equal(res.windows[0].limit, 100);
+  assert.equal(res.message, "Last 4 weeks cost: $1.25"); // 1.25 already 2dp
+});
+
+test("ollamaCloud.keyUsage: invalid values are skipped independently; all-invalid -> unavailable", async () => {
+  const p = prov({ catalogId: "ollama-cloud" });
+  const partial = await ollamaCloud.keyUsage(
+    ollamaCloudCtx(p, async () =>
+      jsonResponse(200, {
+        limits: {
+          session: { usage: "0.5" },
+          weekly: { usage: -1 },
+        },
+      }),
+    ),
+  );
+  // Both entries invalid (nonnumeric session, out-of-range weekly) -> nothing
+  // reportable, and it must not throw.
+  assert.equal(partial.unavailable, true);
+  assert.equal(partial.windows.length, 0);
+
+  const mixed = await ollamaCloud.keyUsage(
+    ollamaCloudCtx(p, async () =>
+      jsonResponse(200, {
+        limits: {
+          session: { usage: 0.25 },
+          weekly: { usage: Number.NaN },
+        },
+      }),
+    ),
+  );
+  // The valid session entry survives while the NaN weekly entry is skipped.
+  assert.equal(mixed.unavailable, undefined);
+  assert.equal(mixed.windows.length, 1);
+  assert.equal(mixed.windows[0].id, "session");
+  assert.equal(mixed.windows[0].used, 25);
+});
+
+test("ollamaCloud.keyUsage: non-2xx response -> unavailable with the HTTP status", async () => {
+  const p = prov({ catalogId: "ollama-cloud" });
+  const res = await ollamaCloud.keyUsage(
+    ollamaCloudCtx(p, async () => jsonResponse(403, { error: "denied" })),
+  );
+  assert.equal(res.unavailable, true);
+  assert.equal(res.windows.length, 0);
+  assert.match(res.message ?? "", /HTTP 403/);
+});
+
+test("ollamaCloud.keyUsage: request rejection -> unavailable, error surfaced in message", async () => {
+  const p = prov({ catalogId: "ollama-cloud" });
+  const res = await ollamaCloud.keyUsage(
+    ollamaCloudCtx(p, async () => {
+      throw new Error("ECONNREFUSED");
+    }),
+  );
+  assert.equal(res.unavailable, true);
+  assert.match(res.message ?? "", /ECONNREFUSED/);
+});
+
+test("ollamaCloud.keyUsage: malformed JSON and a missing limits envelope -> unavailable, no throw", async () => {
+  const p = prov({ catalogId: "ollama-cloud" });
+
+  const malformed = await ollamaCloud.keyUsage(
+    ollamaCloudCtx(p, async () => ({
+      status: 200,
+      ok: true,
+      ms: 1,
+      text: "not json",
+      json: () => {
+        throw new SyntaxError("Unexpected token");
+      },
+    })),
+  );
+  assert.equal(malformed.unavailable, true);
+  assert.equal(malformed.windows.length, 0);
+
+  const noLimits = await ollamaCloud.keyUsage(
+    ollamaCloudCtx(p, async () =>
+      jsonResponse(200, {
+        activity: { cost: "2.00", period: { type: "last_4_weeks" } },
+      }),
+    ),
+  );
+  assert.equal(noLimits.unavailable, true);
+  assert.equal(noLimits.windows.length, 0);
+  assert.equal(noLimits.message, "Could not parse quota data.");
+});
+
+test("ollamaCloud reset-time calendar anchors to Monday 00:00 UTC (weekly) and 5h ticks (session)", () => {
+  const HOUR = 3_600_000;
+  const DAY = 86_400_000;
+  // 2026-08-17 is a Monday.
+  const mondayNoon = Date.parse("2026-08-17T12:00:00Z");
+  // Weekly anchor for any time in that week = Monday 00:00 UTC.
+  assert.equal(ollamaWeeklyResetAnchor(mondayNoon), Date.parse("2026-08-17T00:00:00Z"));
+  // Sunday 23:00 is still in the same (Monday-anchored) week.
+  assert.equal(
+    ollamaWeeklyResetAnchor(Date.parse("2026-08-23T23:00:00Z")),
+    Date.parse("2026-08-17T00:00:00Z"),
+  );
+  // The next weekly reset after any point in the week is the following Monday.
+  assert.equal(ollamaNextWeeklyReset(mondayNoon), Date.parse("2026-08-24T00:00:00Z"));
+  // Session reset: the next 5h tick strictly after `now`, on the grid anchored
+  // at the current week's Monday 00:00 UTC.
+  // 07:00 Monday = 7h after anchor -> next tick at 10:00 (elapsed=10h).
+  assert.equal(ollamaNextSessionReset(Date.parse("2026-08-17T07:00:00Z")), Date.parse("2026-08-17T10:00:00Z"));
+  // 03:30 -> next tick 05:00.
+  assert.equal(ollamaNextSessionReset(Date.parse("2026-08-17T03:30:00Z")), Date.parse("2026-08-17T05:00:00Z"));
+  // Exactly 00:00 anchor -> next session tick, not the same instant.
+  assert.equal(ollamaNextSessionReset(Date.parse("2026-08-17T00:00:00Z")), Date.parse("2026-08-17T05:00:00Z"));
+  // Guards: resetsAt is always in the future and never duplicated.
+  const nextWeekly = new Date(ollamaNextWeeklyReset(Date.now())).getTime();
+  assert.equal(nextWeekly > Date.now(), true);
+  const nextSession = new Date(ollamaNextSessionReset(Date.now())).getTime();
+  assert.equal(nextSession > Date.now(), true);
+  // Weekly reset is a multiple of 7d from a Monday 00:00 anchor; session reset
+  // is always a multiple of 5h after a Monday 00:00 anchor.
+  assert.equal((nextWeekly - ollamaWeeklyResetAnchor(Date.now())) % (7 * DAY) === 0, true);
+  assert.equal(
+    (nextSession - ollamaWeeklyResetAnchor(Date.now())) % HOUR === 0,
+    true,
+  );
 });

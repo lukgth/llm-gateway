@@ -12,6 +12,8 @@ import type { ModelsFormat } from "../../providers";
 import type { WsTopic } from "../../ws/schema";
 import type { KeySyncService } from "../../services/key-sync";
 import type { BootstrapConfig } from "../../config";
+import type { ProviderAuthService } from "../../services/provider-auth/service";
+import type { ProviderCredentialService } from "../../services/provider-credentials";
 
 export type BroadcastFn = (topics: WsTopic[], source: string) => void;
 
@@ -26,6 +28,8 @@ export interface RouteCtx {
   requireAdmin: RequestHandler;
   broadcast: BroadcastFn;
   bootstrap: BootstrapConfig;
+  providerAuth: ProviderAuthService;
+  providerCredentials: ProviderCredentialService;
   keySyncService?: KeySyncService;
 }
 

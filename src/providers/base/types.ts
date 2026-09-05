@@ -219,6 +219,9 @@ export interface TestModelCtx {
   headers: Record<string, string>;
   /** Raw API key selected for this query (null when the provider has none). */
   apiKey: string | null;
+  /** Structured metadata attached to the selected managed credential (e.g. a
+   *  Codex account id for chatgpt-account-id). Empty for API-key paths. */
+  keyMetadata?: Readonly<Record<string, string>>;
   /** Send a request through the provider's proxy/TLS-aware transport. Prefer
    *  `probeEndpoint()` for a completion probe; use this directly only for a
    *  genuinely bespoke check. */
@@ -298,6 +301,9 @@ export interface TestProviderCtx {
    *  per-key Test button), never chosen by the adapter itself. Null only when
    *  the provider has no keys configured at all. */
   apiKey: string | null;
+  /** Structured metadata attached to the selected managed credential (e.g. a
+   *  Codex account id for chatgpt-account-id). Empty for API-key paths. */
+  keyMetadata?: Readonly<Record<string, string>>;
   /** Send a request through the provider's proxy/TLS-aware transport. */
   request: AdapterRequest;
   /** Abort/timeout signal, forwarded to the transport. */
@@ -399,6 +405,9 @@ export interface ModelsCtx {
   headers: Record<string, string>;
   /** Raw API key selected for this query (null when the provider has none). */
   apiKey: string | null;
+  /** Structured metadata attached to the selected managed credential (e.g. a
+   *  Codex account id for chatgpt-account-id). Empty for API-key paths. */
+  keyMetadata?: Readonly<Record<string, string>>;
   /** Dialect to fetch + parse in ("openai" | "anthropic"). */
   format: ModelsFormat;
   /** Override the anthropic-version header (format:"anthropic" only). */

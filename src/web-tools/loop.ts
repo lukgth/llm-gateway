@@ -66,6 +66,7 @@ interface Usage {
   input?: number;
   output?: number;
   cached?: number;
+  cacheWrite?: number;
 }
 
 // Run the loop. Returns settlement info so the caller (engine hook) can update
@@ -128,6 +129,7 @@ export async function runWebToolLoop(
     if (u.input) total.input = (total.input ?? 0) + u.input;
     if (u.output) total.output = (total.output ?? 0) + u.output;
     if (u.cached) total.cached = (total.cached ?? 0) + u.cached;
+    if (u.cacheWrite) total.cacheWrite = (total.cacheWrite ?? 0) + u.cacheWrite;
   };
 
   // Route a failure to the client correctly given the stream may already be

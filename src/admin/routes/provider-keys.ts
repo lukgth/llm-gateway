@@ -26,6 +26,7 @@ import {
 } from "./parsers";
 import { num } from "./parsers";
 import { bad } from "./respond";
+import { getProviderTemplate } from "../../providers";
 
 export function registerProviderKeyRoutes(ctx: RouteCtx): void {
   const { db, router, r, requireAdmin, broadcast, keySyncService } = ctx;
@@ -62,7 +63,19 @@ export function registerProviderKeyRoutes(ctx: RouteCtx): void {
   // Guard: resolve provider or 404
   const withProvider = (id: string, res: Response) => {
     const p = getProvider(db, id);
-    if (!p) res.status(404).json({ error: { message: "provider not found" } });
+    if (!p) {
+      res.status(404).json({ error: { message: "provider not found" } });
+      return null;
+    }
+    if (
+      p.catalogId &&
+      getProviderTemplate(p.catalogId)?.supportsOAuth === true
+    ) {
+      res.status(400).json({
+        error: { message: "OAuth providers do not have an API-key subresource" },
+      });
+      return null;
+    }
     return p;
   };
 

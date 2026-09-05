@@ -21,7 +21,7 @@ export interface ProviderFamily {
 // Display order == the order groups render in, both here and on /providers.
 export const PROVIDER_FAMILIES: readonly ProviderFamily[] = [
   { label: "Anthropic", brand: "anthropic", ids: ["anthropic", "claude-code"] },
-  { label: "OpenAI", brand: "openai", ids: ["openai"] },
+  { label: "OpenAI", brand: "openai", ids: ["openai", "openai-codex"] },
   { label: "DeepSeek", brand: "deepseek", ids: ["deepseek"] },
   { label: "Google", brand: "gemini", ids: ["google-gemini"] },
   { label: "NVIDIA", brand: "nvidia", ids: ["nvidia-nim"] },
@@ -30,6 +30,7 @@ export const PROVIDER_FAMILIES: readonly ProviderFamily[] = [
   { label: "Ollama", brand: "ollama", ids: ["ollama", "ollama-cloud"] },
   { label: "NewAPI", brand: "newapi", ids: ["newapi"] },
   { label: "OpenCode", brand: "opencode", ids: ["opencode", "opencode-go"] },
+  { label: "Command Code", brand: "commandcode", ids: ["commandcode"] },
   { label: "Xiaomi", brand: "mimo", ids: ["xiaomi-mimo"] },
   {
     label: "Qwen",
@@ -37,7 +38,7 @@ export const PROVIDER_FAMILIES: readonly ProviderFamily[] = [
     ids: ["dashscope", "dashscope-coding", "qwencloud", "qwencloud-cn"],
   },
   { label: "Moonshot", brand: "kimi", ids: ["moonshot"] },
-  { label: "Cline", brand: "cline", ids: ["clinepass"] },
+  { label: "Cline", brand: "cline", ids: ["clinepass", "clinefree"] },
   { label: "MiniMax", brand: "minimax", ids: ["minimax"] },
   { label: "xAI", brand: "xai", ids: ["xai"] },
 ];

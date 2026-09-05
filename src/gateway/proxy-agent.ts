@@ -118,6 +118,17 @@ export function agentFor(
 
 const directCache = new Map<string, Agent>();
 
+/**
+ * Destroys every cached direct agent's open sockets. Test-only teardown:
+ * the cache is module-global, so sockets it holds to a test server's port
+ * keep the event loop referenced after `server.close()` and node:test never
+ * exits. Production behavior is unchanged (agents are recreated lazily).
+ */
+export function destroyCachedDirectAgents(): void {
+  for (const agent of directCache.values()) agent.destroy();
+  directCache.clear();
+}
+
 // An agent for a DIRECT (unproxied) connection: IPv4-first name resolution plus
 // Happy Eyeballs.
 //

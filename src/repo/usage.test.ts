@@ -27,6 +27,7 @@ function insertAt(
     inputTokens?: number | null;
     outputTokens?: number | null;
     cachedTokens?: number | null;
+    cacheWriteTokens?: number | null;
   } = {},
 ): void {
   insertRequestLog(db, {
@@ -43,6 +44,7 @@ function insertAt(
     inputTokens: opts.inputTokens ?? 100,
     outputTokens: opts.outputTokens ?? 50,
     cachedTokens: opts.cachedTokens ?? null,
+    cacheWriteTokens: opts.cacheWriteTokens ?? null,
     latencyMs: 10,
     client: null,
     path: "/v1/messages",
@@ -96,6 +98,28 @@ test("hourlyUsageHistory floors realized input at 0 when cached exceeds input", 
     assert.ok(bucket);
     // realized input = max(0, 50 - 80) = 0; total = 0 + 30 = 30.
     assert.equal(bucket!.tokens, 30);
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test("hourlyUsageHistory excludes cache reads and writes from realized total", () => {
+  const db = openDatabase(":memory:");
+  try {
+    const now = new Date();
+    now.setUTCMinutes(0, 0, 0);
+    const hourKey = now.toISOString().slice(0, 13);
+    // 1000 input (600 reads + 200 writes) + 100 output -> 300 realized.
+    insertAt(db, now.toISOString(), {
+      inputTokens: 1000,
+      outputTokens: 100,
+      cachedTokens: 600,
+      cacheWriteTokens: 200,
+    });
+    const history = hourlyUsageHistory(db, 1);
+    const bucket = history.find((h) => h.hour === hourKey);
+    assert.ok(bucket);
+    assert.equal(bucket!.tokens, 300);
   } finally {
     closeDatabase(db);
   }
@@ -165,10 +189,15 @@ test("rebuildUsageFromLogs recomputes usage + usage_breakdown excluding cached t
       total: 750,
       input: 1100,
       cached: 600,
+      cacheWrite: 0,
     });
     assert.equal(
       listUsageToday(db).find((row) => row.apiKeyId === "key1")?.cached,
       600,
+    );
+    assert.equal(
+      listUsageToday(db).find((row) => row.apiKeyId === "key1")?.cacheWrite,
+      0,
     );
     assert.equal(
       breakdownForKey(db, "key1", today).find(
@@ -176,6 +205,13 @@ test("rebuildUsageFromLogs recomputes usage + usage_breakdown excluding cached t
           row.model === "claude-opus" && row.providerId === "anthropic-prod",
       )?.cached,
       600,
+    );
+    assert.equal(
+      breakdownForKey(db, "key1", today).find(
+        (row) =>
+          row.model === "claude-opus" && row.providerId === "anthropic-prod",
+      )?.cacheWrite,
+      0,
     );
     assert.equal(
       fullBreakdownToday(db, today).find(

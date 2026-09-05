@@ -39,6 +39,11 @@ export class StreamingResponsesToChatBridgeTransform extends Transform {
   // Responses index directly).
   private toolCallIndex = new Map<number, number>();
   private nextToolCallIndex = 0;
+  // Tracks argument chunks already forwarded so the completed output item can
+  // fill in arguments for Codex's done-only protocol without replaying the
+  // full argument string after ordinary Responses argument deltas.
+  private toolCallArgumentsEmitted = new Set<number>();
+  private sawToolCall = false;
   private finished = false;
 
   constructor() {
@@ -118,23 +123,48 @@ export class StreamingResponsesToChatBridgeTransform extends Transform {
         }
         break;
       }
-      case "response.output_item.added": {
+      case "response.output_item.added":
+      case "response.output_item.done": {
         const e = event as {
+          type: "response.output_item.added" | "response.output_item.done";
           output_index?: number;
           item?: ResponseOutputItem;
         };
-        if (e.item?.type === "function_call" && e.output_index != null) {
-          this.ensureHeader();
-          const idx = this.nextToolCallIndex++;
+        if (e.item?.type !== "function_call" || e.output_index == null)
+          break;
+
+        this.ensureHeader();
+        this.sawToolCall = true;
+        let idx = this.toolCallIndex.get(e.output_index);
+        if (idx == null) {
+          idx = this.nextToolCallIndex++;
           this.toolCallIndex.set(e.output_index, idx);
+          const args =
+            e.type === "response.output_item.done" &&
+            typeof e.item.arguments === "string"
+              ? e.item.arguments
+              : "";
+          if (args) this.toolCallArgumentsEmitted.add(e.output_index);
           this.pushChunk({
             tool_calls: [
               {
                 index: idx,
                 id: e.item.call_id || genId("call_"),
                 type: "function",
-                function: { name: e.item.name || "", arguments: "" },
+                function: { name: e.item.name || "", arguments: args },
               },
+            ],
+          });
+        } else if (
+          e.type === "response.output_item.done" &&
+          !this.toolCallArgumentsEmitted.has(e.output_index) &&
+          typeof e.item.arguments === "string" &&
+          e.item.arguments
+        ) {
+          this.toolCallArgumentsEmitted.add(e.output_index);
+          this.pushChunk({
+            tool_calls: [
+              { index: idx, function: { arguments: e.item.arguments } },
             ],
           });
         }
@@ -146,6 +176,7 @@ export class StreamingResponsesToChatBridgeTransform extends Transform {
           const idx = this.toolCallIndex.get(e.output_index);
           if (idx != null) {
             this.ensureHeader();
+            if (e.delta) this.toolCallArgumentsEmitted.add(e.output_index);
             this.pushChunk({
               tool_calls: [{ index: idx, function: { arguments: e.delta } }],
             });
@@ -154,22 +185,30 @@ export class StreamingResponsesToChatBridgeTransform extends Transform {
         break;
       }
       case "response.completed": {
-        const r = (event as { response?: Partial<ResponsesResponse> }).response;
+        const r = (
+          event as {
+            response?: Partial<ResponsesResponse> & { end_turn?: unknown };
+          }
+        ).response;
         const output = Array.isArray(r?.output) ? r.output : [];
-        const hasToolCalls = output.some((o) => o?.type === "function_call");
+        const hasToolCalls =
+          this.sawToolCall || output.some((o) => o?.type === "function_call");
+        // Codex's compact terminal payload omits status/output and instead
+        // reports whether the model affirmatively ended its turn. A literal
+        // false denotes a continuation for tool execution; malformed or absent
+        // values are not allowed to invent a tool call.
+        const continuesWithTools = r?.end_turn === false;
         const finish =
           r?.status && STATUS_TO_FINISH[r.status]
             ? STATUS_TO_FINISH[r.status]
-            : hasToolCalls
+            : hasToolCalls || continuesWithTools
               ? "tool_calls"
               : "stop";
         this.finish(finish, r?.usage);
         break;
       }
-      // response.output_item.done / content_part.* / text.done /
-      // reasoning_text.done - purely structural close events on the Responses
-      // side; Chat's SSE has no equivalent framing (a Chat stream just stops
-      // sending deltas for a field), so there's nothing to emit for them.
+      // content_part.* / text.done / reasoning_text.done are purely structural
+      // close events on the Responses side; Chat SSE has no equivalent framing.
     }
   }
 

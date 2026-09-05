@@ -107,9 +107,12 @@ export abstract class ProviderAdapter {
     return [...set];
   }
 
-  // The plain metadata shape the API + wizard consume (unchanged contract).
+  // The plain metadata shape the API + wizard consume.
   toTemplate(): ProviderTemplate {
-    return this.meta;
+    return {
+      ...this.meta,
+      supportsOAuth: this.meta.authentication?.kind === "oauth",
+    };
   }
 
   // Model-aware endpoint preference: given the upstream model and the kinds the
@@ -409,7 +412,7 @@ export abstract class ProviderAdapter {
       providerFmt: kind,
       upstreamModel: ctx.model,
       apiKey: ctx.apiKey,
-      keyMetadata: {},
+      keyMetadata: ctx.keyMetadata,
       headers: { ...ctx.headers },
     };
     (rawBody as Json).model = ctx.model;
@@ -430,7 +433,7 @@ export abstract class ProviderAdapter {
       model: ctx.model,
       body: transformed,
       apiKey: ctx.apiKey,
-      keyMetadata: {},
+      keyMetadata: ctx.keyMetadata ?? {},
       clientFmt: kind,
       providerFmt: kind,
       endpointKind: kind,

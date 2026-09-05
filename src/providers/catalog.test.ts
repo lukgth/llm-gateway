@@ -16,18 +16,47 @@ test("catalog is non-empty and includes the requested providers", () => {
   const ids = listProviderTemplates().map((t) => t.id);
   for (const expected of [
     "openai",
-    "anthropic",
+    "openai-codex",
     "nvidia-nim",
     "openrouter",
+    "commandcode",
     "opencode",
     "xiaomi-mimo",
     "dashscope",
     "openai-compatible",
     "anthropic-compatible",
+    "clinefree",
     "proxy",
   ]) {
     assert.ok(ids.includes(expected), `missing template: ${expected}`);
   }
+});
+
+test("Cline Free uses managed device authentication", () => {
+  const free = getProviderTemplate("clinefree")!;
+  const pass = getProviderTemplate("clinepass")!;
+  assert.notEqual(free.id, pass.id);
+  assert.deepEqual(free.authentication, {
+    kind: "oauth",
+    flow: "device_code",
+    title: "Connect Cline",
+    description:
+      "Sign in through Cline's secure device flow to use the currently available free models.",
+    actionLabel: "Connect Cline account",
+  });
+  assert.equal(free.fields.some((field) => field.key === "apiKeys"), false);
+  assert.equal(pass.authentication, undefined);
+});
+
+test("OpenAI Codex uses managed import authentication without API keys", () => {
+  const codex = getProviderTemplate("openai-codex")!;
+  assert.equal(codex.authentication?.kind, "oauth");
+  assert.equal(codex.authentication?.flow, "import");
+  assert.equal(codex.fields.some((field) => field.key === "apiKeys"), false);
+  // The stock OpenAI template remains API-key-only.
+  const openai = getProviderTemplate("openai")!;
+  assert.equal(openai.authentication, undefined);
+  assert.ok(openai.fields.some((field) => field.key === "apiKeys"));
 });
 
 test("template ids are unique", () => {

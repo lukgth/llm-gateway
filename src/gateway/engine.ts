@@ -20,6 +20,7 @@ import http from "http";
 import https from "https";
 import { URL } from "url";
 import { pipeline as streamPipeline, PassThrough } from "stream";
+import { collectResponsesSse } from "../formats/sse/responses-collector";
 import type { IncomingMessage } from "http";
 import type { Request, Response } from "express";
 import type { Database as DB } from "better-sqlite3";
@@ -87,11 +88,17 @@ import {
   type RateLimitScope,
 } from "../services/anthropic/rate-limit-scope";
 import type { RateLimitHint } from "./key-health";
+import type { ProviderCredentialService } from "../services/provider-credentials";
+import { providerAuthIntegration } from "../services/provider-auth/registry";
 import {
   isClaudeCodeUsageCreditsError,
   isClaudeCodeModelCreditsError,
   isAnthropicCreditBalanceError,
 } from "../services/anthropic/usage-credits";
+import {
+  clineRetryDelayMs,
+  isClineFreeLimitError,
+} from "../providers/clinefree";
 import {
   contextWindowLimit,
   countInputTokens,
@@ -139,6 +146,15 @@ const MAX_CREDIT_ROTATIONS = 100;
 // usable again with no restart needed).
 const CREDIT_BALANCE_COOLDOWN_MS = 60 * 60 * 1000;
 
+async function readResponsesSse(
+  upRes: IncomingMessage,
+): Promise<Record<string, unknown>> {
+  const text = await readErrorBody(upRes, MAX_BUFFER_BYTES);
+  if (Buffer.byteLength(text) >= MAX_BUFFER_BYTES)
+    throw new Error("upstream Responses stream too large");
+  return collectResponsesSse(text);
+}
+
 export class ForwardingEngine {
   private readonly keyHealth: KeyHealthStore;
 
@@ -147,6 +163,7 @@ export class ForwardingEngine {
     private readonly logger: Logger,
     private readonly thinking: ThinkingConverter,
     private readonly ssePingInterval: number,
+    private readonly providerCredentials?: ProviderCredentialService,
   ) {
     this.keyHealth = new KeyHealthStore(db);
   }
@@ -450,6 +467,7 @@ export class ForwardingEngine {
         null,
         null,
         null,
+        null,
         `build chain failed: ${(err as Error).message}`,
         startedAt,
       );
@@ -463,6 +481,7 @@ export class ForwardingEngine {
         null,
         null,
         502,
+        null,
         null,
         null,
         null,
@@ -515,7 +534,23 @@ export class ForwardingEngine {
       // Attempt budget: at least the provider's configured retries, but widened
       // so a multi-key provider can fail a rate-limited/auth-failed key over to
       // a healthy one within this request (bounded by the key count).
-      const providerKeys = listEnabledCredentials(this.db, entry.provider.id);
+      const requiresManagedAuth =
+        !!entry.provider.catalogId &&
+        !!providerAuthIntegration(entry.provider.catalogId);
+      // Managed credentials enter key health only as stable, non-secret row
+      // identities. Decrypt and refresh only the account selected for an attempt.
+      const providerKeys = requiresManagedAuth
+        ? (this.providerCredentials?.candidates(entry.provider.id) ?? [])
+        : listEnabledCredentials(this.db, entry.provider.id);
+      if (requiresManagedAuth && providerKeys.length === 0) {
+        lastReason = "managed authentication is not connected";
+        this.logger.warn("provider_auth_unavailable", {
+          provider: entry.provider.id,
+          model: entry.upstreamModel,
+          err: lastReason,
+        });
+        continue;
+      }
       // Every configured key for this provider is disabled (auth-failed or
       // manually turned off) - NOT the same as a genuinely keyless provider
       // (0 keys ever configured), which intentionally forwards the client's
@@ -562,11 +597,12 @@ export class ForwardingEngine {
         });
         continue; // all enabled keys are cooling down/auth-failed; try next provider
       }
-      const attempts = Math.max(
+      let attempts = Math.max(
         1,
         entry.provider.retryAttempts,
         Math.min(usable || 1, providerKeys.length || 1),
       );
+      const managedRefreshAttempted = new Set<string>();
       // `tried` excludes keys from re-selection this request. `creditLess` is the
       // subset that returned the long-context usage-credits 429 - tracked so we
       // fail the provider over cleanly the instant EVERY enabled key is credit-
@@ -592,6 +628,31 @@ export class ForwardingEngine {
           tried,
         );
         if (pick) tried.add(pick.keyHash);
+        if (requiresManagedAuth && !pick) {
+          lastReason = "no usable managed authentication account";
+          break;
+        }
+        let managedCredential = null as Awaited<
+          ReturnType<ProviderCredentialService["resolveManaged"]>
+        >;
+        if (requiresManagedAuth && pick) {
+          try {
+            managedCredential =
+              (await this.providerCredentials?.resolveHealthKey(
+                entry.provider.id,
+                pick.key,
+              )) ?? null;
+          } catch (error) {
+            lastReason = `managed authentication unavailable: ${(error as Error).message}`;
+            this.keyHealth.markAuthFailed(
+              entry.provider.id,
+              pick.keyHash,
+              401,
+              lastReason,
+            );
+            continue;
+          }
+        }
         const result = await this.attemptOnce(
           req,
           res,
@@ -600,6 +661,7 @@ export class ForwardingEngine {
           route,
           startedAt,
           pick,
+          managedCredential,
         );
 
         // The pre-flight count_tokens gate found the input over this provider's
@@ -697,13 +759,46 @@ export class ForwardingEngine {
             if (sawCreditError)
               this.keyHealth.markCreditProven(entry.provider.id, pick.keyHash);
           } else if (result.status && AUTH_FAIL_STATUS.has(result.status)) {
-            this.keyHealth.markAuthFailed(
-              entry.provider.id,
-              pick.keyHash,
-              result.status,
-              result.reason ?? `upstream auth failed (${result.status})`,
-            );
-            this.disableDeadKey(entry.provider.id, pick.keyHash, result.status);
+            if (managedCredential && pick) {
+              // Managed credentials get one forced refresh and one immediate retry,
+              // independent of the provider's ordinary retry budget. The selector
+              // remains stable across token rotation.
+              if (!managedRefreshAttempted.has(pick.keyHash)) {
+                managedRefreshAttempted.add(pick.keyHash);
+                try {
+                  managedCredential =
+                    (await this.providerCredentials?.resolveHealthKey(
+                      entry.provider.id,
+                      pick.key,
+                      true,
+                    )) ?? null;
+                  tried.delete(pick.keyHash);
+                  attempts = Math.max(attempts, normalAttempts + 2);
+                  lastReason = "managed credential refreshed; retrying";
+                } catch (error) {
+                  lastReason = `managed credential refresh failed: ${(error as Error).message}`;
+                }
+              } else {
+                this.providerCredentials?.rejectHealthKey(
+                  entry.provider.id,
+                  pick.key,
+                );
+                this.keyHealth.markAuthFailed(
+                  entry.provider.id,
+                  pick.keyHash,
+                  result.status,
+                  result.reason ?? `upstream auth failed (${result.status})`,
+                );
+              }
+            } else {
+              this.keyHealth.markAuthFailed(
+                entry.provider.id,
+                pick.keyHash,
+                result.status,
+                result.reason ?? `upstream auth failed (${result.status})`,
+              );
+              this.disableDeadKey(entry.provider.id, pick.keyHash, result.status);
+            }
           } else if (result.status === 429) {
             if (
               result.rateLimitScope === "model" &&
@@ -750,8 +845,8 @@ export class ForwardingEngine {
               // Preserve the key's premium (Fable) class evidence whenever a
               // Fable window drove this 429 - a quota exhaustion isn't proof the
               // key can't serve Fable, so don't let it demote the class.
-              result.rateLimitScope === "model" ||
-                result.fableCooldownMs !== undefined
+              result.rateLimitScope === "model" &&
+                result.rateLimitModelClass === "fable"
                 ? "model"
                 : "global",
             );
@@ -772,6 +867,7 @@ export class ForwardingEngine {
               input: result.inputTokens ?? undefined,
               output: result.outputTokens ?? undefined,
               cached: result.cachedTokens ?? undefined,
+              cacheWrite: result.cacheWriteTokens ?? undefined,
             });
             this.recordLog(
               ctx,
@@ -781,6 +877,7 @@ export class ForwardingEngine {
               result.inputTokens ?? (ctx.inputTokens || null),
               result.outputTokens ?? null,
               result.cachedTokens ?? null,
+              result.cacheWriteTokens ?? null,
               result.error ?? null,
               startedAt,
               result.debugResponse ?? null,
@@ -849,6 +946,7 @@ export class ForwardingEngine {
       first?.upstreamModel ?? null,
       status,
       ctx.inputTokens || null,
+      null,
       null,
       null,
       logError,
@@ -924,10 +1022,14 @@ export class ForwardingEngine {
     route: Route,
     startedAt: number,
     pick: KeyPick | null,
+    managedCredential?: Awaited<
+      ReturnType<ProviderCredentialService["resolveManaged"]>
+    >,
   ): Promise<AttemptResult> {
     const { provider, upstreamModel } = entry;
     const keyHash = pick?.keyHash ?? null;
-    const keyMask = pick?.key ? maskProviderKey(pick.key) : null;
+    const keyMask =
+      managedCredential?.mask ?? (pick?.key ? maskProviderKey(pick.key) : null);
 
     // Fresh per-attempt ctx so a request hook's URL/header rewrites can't leak
     // across retries/hops (route.xctx is shared for the whole request).
@@ -940,11 +1042,13 @@ export class ForwardingEngine {
     // auth. `apiKey` is the SAME key buildHeaders just derived the auth
     // header from and the build phase will separately receive as
     // BuildCtx.apiKey - see TransformCtx.headers's/apiKey's doc comments.
-    const key = pick?.key ?? null;
-    const keyMetadata = pick
-      ? (getProviderKeyByHash(this.db, provider.id, pick.keyHash)?.metadata ??
-        {})
-      : {};
+    const key = managedCredential?.value ?? pick?.key ?? null;
+    const keyMetadata =
+      managedCredential?.metadata ??
+      (pick
+        ? (getProviderKeyByHash(this.db, provider.id, pick.keyHash)?.metadata ??
+          {})
+        : {});
     const attemptCtx: TransformCtx = {
       ...route.xctx,
       apiKey: key,
@@ -1116,6 +1220,11 @@ export class ForwardingEngine {
           agent: proxyAgent,
         },
         (upRes) => {
+          // Upstream headers arrived: this listener only guards the wait for
+          // headers. Leaving it attached races a fast completed stream's
+          // response `close` against this attempt resolving, producing a
+          // spurious second 499 log after the stream already settled as 200.
+          res.off("close", onClientClose);
           if (timer) {
             clearTimeout(timer);
             timer = null;
@@ -1299,6 +1408,25 @@ export class ForwardingEngine {
           modelCreditsRequired: true,
         };
 
+      if (
+        provider.catalogId === "clinefree" &&
+        status === 429 &&
+        isClineFreeLimitError(errBody)
+      ) {
+        const delay = clineRetryDelayMs(errBody) ?? 60_000;
+        return {
+          committed: false,
+          status,
+          reason: `Cline free-model limit reached for ${upstreamModel}`,
+          rateLimitScope: "model",
+          rateLimitModelClass: `model:${upstreamModel}`,
+          rateLimitMs: delay,
+          rateLimitResetAt: Date.now() + delay,
+          rateLimitSource: "clinefree-model-limit",
+          rateLimitReason: "Cline reported a limit for this exact free model",
+        };
+      }
+
       captureClaudeUsage();
       const now = Date.now();
       const rateLimitHint = status === 429 ? parseRateLimitHint(headers) : null;
@@ -1478,10 +1606,19 @@ export class ForwardingEngine {
       }
       return { committed: true, status, error: `upstream ${status}` };
     }
+    // ChatGPT's Codex backend streams Responses SSE without a Content-Type.
+    // Scope this protocol inference to the bespoke Codex Responses route: an
+    // unknown/headerless response from every other provider remains passthrough.
+    const effectiveHeaders =
+      provider.catalogId === "openai-codex" &&
+      route.providerFmt === "responses" &&
+      headers["content-type"] == null
+        ? { ...headers, "content-type": "text/event-stream" }
+        : headers;
 
     // 2xx - streaming vs buffered. Conversion decisions use the PROVIDER format
     // (the shape upstream returns), then we bridge to the client format.
-    if (ctx.isStream && isEventStream(headers)) {
+    if (ctx.isStream && isEventStream(effectiveHeaders)) {
       // Streaming settles itself: the real token counts only arrive in the
       // stream's final events, so an SSE observer captures them and the
       // pipeline's end callback settles usage + writes the request log.
@@ -1493,14 +1630,23 @@ export class ForwardingEngine {
         upstreamModel,
         route,
         status,
-        headers,
+        effectiveHeaders,
         startedAt,
         attemptCtx,
         upstreamKey,
       );
       return { committed: true, deferred: true, status };
     }
-    if (isJson(headers)) {
+    if (
+      !ctx.isStream &&
+      route.providerFmt === "responses" &&
+      isEventStream(effectiveHeaders)
+    ) {
+      const response = await readResponsesSse(upRes);
+      const bufferedHeaders = {
+        ...effectiveHeaders,
+        "content-type": "application/json",
+      };
       const usage = await this.bufferConvert(
         upRes,
         res,
@@ -1508,7 +1654,29 @@ export class ForwardingEngine {
         provider,
         route,
         status,
-        headers,
+        bufferedHeaders,
+        attemptCtx,
+        response,
+      );
+      return {
+        committed: true,
+        status,
+        inputTokens: usage.input ?? ctx.inputTokens,
+        outputTokens: usage.output ?? null,
+        cachedTokens: usage.cached ?? null,
+        cacheWriteTokens: usage.cacheWrite ?? null,
+        debugResponse: usage.debugResponse ?? null,
+      };
+    }
+    if (isJson(effectiveHeaders)) {
+      const usage = await this.bufferConvert(
+        upRes,
+        res,
+        ctx,
+        provider,
+        route,
+        status,
+        effectiveHeaders,
         attemptCtx,
       );
       // Settlement + logging happen centrally in forward(); hand back the
@@ -1520,6 +1688,7 @@ export class ForwardingEngine {
         inputTokens: usage.input ?? ctx.inputTokens,
         outputTokens: usage.output ?? null,
         cachedTokens: usage.cached ?? null,
+        cacheWriteTokens: usage.cacheWrite ?? null,
         debugResponse: usage.debugResponse ?? null,
       };
     }
@@ -1527,7 +1696,7 @@ export class ForwardingEngine {
       upRes,
       res,
       status,
-      headers,
+      effectiveHeaders,
       route.clientFmt,
       provider.catalogId === "claude-code",
     );
@@ -1608,6 +1777,7 @@ export class ForwardingEngine {
         upstreamModel,
         502,
         ctx.inputTokens || null,
+        null,
         null,
         null,
         "stream conversion unsupported",
@@ -1707,6 +1877,7 @@ export class ForwardingEngine {
         usage.input ?? (ctx.inputTokens || null),
         usage.output ?? null,
         usage.cached ?? null,
+        usage.cacheWrite ?? null,
         error,
         startedAt,
         debugResponse,
@@ -1807,39 +1978,49 @@ export class ForwardingEngine {
     status: number,
     headers: IncomingMessage["headers"],
     attemptCtx: TransformCtx,
+    parsedBody?: Record<string, unknown>,
   ): Promise<{
     input?: number;
     output?: number;
     cached?: number;
+    cacheWrite?: number;
     debugResponse?: string | null;
   }> {
-    const text = await readErrorBody(upRes, MAX_BUFFER_BYTES);
-    if (Buffer.byteLength(text) >= MAX_BUFFER_BYTES) {
-      if (!res.headersSent)
-        res.status(502).json({
-          error: {
-            type: "upstream_error",
-            message: "Upstream response too large to convert",
-            source: "gateway",
-          },
-        });
-      return {};
-    }
-
-    const stripped = Buffer.from(stripInvisible(text), "utf8");
-
     let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(stripped.toString("utf8")) as Record<string, unknown>;
-    } catch {
-      this.sendRaw(
-        res,
-        status,
-        headers,
-        stripped,
-        provider.catalogId === "claude-code",
-      );
-      return {};
+    let stripped: Buffer;
+    if (parsedBody) {
+      parsed = parsedBody;
+      stripped = Buffer.from(JSON.stringify(parsed), "utf8");
+    } else {
+      const text = await readErrorBody(upRes, MAX_BUFFER_BYTES);
+      if (Buffer.byteLength(text) >= MAX_BUFFER_BYTES) {
+        if (!res.headersSent)
+          res.status(502).json({
+            error: {
+              type: "upstream_error",
+              message: "Upstream response too large to convert",
+              source: "gateway",
+            },
+          });
+        return {};
+      }
+
+      stripped = Buffer.from(stripInvisible(text), "utf8");
+      try {
+        parsed = JSON.parse(stripped.toString("utf8")) as Record<
+          string,
+          unknown
+        >;
+      } catch {
+        this.sendRaw(
+          res,
+          status,
+          headers,
+          stripped,
+          provider.catalogId === "claude-code",
+        );
+        return {};
+      }
     }
 
     // Read the upstream-reported usage from the PROVIDER-shape body. Settlement
@@ -2035,7 +2216,7 @@ export class ForwardingEngine {
   private settleUsage(
     ctx: ForwardContext,
     provider: Provider | null,
-    usage: { input?: number; output?: number; cached?: number },
+    usage: { input?: number; output?: number; cached?: number; cacheWrite?: number },
   ): void {
     if (!ctx.apiKey) return;
     // These are raw better-sqlite3 writes; a transient DB error must not escape
@@ -2056,7 +2237,7 @@ export class ForwardingEngine {
       //    actually processed at full cost.
       const realizedInput = Math.max(
         0,
-        (usage.input ?? 0) - (usage.cached ?? 0),
+        (usage.input ?? 0) - (usage.cached ?? 0) - (usage.cacheWrite ?? 0),
       );
       const total = realizedInput + (usage.output ?? 0);
       if (total > 0) {
@@ -2065,6 +2246,7 @@ export class ForwardingEngine {
           usage.input ?? null,
           usage.output ?? null,
           usage.cached ?? null,
+          usage.cacheWrite ?? null,
         );
         addUsage(this.db, ctx.apiKey.id, total);
         addBreakdown(
@@ -2116,7 +2298,16 @@ export class ForwardingEngine {
       // Same widening as forward(): a multi-key provider gets enough attempts
       // to fail an auth-failed/rate-limited key over to a healthy one within
       // this turn, bounded by how many keys it actually has.
-      const turnKeys = listEnabledCredentials(this.db, entry.provider.id);
+      const requiresManagedAuth =
+        !!entry.provider.catalogId &&
+        !!providerAuthIntegration(entry.provider.catalogId);
+      const turnKeys = requiresManagedAuth
+        ? (this.providerCredentials?.candidates(entry.provider.id) ?? [])
+        : listEnabledCredentials(this.db, entry.provider.id);
+      if (requiresManagedAuth && turnKeys.length === 0) {
+        lastReason = "managed authentication is not connected";
+        continue;
+      }
       // Same "all keys dead" guard as forward() - see its comment. A
       // genuinely keyless provider (0 keys ever configured) still routes.
       if (turnKeys.length === 0) {
@@ -2173,6 +2364,7 @@ export class ForwardingEngine {
           route,
           messagesBody,
           tried,
+          requiresManagedAuth,
         );
         if (r.ok) return r;
         lastReason = r.reason;
@@ -2226,6 +2418,7 @@ export class ForwardingEngine {
     route: Route,
     messagesBody: Record<string, unknown>,
     tried: Set<string>,
+    managed: boolean,
   ): Promise<
     | { ok: true; body: Record<string, unknown>; usage: StreamUsageLike }
     | {
@@ -2241,7 +2434,9 @@ export class ForwardingEngine {
     // Health-aware key pick for the (non-streaming) web-tool turn. Each turn is
     // a fresh selection so a rate-limited/auth-failed key is skipped. Picked up
     // front so the builder sees the selected key.
-    const turnKeys = listEnabledCredentials(this.db, provider.id);
+    const turnKeys = managed
+      ? (this.providerCredentials?.candidates(provider.id) ?? [])
+      : listEnabledCredentials(this.db, provider.id);
     const pick = this.keyHealth.select(
       provider.id,
       turnKeys,
@@ -2249,11 +2444,38 @@ export class ForwardingEngine {
       tried,
     );
     if (pick) tried.add(pick.keyHash);
-    const key = pick?.key ?? null;
-    const keyMetadata = pick
-      ? (getProviderKeyByHash(this.db, provider.id, pick.keyHash)?.metadata ??
-        {})
-      : {};
+    let managedCredential = null as Awaited<
+      ReturnType<ProviderCredentialService["resolveManaged"]>
+    >;
+    if (managed && pick) {
+      try {
+        managedCredential =
+          (await this.providerCredentials?.resolveHealthKey(
+            provider.id,
+            pick.key,
+          )) ?? null;
+      } catch (error) {
+        this.keyHealth.markAuthFailed(
+          provider.id,
+          pick.keyHash,
+          401,
+          (error as Error).message,
+        );
+        return {
+          ok: false,
+          status: 401,
+          reason: `managed authentication unavailable: ${(error as Error).message}`,
+          retryable: true,
+        };
+      }
+    }
+    const key = managedCredential?.value ?? pick?.key ?? null;
+    const keyMetadata =
+      managedCredential?.metadata ??
+      (pick
+        ? (getProviderKeyByHash(this.db, provider.id, pick.keyHash)?.metadata ??
+          {})
+        : {});
 
     // Convert Messages -> provider format (via the ordered request stages), force
     // non-streaming, stamp model, then let the adapter build the final request.
@@ -2536,13 +2758,15 @@ export class ForwardingEngine {
           : "non-retryable web-tool turn",
       });
       if (pick && authFailed) {
+        if (managed)
+          this.providerCredentials?.rejectHealthKey(provider.id, pick.key);
         this.keyHealth.markAuthFailed(
           provider.id,
           pick.keyHash,
           res.status,
           `upstream ${res.status}: ${res.text.slice(0, 300)}`,
         );
-        this.disableDeadKey(provider.id, pick.keyHash, res.status);
+        if (!managed) this.disableDeadKey(provider.id, pick.keyHash, res.status);
       }
       return {
         ok: false,
@@ -2673,6 +2897,7 @@ export class ForwardingEngine {
       result.usage.input ?? (ctx.inputTokens || null),
       result.usage.output ?? null,
       result.usage.cached ?? null,
+      result.usage.cacheWrite ?? null,
       result.error ?? null,
       startedAt,
       null,
@@ -2689,6 +2914,7 @@ export class ForwardingEngine {
     inputTokens: number | null,
     outputTokens: number | null,
     cachedTokens: number | null,
+    cacheWriteTokens: number | null,
     error: string | null,
     startedAt?: number,
     debugResponse?: string | null,
@@ -2703,6 +2929,7 @@ export class ForwardingEngine {
         inputTokens,
         outputTokens,
         cachedTokens,
+        cacheWriteTokens,
       );
       insertRequestLog(this.db, {
         apiKeyId: ctx.apiKey?.id ?? null,
@@ -2718,6 +2945,7 @@ export class ForwardingEngine {
         inputTokens,
         outputTokens,
         cachedTokens,
+        cacheWriteTokens,
         latencyMs: startedAt ? Date.now() - startedAt : null,
         client: ctx.client,
         path: ctx.clientPath,

@@ -19,14 +19,10 @@
 // seen is the final total.
 
 import { Transform, type TransformCallback } from "stream";
-import { readCachedTokens } from "../formats/tokens";
+import { normalizeUsage, type NormalizedUsage } from "../formats/tokens";
 import type { ResponseSummary } from "./debug-capture";
 
-export interface StreamUsage {
-  input?: number;
-  output?: number;
-  cached?: number;
-}
+export type StreamUsage = NormalizedUsage;
 
 // Per-string cap while accumulating streamed text/args, so a runaway stream
 // can't grow the in-memory buffers without bound.
@@ -38,14 +34,19 @@ export class SseUsageObserver extends Transform {
   private seenInput: number | null = null;
   private seenOutput: number | null = null;
   private seenCached: number | null = null;
+  private seenCacheWrite: number | null = null;
   private fallbackChars = 0;
 
   // --- optional debug capture (off unless enabled) ---
   private readonly capture: boolean;
   private text = "";
   private stopReason: unknown = undefined;
-  // Tool calls keyed by streaming index; arguments accumulate across deltas.
-  private tools = new Map<number, { name?: unknown; arguments: string }>();
+  // Tool calls keyed by streaming index or a stable Responses item identity.
+  private responseToolKeys = new Map<string, string>();
+  private tools = new Map<
+    number | string,
+    { name?: unknown; arguments: string; sawArguments: boolean }
+  >();
 
   constructor(opts?: { capture?: boolean }) {
     super({ highWaterMark: 0 });
@@ -79,6 +80,9 @@ export class SseUsageObserver extends Transform {
       input,
       output,
       ...(this.seenCached != null ? { cached: this.seenCached } : {}),
+      ...(this.seenCacheWrite != null
+        ? { cacheWrite: this.seenCacheWrite }
+        : {}),
     };
   }
 
@@ -89,6 +93,15 @@ export class SseUsageObserver extends Transform {
       /* observation must never disrupt the stream */
     }
     cb(null, chunk); // forward verbatim
+  }
+
+  _flush(cb: TransformCallback): void {
+    try {
+      if (this.tail) this.scan(Buffer.from("\n", "utf8"));
+    } catch {
+      /* observation must never disrupt the stream */
+    }
+    cb();
   }
 
   private scan(chunk: Buffer): void {
@@ -130,17 +143,20 @@ export class SseUsageObserver extends Transform {
   private captureEvent(obj: Record<string, unknown>): void {
     const addText = (s: unknown) => {
       if (typeof s === "string" && s && this.text.length < CAPTURE_TEXT_CAP)
-        this.text += s;
+        this.text += s.slice(0, CAPTURE_TEXT_CAP - this.text.length);
     };
-    const addArg = (idx: number, name: unknown, frag: unknown) => {
+    const addArg = (idx: number | string, name: unknown, frag: unknown) => {
       let t = this.tools.get(idx);
       if (!t) {
-        t = { name, arguments: "" };
+        t = { name, arguments: "", sawArguments: false };
         this.tools.set(idx, t);
       }
       if (name !== undefined && t.name === undefined) t.name = name;
-      if (typeof frag === "string" && t.arguments.length < CAPTURE_ARG_CAP)
-        t.arguments += frag;
+      if (typeof frag === "string" && frag) {
+        t.sawArguments = true;
+        if (t.arguments.length < CAPTURE_ARG_CAP)
+          t.arguments += frag.slice(0, CAPTURE_ARG_CAP - t.arguments.length);
+      }
     };
 
     // Anthropic Messages SSE.
@@ -181,35 +197,95 @@ export class SseUsageObserver extends Transform {
       }
     }
 
-    // OpenAI Responses SSE: output_text deltas + function_call args.
+    // OpenAI Responses SSE: output text, function calls, and terminal state.
     if (type === "response.output_text.delta") addText(obj.delta);
-    if (type === "response.function_call_arguments.delta")
-      addArg(Number(obj.output_index ?? 0), undefined, obj.delta);
+    if (
+      type === "response.output_item.added" ||
+      type === "response.output_item.done"
+    ) {
+      const item = (obj.item ?? {}) as Record<string, unknown>;
+      if (item.type === "function_call") {
+        const key = this.responseToolKey(obj.output_index, item.id, item.call_id);
+        addArg(
+          key,
+          item.name,
+          type === "response.output_item.done" && !this.tools.get(key)?.sawArguments
+            ? item.arguments
+            : undefined,
+        );
+      }
+    }
+    if (
+      type === "response.function_call_arguments.delta" ||
+      type === "response.function_call_arguments.done"
+    ) {
+      const key = this.responseToolKey(obj.output_index, obj.item_id, obj.call_id);
+      if (type === "response.function_call_arguments.delta")
+        addArg(key, undefined, obj.delta);
+      else if (!this.tools.get(key)?.sawArguments)
+        addArg(key, undefined, obj.arguments);
+    }
+    if (type === "response.completed") {
+      const response = (obj.response ?? {}) as Record<string, unknown>;
+      const output = Array.isArray(response.output)
+        ? (response.output as Array<Record<string, unknown>>)
+        : [];
+      for (let index = 0; index < output.length; index++) {
+        const item = output[index];
+        if (item?.type !== "function_call") continue;
+        const key = this.responseToolKey(
+          item.output_index ?? index,
+          item.id,
+          item.call_id,
+        );
+        addArg(
+          key,
+          item.name,
+          this.tools.get(key)?.sawArguments ? undefined : item.arguments,
+        );
+      }
+      if (response.status === "incomplete") this.stopReason = "length";
+      else if (
+        response.end_turn === false ||
+        output.some((item) => item?.type === "function_call") ||
+        this.tools.size > 0
+      )
+        this.stopReason = "tool_calls";
+      else if (response.status === "completed" || response.end_turn === true)
+        this.stopReason = "stop";
+    }
+  }
+
+  // Bind both stable IDs and output positions: completed arrays can include
+  // reasoning/message items, and compact providers can omit output_index.
+  private responseToolKey(index: unknown, id: unknown, callId: unknown): string {
+    const itemKey = typeof id === "string" && id ? `item:${id}` : undefined;
+    const callKey =
+      typeof callId === "string" && callId ? `call:${callId}` : undefined;
+    const indexKey =
+      typeof index === "number" && Number.isInteger(index) && index >= 0
+        ? `index:${index}`
+        : undefined;
+    const key =
+      (itemKey && this.responseToolKeys.get(itemKey)) ||
+      (callKey && this.responseToolKeys.get(callKey)) ||
+      (indexKey && this.responseToolKeys.get(indexKey)) ||
+      itemKey || callKey || indexKey || "index:0";
+    if (itemKey) this.responseToolKeys.set(itemKey, key);
+    if (callKey) this.responseToolKeys.set(callKey, key);
+    if (indexKey) this.responseToolKeys.set(indexKey, key);
+    return key;
   }
 
   private readUsage(u: unknown): void {
-    if (!u || typeof u !== "object") return;
-    const o = u as Record<string, unknown>;
-    let input = num(o.input_tokens) ?? num(o.prompt_tokens) ?? null;
-    const output = num(o.output_tokens) ?? num(o.completion_tokens) ?? null;
-    const cached = readCachedTokens(o);
-    // Anthropic's input_tokens excludes cached tokens. Normalise so `input`
-    // always means "total input including cached" - the convention
-    // computeCostUsd expects. For OpenAI, prompt_tokens already includes
-    // cached, so only add when detecting the Anthropic shape.
-    if (
-      input != null &&
-      cached != null &&
-      typeof o.input_tokens === "number" &&
-      typeof o.cache_read_input_tokens === "number"
-    ) {
-      input = input + cached;
-    }
+    const { input, output, cached, cacheWrite } = normalizeUsage(u);
     if (input != null) this.seenInput = Math.max(this.seenInput ?? 0, input);
     if (output != null)
       this.seenOutput = Math.max(this.seenOutput ?? 0, output);
     if (cached != null)
       this.seenCached = Math.max(this.seenCached ?? 0, cached);
+    if (cacheWrite != null)
+      this.seenCacheWrite = Math.max(this.seenCacheWrite ?? 0, cacheWrite);
   }
 
   private readDelta(obj: Record<string, unknown>): void {
@@ -231,8 +307,4 @@ export class SseUsageObserver extends Transform {
       }
     }
   }
-}
-
-function num(v: unknown): number | null {
-  return typeof v === "number" && Number.isFinite(v) ? v : null;
 }

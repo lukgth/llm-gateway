@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS request_logs (
   input_tokens  INTEGER,
   output_tokens INTEGER,
   cached_tokens INTEGER,
+  cache_write_tokens INTEGER,
   latency_ms    INTEGER,
   client        TEXT,
   path          TEXT,
@@ -297,6 +298,22 @@ CREATE TABLE IF NOT EXISTS provider_keys (
 CREATE INDEX IF NOT EXISTS idx_provider_keys_provider  ON provider_keys(provider_id);
 CREATE INDEX IF NOT EXISTS idx_provider_keys_cred_hash ON provider_keys(cred_hash);
 
+-- Managed provider OAuth credentials. Secrets are AES-GCM encrypted with a
+-- master key stored outside SQLite; only safe account metadata is plaintext.
+CREATE TABLE IF NOT EXISTS provider_oauth_credentials (
+  id                TEXT PRIMARY KEY,
+  provider_id       TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+  integration_id    TEXT NOT NULL,
+  account_identity  TEXT,
+  encrypted_secrets TEXT NOT NULL,
+  expires_at        INTEGER NOT NULL,
+  public_metadata   TEXT NOT NULL DEFAULT '{}',
+  status            TEXT NOT NULL DEFAULT 'active',
+  revision          INTEGER NOT NULL DEFAULT 1,
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL
+);
+
 -- Per-provider key sync configuration for background polling.
 CREATE TABLE IF NOT EXISTS provider_key_sync (
   provider_id       TEXT PRIMARY KEY REFERENCES providers(id) ON DELETE CASCADE,
@@ -313,6 +330,7 @@ CREATE TABLE IF NOT EXISTS model_pricing (
   prompt_per_1m     REAL,
   completion_per_1m REAL,
   cached_per_1m     REAL,
+  cache_write_per_1m REAL,
   updated_at        TEXT NOT NULL
 );
 
@@ -459,6 +477,9 @@ function migrate(db: DB): void {
   // adapter-backed provider can store format=NULL (format is now a derived hint).
   // SQLite can't ALTER a constraint, so rebuild the table when it's still present.
   migrateProvidersFormatNullable(db);
+  // Managed OAuth started as one row per provider. Rebuild only after every
+  // parent provider-table migration so child rows are preserved unchanged.
+  migrateProviderOAuthAccounts(db);
   addColumnIfMissing(db, "providers", "provider_config", "TEXT");
   addColumnIfMissing(db, "models", "type", "TEXT NOT NULL DEFAULT 'openai'");
   addColumnIfMissing(
@@ -475,6 +496,7 @@ function migrate(db: DB): void {
   CREATE INDEX IF NOT EXISTS idx_api_key_models_model ON api_key_models(model_id);`);
   addColumnIfMissing(db, "request_logs", "client", "TEXT");
   addColumnIfMissing(db, "request_logs", "cached_tokens", "INTEGER");
+  addColumnIfMissing(db, "request_logs", "cache_write_tokens", "INTEGER");
   addColumnIfMissing(db, "request_logs", "debug_request", "TEXT");
   addColumnIfMissing(db, "request_logs", "debug_response", "TEXT");
   addColumnIfMissing(db, "request_logs", "upstream_key_hash", "TEXT");
@@ -511,8 +533,15 @@ function migrate(db: DB): void {
     prompt_per_1m REAL,
     completion_per_1m REAL,
     cached_per_1m REAL,
+    cache_write_per_1m REAL,
     updated_at TEXT NOT NULL
   );`);
+  addColumnIfMissing(
+    db,
+    "model_pricing",
+    "cache_write_per_1m",
+    "REAL",
+  );
   migrateProviderKeysToTable(db);
   migrateApiKeysDropFull(db);
 }
@@ -599,6 +628,97 @@ function migrateEndpointsToKinds(db: DB): void {
       endpoint_paths: JSON.stringify(overrides),
     });
   }
+}
+
+function migrateProviderOAuthAccounts(db: DB): void {
+  const table = db
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='provider_oauth_credentials'",
+    )
+    .get() as { sql?: string } | undefined;
+  if (!table) return;
+  const sql = table.sql ?? "";
+  const hasIdentity = hasColumn(
+    db,
+    "provider_oauth_credentials",
+    "account_identity",
+  );
+  const providerIsUnique = /provider_id\s+TEXT\s+NOT\s+NULL\s+UNIQUE/i.test(sql);
+
+  if (providerIsUnique || !hasIdentity) {
+    db.exec("PRAGMA foreign_keys=OFF;");
+    try {
+      const tx = db.transaction(() => {
+        db.exec(`
+          CREATE TABLE provider_oauth_credentials_new (
+            id                TEXT PRIMARY KEY,
+            provider_id       TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+            integration_id    TEXT NOT NULL,
+            account_identity  TEXT,
+            encrypted_secrets TEXT NOT NULL,
+            expires_at        INTEGER NOT NULL,
+            public_metadata   TEXT NOT NULL DEFAULT '{}',
+            status            TEXT NOT NULL DEFAULT 'active',
+            revision          INTEGER NOT NULL DEFAULT 1,
+            created_at        TEXT NOT NULL,
+            updated_at        TEXT NOT NULL
+          );
+          INSERT INTO provider_oauth_credentials_new
+            (id, provider_id, integration_id, encrypted_secrets, expires_at,
+             public_metadata, status, revision, created_at, updated_at)
+            SELECT id, provider_id, integration_id, encrypted_secrets, expires_at,
+             public_metadata, status, revision, created_at, updated_at
+            FROM provider_oauth_credentials;
+          DROP TABLE provider_oauth_credentials;
+          ALTER TABLE provider_oauth_credentials_new RENAME TO provider_oauth_credentials;
+        `);
+      });
+      tx();
+    } finally {
+      db.exec("PRAGMA foreign_keys=ON;");
+    }
+  }
+
+  const rows = db
+    .prepare(
+      "SELECT id, public_metadata FROM provider_oauth_credentials WHERE account_identity IS NULL",
+    )
+    .all() as Array<{ id: string; public_metadata: string }>;
+  const update = db.prepare(
+    "UPDATE provider_oauth_credentials SET account_identity=? WHERE id=?",
+  );
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      let metadata: Record<string, unknown> = {};
+      try {
+        const value = JSON.parse(row.public_metadata);
+        if (value && typeof value === "object")
+          metadata = value as Record<string, unknown>;
+      } catch {
+        /* leave corrupt legacy metadata without an identity */
+      }
+      const accountId =
+        typeof metadata.accountId === "string" ? metadata.accountId.trim() : "";
+      const email =
+        typeof metadata.email === "string"
+          ? metadata.email.trim().toLowerCase()
+          : "";
+      const identity = accountId
+        ? `account:${accountId}`
+        : email
+          ? `email:${email}`
+          : null;
+      update.run(identity, row.id);
+    }
+  });
+  tx();
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_provider_oauth_provider
+      ON provider_oauth_credentials(provider_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_oauth_identity
+      ON provider_oauth_credentials(provider_id, integration_id, account_identity)
+      WHERE account_identity IS NOT NULL;
+  `);
 }
 
 function migrateModelProvidersUnique(db: DB): void {

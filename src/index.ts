@@ -11,11 +11,17 @@ import { syncFromConfig } from "./db/sync";
 import { getSettings } from "./repo/settings";
 import { initAdminAuth } from "./auth/admin-auth";
 import { GatewayRouter } from "./gateway/router";
-import { createServerApp } from "./server";
+import { createServerApp, type ServerDependencies } from "./server";
 import { createWsServer } from "./ws/server";
 import { Logger } from "./logger";
 import { pruneOldLogs } from "./repo/request-logs";
 import { KeySyncService } from "./services/key-sync";
+import {
+  ProviderAuthCrypto,
+  migrateProviderAuthIdentifiers,
+} from "./services/provider-auth/crypto";
+import { ProviderAuthService } from "./services/provider-auth/service";
+import { ProviderCredentialService } from "./services/provider-credentials";
 
 function main(): void {
   const bootstrap = loadBootstrap();
@@ -49,14 +55,28 @@ function main(): void {
     bootstrap.adminPassword,
   );
 
-  const router = new GatewayRouter(db, logger, settings.ssePingInterval);
+  const providerAuthCrypto = new ProviderAuthCrypto(db, bootstrap.dataDir);
+  migrateProviderAuthIdentifiers(db, providerAuthCrypto);
+  const providerCredentials = new ProviderCredentialService(
+    db,
+    providerAuthCrypto,
+  );
+  const providerAuth = new ProviderAuthService(db, providerAuthCrypto);
+  const router = new GatewayRouter(
+    db,
+    logger,
+    settings.ssePingInterval,
+    providerCredentials,
+  );
 
   // Deferred broadcast: the WsHub is created after the http.Server starts,
   // but the admin routes need the broadcast function at build time. This
   // closure captures the hub reference once it's available.
   let wsHub: ReturnType<typeof createWsServer> | null = null;
-  const broadcast: Parameters<typeof createServerApp>[5] = (topics, source) =>
-    wsHub?.broadcast(topics, source);
+  const broadcast: NonNullable<ServerDependencies["broadcast"]> = (
+    topics,
+    source,
+  ) => wsHub?.broadcast(topics, source);
 
   // Background key sync: polls configured URLs per-provider and reconciles keys.
   // Created before the app so routes can register/unregister timers; started
@@ -66,15 +86,17 @@ function main(): void {
     broadcast(["providers"], "provider:update");
   });
 
-  const app = createServerApp(
+  const app = createServerApp({
     db,
     logger,
     router,
     auth,
-    bootstrap,
+    opts: bootstrap,
+    providerAuth,
+    providerCredentials,
     broadcast,
     keySyncService,
-  );
+  });
 
   logger.info("LLM Gateway starting");
   logger.info("db", { path: bootstrap.dbPath });

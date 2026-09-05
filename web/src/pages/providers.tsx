@@ -283,7 +283,9 @@ const ProviderCard = memo(function ProviderCard({
           {conversionLabel(provider.nativeConversion)}
         </Badge>
         <Badge variant="secondary">
-          {plural(provider.keyCount.total, "key")}
+          {provider.authMethod === "oauth"
+            ? plural(provider.accountCount, "account")
+            : plural(provider.keyCount.total, "key")}
         </Badge>
         <Badge
           variant="secondary"

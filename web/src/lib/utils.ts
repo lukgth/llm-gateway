@@ -88,6 +88,10 @@ export function fmtCacheHint(cached: number, input: number): string {
   return `${fmtTokens(cached)} cached · ${hit} hit`;
 }
 
+export function fmtWriteHint(written: number | null | undefined): string {
+  return `${fmtTokens(written ?? 0)} written`;
+}
+
 // Round to `places` decimals, dropping only *fractional* trailing zeros so
 // whole numbers keep their value (200 -> "200", 1.50 -> "1.5", 1.0 -> "1").
 function trimDecimals(n: number, places: number): string {

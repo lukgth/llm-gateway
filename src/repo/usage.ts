@@ -9,14 +9,13 @@
 import type { Database as DB } from "better-sqlite3";
 import type { KeyUsage } from "../types";
 
-// Realized tokens = input (minus any cache-hit portion, which never touched
-// the model at full cost) + output. cached_tokens is a SUBSET of
-// input_tokens (see formats/tokens.ts readResponseUsage's doc comment), so it
-// must be subtracted here rather than summed on top - otherwise a cache hit
-// would inflate the quota-debited/reported total past what was actually
-// processed, causing billing-estimate errors.
+// Realized tokens = input (minus both cache buckets, which are subsets of
+// input_tokens - see formats/tokens.ts readResponseUsage's doc comment) +
+// output. Both buckets must be subtracted here rather than summed on top -
+// otherwise cache activity would inflate the quota-debited/reported total
+// past what was actually processed, causing billing-estimate errors.
 const REALIZED_TOKENS_SQL =
-  "MAX(0, COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) + COALESCE(output_tokens,0)";
+  "MAX(0, COALESCE(input_tokens,0) - COALESCE(cached_tokens,0) - COALESCE(cache_write_tokens,0)) + COALESCE(output_tokens,0)";
 
 export function utcDay(d = new Date()): string {
   return d.toISOString().slice(0, 10);
@@ -64,6 +63,7 @@ export interface UsageRow {
   limit: number | null;
   used: number;
   cached: number;
+  cacheWrite: number;
   day: string;
 }
 
@@ -74,12 +74,14 @@ export function listUsageToday(db: DB): UsageRow[] {
       `SELECT k.id AS apiKeyId, k.name AS keyName, k.key_prefix AS keyPrefix,
               u.name AS userName, k.tokens_per_day AS \`limit\`,
               COALESCE(usg.tokens, 0) AS used,
-              COALESCE(cache.cached, 0) AS cached, @day AS day
+              COALESCE(cache.cached, 0) AS cached,
+              COALESCE(cache.cacheWrite, 0) AS cacheWrite, @day AS day
        FROM api_keys k
        LEFT JOIN users u ON u.id = k.user_id
        LEFT JOIN usage usg ON usg.api_key_id = k.id AND usg.day = @day
        LEFT JOIN (
-         SELECT api_key_id, COALESCE(SUM(cached_tokens), 0) AS cached
+         SELECT api_key_id, COALESCE(SUM(cached_tokens), 0) AS cached,
+                COALESCE(SUM(cache_write_tokens), 0) AS cacheWrite
          FROM request_logs
          WHERE date(ts) = @day
            AND status >= 200 AND status < 300
@@ -162,6 +164,7 @@ export function usageSummaryToday(db: DB): {
   total: number;
   input: number;
   cached: number;
+  cacheWrite: number;
 } {
   const day = utcDay();
   return db
@@ -169,13 +172,19 @@ export function usageSummaryToday(db: DB): {
       `SELECT
          (SELECT COALESCE(SUM(tokens), 0) FROM usage WHERE day = @day) AS total,
          COALESCE(SUM(COALESCE(input_tokens, 0)), 0) AS input,
-         COALESCE(SUM(COALESCE(cached_tokens, 0)), 0) AS cached
+         COALESCE(SUM(COALESCE(cached_tokens, 0)), 0) AS cached,
+         COALESCE(SUM(COALESCE(cache_write_tokens, 0)), 0) AS cacheWrite
        FROM request_logs
        WHERE date(ts) = @day
          AND api_key_id IS NOT NULL
          AND status >= 200 AND status < 300`,
     )
-    .get({ day }) as { total: number; input: number; cached: number };
+    .get({ day }) as {
+    total: number;
+    input: number;
+    cached: number;
+    cacheWrite: number;
+  };
 }
 
 // --- Per (key, model, provider) breakdown ---------------------------------
@@ -192,6 +201,7 @@ export interface UsageBreakdownRow {
   providerName: string | null;
   tokens: number;
   cached: number;
+  cacheWrite: number;
   requests: number;
   costUsd: number;
 }
@@ -230,12 +240,14 @@ export function breakdownForKey(
               b.provider_id AS providerId, p.name AS providerName,
               SUM(b.tokens) AS tokens, SUM(b.requests) AS requests,
               COALESCE(SUM(b.cost_usd), 0) AS costUsd,
-              COALESCE(cache.cached, 0) AS cached
+              COALESCE(cache.cached, 0) AS cached,
+              COALESCE(cache.cacheWrite, 0) AS cacheWrite
        FROM usage_breakdown b
        LEFT JOIN providers p ON p.id = b.provider_id
        LEFT JOIN (
          SELECT api_key_id, model, provider_id,
-                COALESCE(SUM(cached_tokens), 0) AS cached
+                COALESCE(SUM(cached_tokens), 0) AS cached,
+                COALESCE(SUM(cache_write_tokens), 0) AS cacheWrite
          FROM request_logs
          WHERE api_key_id = @id
            AND date(ts) = @day
@@ -270,14 +282,16 @@ export function fullBreakdownToday(
               b.provider_id AS providerId, p.name AS providerName,
               SUM(b.tokens) AS tokens, SUM(b.requests) AS requests,
               COALESCE(SUM(b.cost_usd), 0) AS costUsd,
-              COALESCE(cache.cached, 0) AS cached
+              COALESCE(cache.cached, 0) AS cached,
+              COALESCE(cache.cacheWrite, 0) AS cacheWrite
        FROM usage_breakdown b
        LEFT JOIN api_keys k ON k.id = b.api_key_id
        LEFT JOIN users u ON u.id = k.user_id
        LEFT JOIN providers p ON p.id = b.provider_id
        LEFT JOIN (
          SELECT api_key_id, model, provider_id,
-                COALESCE(SUM(cached_tokens), 0) AS cached
+                COALESCE(SUM(cached_tokens), 0) AS cached,
+                COALESCE(SUM(cache_write_tokens), 0) AS cacheWrite
          FROM request_logs
          WHERE date(ts) = @day
            AND status >= 200 AND status < 300

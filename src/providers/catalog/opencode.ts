@@ -1,9 +1,24 @@
-import { OpenAICompatibleAdapter } from "../base";
+import {
+  OpenAICompatibleAdapter,
+  type BuildCtx,
+  type BuiltRequest,
+} from "../base";
 import { WireKind } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
+import { withOpenCodeAttribution } from "../opencode";
 
 // OpenCode Zen - OpenAI-compatible gateway aimed at coding agents.
-class OpenCodeAdapter extends OpenAICompatibleAdapter {}
+// Every Chat completion carries canonical OpenCode attribution headers
+// (`x-opencode-session` + `x-opencode-client: cli`); routing, endpoints,
+// auth, URL, and body shape are unchanged.
+class OpenCodeAdapter extends OpenAICompatibleAdapter {
+  override chatCompletions(ctx: BuildCtx): BuiltRequest {
+    return super.chatCompletions({
+      ...ctx,
+      headers: withOpenCodeAttribution(ctx.headers, ctx.body),
+    });
+  }
+}
 
 export const opencode = new OpenCodeAdapter({
   id: "opencode",

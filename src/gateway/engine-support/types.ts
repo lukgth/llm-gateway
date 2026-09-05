@@ -103,7 +103,8 @@ export interface AttemptResult {
   inputTokens?: number;
   outputTokens?: number | null;
   cachedTokens?: number | null;
-  /** Distilled response JSON (debug capture) from the buffered path. */
+  /** Prompt-cache write/creation tokens (subset of inputTokens); null if unknown. */
+  cacheWriteTokens?: number | null;
   debugResponse?: string | null;
   reason?: string;
   error?: string | null;
@@ -160,4 +161,5 @@ export interface StreamUsageLike {
   input?: number;
   output?: number;
   cached?: number;
+  cacheWrite?: number;
 }

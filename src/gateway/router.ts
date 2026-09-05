@@ -27,6 +27,7 @@ import {
 import { addUsage, getUsage, nextUtcMidnight } from "../repo/usage";
 import { getSetting } from "../repo/settings";
 import type { KeyPick } from "./key-health";
+import type { ProviderCredentialService } from "../services/provider-credentials";
 
 export interface GatewayRequest extends Request {
   __apiKey?: ApiKey | null;
@@ -49,6 +50,7 @@ export class GatewayRouter {
     private readonly db: DB,
     private readonly logger: Logger,
     ssePingInterval: number,
+    providerCredentials?: ProviderCredentialService,
   ) {
     this.registry = new ModelRegistry(db);
     this.engine = new ForwardingEngine(
@@ -56,6 +58,7 @@ export class GatewayRouter {
       logger,
       new ThinkingConverter(),
       ssePingInterval,
+      providerCredentials,
     );
   }
 
