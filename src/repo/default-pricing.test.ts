@@ -255,6 +255,9 @@ test("defaultPricingFor: cache-write rates match published 5-minute/default-tier
     ["gpt-5.6-sol", 5],
     ["gpt-5.6-terra", 2.5],
     ["gpt-5.6-luna", 0.25],
+    // MiniMax publishes a distinct cache-write rate for M2.7.
+    // https://platform.minimax.io/docs/guides/pricing-paygo
+    ["minimax-m2.7", 0.375],
   ];
   for (const [id, write] of cases) {
     const m = defaultPricingFor(id);

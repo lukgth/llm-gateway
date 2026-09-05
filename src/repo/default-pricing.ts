@@ -605,6 +605,9 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 0.3,
     completionPer1m: 1.2,
     cachedPer1m: 0.06,
+    // MiniMax publishes a distinct cache-write rate for M2.7.
+    // https://platform.minimax.io/docs/guides/pricing-paygo
+    cacheWritePer1m: 0.375,
   },
 ];
 
