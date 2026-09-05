@@ -56,15 +56,7 @@ test("E2E: a non-stream Responses request uses Codex streaming upstream and retu
     created_at: 1_725_000_000,
     model: "gpt-5-codex",
     status: "completed",
-    output: [
-      {
-        id: "msg-e2e",
-        type: "message",
-        status: "completed",
-        role: "assistant",
-        content: [{ type: "output_text", text: "all good", annotations: [] }],
-      },
-    ],
+    output: [],
     usage: {
       input_tokens: 1,
       input_tokens_details: { cached_tokens: 0 },
@@ -84,17 +76,37 @@ test("E2E: a non-stream Responses request uses Codex streaming upstream and retu
       } catch {
         captured.body = null;
       }
-      res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8" });
+      res.writeHead(200);
       res.end(
         [
           {
             type: "response.created",
             sequence_number: 0,
-            response: { ...completedResponse, status: "in_progress", output: [], usage: null },
+            response: { ...completedResponse, status: "in_progress", usage: null },
+          },
+          {
+            type: "response.output_item.added",
+            sequence_number: 1,
+            output_index: 0,
+            item: {
+              id: "msg-e2e",
+              type: "message",
+              status: "in_progress",
+              role: "assistant",
+              content: [],
+            },
+          },
+          {
+            type: "response.content_part.added",
+            sequence_number: 2,
+            item_id: "msg-e2e",
+            output_index: 0,
+            content_index: 0,
+            part: { type: "output_text", text: "", annotations: [] },
           },
           {
             type: "response.output_text.delta",
-            sequence_number: 1,
+            sequence_number: 3,
             item_id: "msg-e2e",
             output_index: 0,
             content_index: 0,
@@ -102,7 +114,7 @@ test("E2E: a non-stream Responses request uses Codex streaming upstream and retu
           },
           {
             type: "response.completed",
-            sequence_number: 2,
+            sequence_number: 4,
             response: completedResponse,
           },
         ]
@@ -242,7 +254,12 @@ test("E2E: a non-stream Responses request uses Codex streaming upstream and retu
 
     assert.equal(statusCode, 200);
     assert.match(String(responseHeaders["content-type"]), /^application\/json\b/);
-    const clientBody = JSON.parse(bodyText) as typeof completedResponse;
+    const clientBody = JSON.parse(bodyText) as {
+      id: string;
+      status: string;
+      output: Array<{ content: Array<{ text?: string }> }>;
+      usage: typeof completedResponse.usage;
+    };
     assert.equal(clientBody.id, "resp-e2e");
     assert.equal(clientBody.status, "completed");
     assert.equal(clientBody.output[0]?.content[0]?.text, "all good");

@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import http from "http";
 import { Writable } from "stream";
 import type { AddressInfo } from "net";
+import type { Database as DB } from "better-sqlite3";
 import { openDatabase, closeDatabase } from "../db";
 import { createProvider } from "../repo/providers";
 import { createModel, getModel } from "../repo/models";
@@ -1024,6 +1025,53 @@ function streamRes() {
   return { res: w, state };
 }
 
+function codexEngineForServer(
+  db: DB,
+  port: number,
+): { engine: ForwardingEngine; model: Model } {
+  createProvider(db, {
+    id: "codex-up",
+    name: "OpenAI Codex",
+    baseUrl: `http://127.0.0.1:${port}`,
+    endpoints: [WireKind.Responses, WireKind.Chat],
+    catalogId: "openai-codex",
+    retryAttempts: 1,
+  });
+  const model = getModel(
+    db,
+    createModel(db, {
+      alias: "codex-model",
+      providers: [
+        { providerId: "codex-up", upstreamModel: "gpt-5-codex" },
+      ],
+    }).id,
+  )!;
+  const providerCredentials = {
+    candidates() {
+      return ["oauth:test-account"];
+    },
+    async resolveHealthKey() {
+      return {
+        source: "oauth" as const,
+        value: "synthetic-codex-bearer",
+        healthKey: "oauth:test-account",
+        mask: "e2e@example.com",
+        metadata: { accountId: "test-account" },
+      };
+    },
+  } as unknown as ProviderCredentialService;
+  return {
+    model,
+    engine: new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+      providerCredentials,
+    ),
+  };
+}
+
 test("streaming: primes a ping on connect + surfaces upstream error as SSE event", async () => {
   // Upstream sends an event-stream, one chunk, then destroys the socket WITHOUT
   // a terminating [DONE] - an abnormal end the gateway must surface, not swallow.
@@ -1479,7 +1527,7 @@ test("cross-format round-trip: a chat CLIENT against a responses-native PROVIDER
   }
 });
 
-test("buffered Responses client extracts response.completed from an SSE upstream", async () => {
+test("buffered Responses client assembles delta-only SSE and preserves terminal usage", async () => {
   const server = http.createServer((req, res) => {
     req.resume();
     req.on("end", () => {
@@ -1488,18 +1536,18 @@ test("buffered Responses client extracts response.completed from an SSE upstream
         object: "response",
         status: "completed",
         model: "up-1",
-        output: [
-          {
-            type: "message",
-            role: "assistant",
-            content: [{ type: "output_text", text: "buffered result" }],
-          },
-        ],
+        output: [],
         usage: { input_tokens: 7, output_tokens: 3 },
       };
       res.writeHead(200, { "content-type": "text/event-stream" });
       res.end(
         `event: response.created\ndata: ${JSON.stringify({ type: "response.created", response: { id: "resp_sse", status: "in_progress" } })}\n\n` +
+          `event: response.output_item.added\ndata: ${JSON.stringify({ type: "response.output_item.added", output_index: 0, item: { id: "msg_sse", type: "message", role: "assistant", content: [] } })}\n\n` +
+          `event: response.content_part.added\ndata: ${JSON.stringify({ type: "response.content_part.added", item_id: "msg_sse", output_index: 0, content_index: 0, part: { type: "output_text", text: "" } })}\n\n` +
+          `event: response.output_text.delta\ndata: ${JSON.stringify({ type: "response.output_text.delta", item_id: "msg_sse", output_index: 0, content_index: 0, delta: "buffered " })}\n\n` +
+          `event: response.output_text.delta\ndata: ${JSON.stringify({ type: "response.output_text.delta", item_id: "msg_sse", output_index: 0, content_index: 0, delta: "result" })}\n\n` +
+          `event: response.output_text.done\ndata: ${JSON.stringify({ type: "response.output_text.done", item_id: "msg_sse", output_index: 0, content_index: 0 })}\n\n` +
+          `event: response.output_item.done\ndata: ${JSON.stringify({ type: "response.output_item.done", output_index: 0, item: { id: "msg_sse", type: "message", role: "assistant", content: [] } })}\n\n` +
           `event: response.completed\ndata: ${JSON.stringify({ type: "response.completed", response })}\n\n`,
       );
     });
@@ -1580,17 +1628,176 @@ test("buffered Responses client extracts response.completed from an SSE upstream
   }
 });
 
+test("buffered Chat client converts text assembled from Responses SSE deltas", async () => {
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      const frames = [
+        {
+          type: "response.output_text.delta",
+          output_index: 0,
+          content_index: 0,
+          delta: "delta-only chat text",
+        },
+        {
+          type: "response.completed",
+          response: {
+            id: "resp_chat_sse",
+            object: "response",
+            status: "completed",
+            model: "up-1",
+            output: [],
+            usage: { input_tokens: 5, output_tokens: 4 },
+          },
+        },
+      ];
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "up",
+      name: "up",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["k"],
+      endpoints: [WireKind.Responses],
+      retryAttempts: 1,
+    });
+    const model = getModel(
+      db,
+      createModel(db, {
+        alias: "test-model",
+        providers: [{ providerId: "up", upstreamModel: "up-1" }],
+      }).id,
+    )!;
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const result = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      result.res as never,
+      ctxFor(model, {
+        model: "test-model",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    assert.equal(result.state.statusCode, 200);
+    const body = result.state.body as {
+      choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
+    assert.equal(body.choices?.[0]?.message?.content, "delta-only chat text");
+    assert.equal(body.usage?.prompt_tokens, 5);
+    assert.equal(body.usage?.completion_tokens, 4);
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("buffered Responses SSE keeps populated terminal output exact", async () => {
+  const terminalOutput = [
+    {
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: "terminal text" }],
+    },
+  ];
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      const frames = [
+        {
+          type: "response.output_text.delta",
+          output_index: 0,
+          content_index: 0,
+          delta: "terminal text",
+        },
+        {
+          type: "response.completed",
+          response: {
+            id: "resp_full_sse",
+            object: "response",
+            status: "completed",
+            model: "up-1",
+            output: terminalOutput,
+          },
+        },
+      ];
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "up",
+      name: "up",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["k"],
+      endpoints: [WireKind.Responses],
+      retryAttempts: 1,
+    });
+    const model = getModel(
+      db,
+      createModel(db, {
+        alias: "test-model",
+        providers: [{ providerId: "up", upstreamModel: "up-1" }],
+      }).id,
+    )!;
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const result = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      result.res as never,
+      ctxFor(
+        model,
+        { model: "test-model", input: "hi", stream: false },
+        "/v1/responses",
+      ),
+    );
+
+    assert.equal(result.state.statusCode, 200);
+    const body = result.state.body;
+    assert.ok(body && typeof body === "object" && "output" in body);
+    assert.deepEqual(body.output, terminalOutput);
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
 test("buffered Responses client fails deterministically on incomplete or malformed SSE", async () => {
   let requests = 0;
   const server = http.createServer((req, res) => {
     req.resume();
     req.on("end", () => {
       res.writeHead(200, { "content-type": "text/event-stream" });
-      res.end(
+      const response =
         requests++ === 0
           ? 'data: {"type":"response.output_text.delta","delta":"partial"}\n\n'
-          : "data: {not-json}\n\n",
-      );
+          : requests === 2
+            ? "data: {not-json}\n\n"
+            : 'event: response.completed\ndata: {"type":"response.completed"}\n\n';
+      res.end(response);
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -1649,6 +1856,22 @@ test("buffered Responses client fails deterministically on incomplete or malform
     assert.match(
       JSON.stringify(second.state.body),
       /malformed upstream Responses SSE/,
+    );
+
+    const third = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      third.res as never,
+      ctxFor(
+        model,
+        { model: "test-model", input: "hi", stream: false },
+        "/v1/responses",
+      ),
+    );
+    assert.equal(third.state.statusCode, 502);
+    assert.match(
+      JSON.stringify(third.state.body),
+      /response\.completed missing full response/,
     );
   } finally {
     closeDatabase(db);
@@ -3331,6 +3554,170 @@ test("Codex managed account reaches the backend with the pinned CLI identity", a
   } finally {
     closeDatabase(db);
     fs.rmSync(dir, { recursive: true, force: true });
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("headerless Codex Responses SSE converts to Chat stream and captures usage/debug", async () => {
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      const frames = [
+        {
+          type: "response.created",
+          response: {
+            id: "resp_headerless_stream",
+            model: "gpt-5-codex",
+            created_at: 100,
+          },
+        },
+        {
+          type: "response.output_text.delta",
+          output_index: 0,
+          content_index: 0,
+          delta: "headerless stream",
+        },
+        {
+          type: "response.output_item.done",
+          output_index: 1,
+          item: {
+            type: "function_call",
+            output_index: 1,
+            name: "search",
+            arguments: '{"q":"x"}',
+          },
+        },
+        {
+          type: "response.completed",
+          response: {
+            id: "resp_headerless_stream",
+            object: "response",
+            status: "completed",
+            model: "gpt-5-codex",
+            output: [
+              {
+                type: "function_call",
+                output_index: 1,
+                name: "search",
+                arguments: '{"q":"x"}',
+              },
+            ],
+            usage: { input_tokens: 11, output_tokens: 4 },
+          },
+        },
+      ];
+      res.writeHead(200);
+      const [terminal, ...preceding] = frames.slice().reverse();
+      res.end(
+        `${preceding
+          .reverse()
+          .map((frame) => `data: ${JSON.stringify(frame)}\n\n`)
+          .join("")}data: ${JSON.stringify(terminal)}`,
+      );
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    const { engine, model } = codexEngineForServer(db, port);
+    const { res, state } = streamRes();
+    const finished = new Promise<void>((resolve) => res.once("finish", resolve));
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      {
+        ...ctxFor(model, {
+          model: "codex-model",
+          messages: [{ role: "user", content: "hi" }],
+          stream: true,
+        }),
+        isStream: true,
+        debug: true,
+      },
+    );
+    await finished;
+
+    assert.equal(state.statusCode, 200);
+    assert.equal(state.headers["content-type"], "text/event-stream");
+    assert.match(state.text, /"content":"headerless stream"/);
+    assert.match(state.text, /data: \[DONE\]/);
+    const logs = listRequestLogs(db);
+    assert.equal(logs.length, 1);
+    const log = logs[0]!;
+    assert.equal(log.inputTokens, 11);
+    assert.equal(log.outputTokens, 4);
+    const detail = getRequestLogDetail(db, log.id)!;
+    assert.deepEqual(JSON.parse(detail.response!), {
+      text: "headerless stream",
+      toolCalls: [{ name: "search", arguments: '{"q":"x"}' }],
+      stopReason: "tool_calls",
+    });
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("headerless Codex Responses SSE buffers and converts for a non-stream Chat client", async () => {
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      const frames = [
+        {
+          type: "response.output_text.delta",
+          output_index: 0,
+          content_index: 0,
+          delta: "headerless buffered",
+        },
+        {
+          type: "response.completed",
+          response: {
+            id: "resp_headerless_buffered",
+            object: "response",
+            status: "completed",
+            model: "gpt-5-codex",
+            output: [],
+            usage: { input_tokens: 7, output_tokens: 3 },
+          },
+        },
+      ];
+      res.writeHead(200);
+      res.end(
+        frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""),
+      );
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    const { engine, model } = codexEngineForServer(db, port);
+    const { res, state } = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctxFor(model, {
+        model: "codex-model",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    assert.equal(state.statusCode, 200);
+    assert.equal(state.headers["content-type"], "application/json");
+    const body = state.body as {
+      choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
+    assert.equal(body.choices?.[0]?.message?.content, "headerless buffered");
+    assert.equal(body.usage?.prompt_tokens, 7);
+    assert.equal(body.usage?.completion_tokens, 3);
+    assert.equal(listRequestLogs(db)[0]?.inputTokens, 7);
+    assert.equal(listRequestLogs(db)[0]?.outputTokens, 3);
+  } finally {
+    closeDatabase(db);
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });

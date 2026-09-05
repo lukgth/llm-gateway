@@ -47,7 +47,10 @@ export class SseUsageObserver extends Transform {
   private text = "";
   private stopReason: unknown = undefined;
   // Tool calls keyed by streaming index; arguments accumulate across deltas.
-  private tools = new Map<number, { name?: unknown; arguments: string }>();
+  private tools = new Map<
+    number,
+    { name?: unknown; arguments: string; sawArguments: boolean }
+  >();
 
   constructor(opts?: { capture?: boolean }) {
     super({ highWaterMark: 0 });
@@ -96,6 +99,15 @@ export class SseUsageObserver extends Transform {
     cb(null, chunk); // forward verbatim
   }
 
+  _flush(cb: TransformCallback): void {
+    try {
+      if (this.tail) this.scan(Buffer.from("\n", "utf8"));
+    } catch {
+      /* observation must never disrupt the stream */
+    }
+    cb();
+  }
+
   private scan(chunk: Buffer): void {
     const text = this.tail + chunk.toString("utf8");
     const lines = text.split("\n");
@@ -140,12 +152,14 @@ export class SseUsageObserver extends Transform {
     const addArg = (idx: number, name: unknown, frag: unknown) => {
       let t = this.tools.get(idx);
       if (!t) {
-        t = { name, arguments: "" };
+        t = { name, arguments: "", sawArguments: false };
         this.tools.set(idx, t);
       }
       if (name !== undefined && t.name === undefined) t.name = name;
-      if (typeof frag === "string" && t.arguments.length < CAPTURE_ARG_CAP)
-        t.arguments += frag;
+      if (typeof frag === "string" && frag) {
+        t.sawArguments = true;
+        if (t.arguments.length < CAPTURE_ARG_CAP) t.arguments += frag;
+      }
     };
 
     // Anthropic Messages SSE.
@@ -186,10 +200,52 @@ export class SseUsageObserver extends Transform {
       }
     }
 
-    // OpenAI Responses SSE: output_text deltas + function_call args.
+    // OpenAI Responses SSE: output text, function calls, and terminal state.
     if (type === "response.output_text.delta") addText(obj.delta);
+    if (
+      type === "response.output_item.added" ||
+      type === "response.output_item.done"
+    ) {
+      const item = (obj.item ?? {}) as Record<string, unknown>;
+      if (item.type === "function_call")
+        addArg(
+          Number(obj.output_index ?? 0),
+          item.name,
+          type === "response.output_item.done" ? item.arguments : undefined,
+        );
+    }
     if (type === "response.function_call_arguments.delta")
       addArg(Number(obj.output_index ?? 0), undefined, obj.delta);
+    if (type === "response.function_call_arguments.done") {
+      const idx = Number(obj.output_index ?? 0);
+      const tool = this.tools.get(idx);
+      if (!tool?.sawArguments) addArg(idx, undefined, obj.arguments);
+    }
+    if (type === "response.completed") {
+      const response = (obj.response ?? {}) as Record<string, unknown>;
+      const output = Array.isArray(response.output)
+        ? (response.output as Array<Record<string, unknown>>)
+        : [];
+      for (const item of output) {
+        if (item?.type !== "function_call") continue;
+        const idx = Number(item.output_index ?? this.tools.size);
+        const tool = this.tools.get(idx);
+        addArg(
+          idx,
+          item.name,
+          tool?.sawArguments ? undefined : item.arguments,
+        );
+      }
+      if (response.status === "incomplete") this.stopReason = "length";
+      else if (
+        response.end_turn === false ||
+        output.some((item) => item?.type === "function_call") ||
+        this.tools.size > 0
+      )
+        this.stopReason = "tool_calls";
+      else if (response.status === "completed" || response.end_turn === true)
+        this.stopReason = "stop";
+    }
   }
 
   private readUsage(u: unknown): void {
