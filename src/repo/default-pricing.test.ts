@@ -169,7 +169,6 @@ test("defaultPricingFor: resolves all Muse Spark tiers", () => {
     "muse-spark-1.3",
     "muse-spark-1.2",
     "muse-spark-1.1",
-    "muse-spark-2.1",
   ]) {
     const m = defaultPricingFor(id);
     assert.ok(m, `expected to resolve ${id}`);
@@ -181,7 +180,6 @@ test("defaultPricingFor: resolves all Muse Spark tiers", () => {
   for (const id of [
     "muse-spark-1.3-contributor",
     "muse-spark-1.2-contributor",
-    "muse-spark-2.1-contributor",
   ]) {
     const m = defaultPricingFor(id);
     assert.ok(m, `expected to resolve ${id}`);

@@ -490,8 +490,7 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
   // https://dev.meta.ai/docs/pricing-rate-limits/ - Standard tier
   // (muse-spark-1.3/1.2/1.1) shares one rate; Contributor tier
   // (muse-spark-1.3/1.2-contributor) trades training-on-data for ~10-20x
-  // cheaper tokens. No long-context premium. The 2.1 ids below carry the
-  // same rates under a newer version number - kept, not renamed.
+  // cheaper tokens. No long-context premium.
   {
     id: "muse-spark-1.3",
     label: "Muse Spark 1.3",
@@ -531,22 +530,6 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     promptPer1m: 1.25,
     completionPer1m: 4.25,
     cachedPer1m: 0.15,
-  },
-  {
-    id: "muse-spark-2.1",
-    label: "Muse Spark 2.1",
-    brand: "meta",
-    promptPer1m: 1.25,
-    completionPer1m: 4.25,
-    cachedPer1m: 0.15,
-  },
-  {
-    id: "muse-spark-2.1-contributor",
-    label: "Muse Spark 2.1 (Contributor)",
-    brand: "meta",
-    promptPer1m: 0.1,
-    completionPer1m: 0.2,
-    cachedPer1m: 0.002,
   },
 
   // --- Moonshot / Kimi ----------------------------------------------------
