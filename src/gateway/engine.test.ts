@@ -1628,7 +1628,7 @@ test("buffered Responses client assembles delta-only SSE and preserves terminal 
   }
 });
 
-test("buffered Chat client converts text assembled from Responses SSE deltas", async () => {
+test("buffered Chat client preserves partial Responses SSE content and reports length", async () => {
   const server = http.createServer((req, res) => {
     req.resume();
     req.on("end", () => {
@@ -1640,11 +1640,11 @@ test("buffered Chat client converts text assembled from Responses SSE deltas", a
           delta: "delta-only chat text",
         },
         {
-          type: "response.completed",
+          type: "response.incomplete",
           response: {
             id: "resp_chat_sse",
             object: "response",
-            status: "completed",
+            status: "incomplete",
             model: "up-1",
             output: [],
             usage: { input_tokens: 5, output_tokens: 4 },
@@ -1693,10 +1693,11 @@ test("buffered Chat client converts text assembled from Responses SSE deltas", a
 
     assert.equal(result.state.statusCode, 200);
     const body = result.state.body as {
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
     assert.equal(body.choices?.[0]?.message?.content, "delta-only chat text");
+    assert.equal(body.choices?.[0]?.finish_reason, "length");
     assert.equal(body.usage?.prompt_tokens, 5);
     assert.equal(body.usage?.completion_tokens, 4);
   } finally {
@@ -1785,19 +1786,19 @@ test("buffered Responses SSE keeps populated terminal output exact", async () =>
   }
 });
 
-test("buffered Responses client fails deterministically on incomplete or malformed SSE", async () => {
+test("buffered Responses client rejects missing terminals, malformed events and failures", async () => {
   let requests = 0;
+  const streams = [
+    'data: {"type":"response.output_text.delta","delta":"partial"}\n\n',
+    "data: {not-json}\n\n",
+    'event: response.completed\ndata: {"type":"response.completed"}\n\n',
+    'data: {"type":"response.failed","response":{"status":"failed"}}\n\n',
+  ];
   const server = http.createServer((req, res) => {
     req.resume();
     req.on("end", () => {
       res.writeHead(200, { "content-type": "text/event-stream" });
-      const response =
-        requests++ === 0
-          ? 'data: {"type":"response.output_text.delta","delta":"partial"}\n\n'
-          : requests === 2
-            ? "data: {not-json}\n\n"
-            : 'event: response.completed\ndata: {"type":"response.completed"}\n\n';
-      res.end(response);
+      res.end(streams[requests++]);
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -1826,53 +1827,19 @@ test("buffered Responses client fails deterministically on incomplete or malform
       new ThinkingConverter(),
       0,
     );
-    const first = mockRes();
-    await engine.forward(
-      { method: "POST", headers: {} } as never,
-      first.res as never,
-      ctxFor(
-        model,
-        { model: "test-model", input: "hi", stream: false },
-        "/v1/responses",
-      ),
-    );
-    assert.equal(first.state.statusCode, 502);
-    assert.match(
-      JSON.stringify(first.state.body),
-      /ended before response\.completed/,
-    );
-
-    const second = mockRes();
-    await engine.forward(
-      { method: "POST", headers: {} } as never,
-      second.res as never,
-      ctxFor(
-        model,
-        { model: "test-model", input: "hi", stream: false },
-        "/v1/responses",
-      ),
-    );
-    assert.equal(second.state.statusCode, 502);
-    assert.match(
-      JSON.stringify(second.state.body),
-      /malformed upstream Responses SSE/,
-    );
-
-    const third = mockRes();
-    await engine.forward(
-      { method: "POST", headers: {} } as never,
-      third.res as never,
-      ctxFor(
-        model,
-        { model: "test-model", input: "hi", stream: false },
-        "/v1/responses",
-      ),
-    );
-    assert.equal(third.state.statusCode, 502);
-    assert.match(
-      JSON.stringify(third.state.body),
-      /response\.completed missing full response/,
-    );
+    for (const stream of streams) {
+      const result = mockRes();
+      await engine.forward(
+        { method: "POST", headers: {} } as never,
+        result.res as never,
+        ctxFor(
+          model,
+          { model: "test-model", input: "hi", stream: false },
+          "/v1/responses",
+        ),
+      );
+      assert.equal(result.state.statusCode, 502, stream);
+    }
   } finally {
     closeDatabase(db);
     await new Promise<void>((r) => server.close(() => r()));

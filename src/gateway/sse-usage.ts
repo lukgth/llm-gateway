@@ -19,15 +19,10 @@
 // seen is the final total.
 
 import { Transform, type TransformCallback } from "stream";
-import { readCachedTokens, readCacheWriteTokens } from "../formats/tokens";
+import { normalizeUsage, type NormalizedUsage } from "../formats/tokens";
 import type { ResponseSummary } from "./debug-capture";
 
-export interface StreamUsage {
-  input?: number;
-  output?: number;
-  cached?: number;
-  cacheWrite?: number;
-}
+export type StreamUsage = NormalizedUsage;
 
 // Per-string cap while accumulating streamed text/args, so a runaway stream
 // can't grow the in-memory buffers without bound.
@@ -46,9 +41,10 @@ export class SseUsageObserver extends Transform {
   private readonly capture: boolean;
   private text = "";
   private stopReason: unknown = undefined;
-  // Tool calls keyed by streaming index; arguments accumulate across deltas.
+  // Tool calls keyed by streaming index or a stable Responses item identity.
+  private responseToolKeys = new Map<string, string>();
   private tools = new Map<
-    number,
+    number | string,
     { name?: unknown; arguments: string; sawArguments: boolean }
   >();
 
@@ -147,9 +143,9 @@ export class SseUsageObserver extends Transform {
   private captureEvent(obj: Record<string, unknown>): void {
     const addText = (s: unknown) => {
       if (typeof s === "string" && s && this.text.length < CAPTURE_TEXT_CAP)
-        this.text += s;
+        this.text += s.slice(0, CAPTURE_TEXT_CAP - this.text.length);
     };
-    const addArg = (idx: number, name: unknown, frag: unknown) => {
+    const addArg = (idx: number | string, name: unknown, frag: unknown) => {
       let t = this.tools.get(idx);
       if (!t) {
         t = { name, arguments: "", sawArguments: false };
@@ -158,7 +154,8 @@ export class SseUsageObserver extends Transform {
       if (name !== undefined && t.name === undefined) t.name = name;
       if (typeof frag === "string" && frag) {
         t.sawArguments = true;
-        if (t.arguments.length < CAPTURE_ARG_CAP) t.arguments += frag;
+        if (t.arguments.length < CAPTURE_ARG_CAP)
+          t.arguments += frag.slice(0, CAPTURE_ARG_CAP - t.arguments.length);
       }
     };
 
@@ -207,33 +204,44 @@ export class SseUsageObserver extends Transform {
       type === "response.output_item.done"
     ) {
       const item = (obj.item ?? {}) as Record<string, unknown>;
-      if (item.type === "function_call")
+      if (item.type === "function_call") {
+        const key = this.responseToolKey(obj.output_index, item.id, item.call_id);
         addArg(
-          Number(obj.output_index ?? 0),
+          key,
           item.name,
-          type === "response.output_item.done" ? item.arguments : undefined,
+          type === "response.output_item.done" && !this.tools.get(key)?.sawArguments
+            ? item.arguments
+            : undefined,
         );
+      }
     }
-    if (type === "response.function_call_arguments.delta")
-      addArg(Number(obj.output_index ?? 0), undefined, obj.delta);
-    if (type === "response.function_call_arguments.done") {
-      const idx = Number(obj.output_index ?? 0);
-      const tool = this.tools.get(idx);
-      if (!tool?.sawArguments) addArg(idx, undefined, obj.arguments);
+    if (
+      type === "response.function_call_arguments.delta" ||
+      type === "response.function_call_arguments.done"
+    ) {
+      const key = this.responseToolKey(obj.output_index, obj.item_id, obj.call_id);
+      if (type === "response.function_call_arguments.delta")
+        addArg(key, undefined, obj.delta);
+      else if (!this.tools.get(key)?.sawArguments)
+        addArg(key, undefined, obj.arguments);
     }
     if (type === "response.completed") {
       const response = (obj.response ?? {}) as Record<string, unknown>;
       const output = Array.isArray(response.output)
         ? (response.output as Array<Record<string, unknown>>)
         : [];
-      for (const item of output) {
+      for (let index = 0; index < output.length; index++) {
+        const item = output[index];
         if (item?.type !== "function_call") continue;
-        const idx = Number(item.output_index ?? this.tools.size);
-        const tool = this.tools.get(idx);
+        const key = this.responseToolKey(
+          item.output_index ?? index,
+          item.id,
+          item.call_id,
+        );
         addArg(
-          idx,
+          key,
           item.name,
-          tool?.sawArguments ? undefined : item.arguments,
+          this.tools.get(key)?.sawArguments ? undefined : item.arguments,
         );
       }
       if (response.status === "incomplete") this.stopReason = "length";
@@ -248,33 +256,29 @@ export class SseUsageObserver extends Transform {
     }
   }
 
+  // Bind both stable IDs and output positions: completed arrays can include
+  // reasoning/message items, and compact providers can omit output_index.
+  private responseToolKey(index: unknown, id: unknown, callId: unknown): string {
+    const itemKey = typeof id === "string" && id ? `item:${id}` : undefined;
+    const callKey =
+      typeof callId === "string" && callId ? `call:${callId}` : undefined;
+    const indexKey =
+      typeof index === "number" && Number.isInteger(index) && index >= 0
+        ? `index:${index}`
+        : undefined;
+    const key =
+      (itemKey && this.responseToolKeys.get(itemKey)) ||
+      (callKey && this.responseToolKeys.get(callKey)) ||
+      (indexKey && this.responseToolKeys.get(indexKey)) ||
+      itemKey || callKey || indexKey || "index:0";
+    if (itemKey) this.responseToolKeys.set(itemKey, key);
+    if (callKey) this.responseToolKeys.set(callKey, key);
+    if (indexKey) this.responseToolKeys.set(indexKey, key);
+    return key;
+  }
+
   private readUsage(u: unknown): void {
-    if (!u || typeof u !== "object") return;
-    const o = u as Record<string, unknown>;
-    let input = num(o.input_tokens) ?? num(o.prompt_tokens) ?? null;
-    const output = num(o.output_tokens) ?? num(o.completion_tokens) ?? null;
-    const cached = readCachedTokens(o);
-    const cacheWrite = readCacheWriteTokens(o);
-    // Anthropic's input_tokens excludes cache buckets. Normalise so `input`
-    // always means "total input including cached" - the convention
-    // computeCostUsd expects. For OpenAI, prompt_tokens already includes
-    // both buckets, so only add when detecting the Anthropic shape.
-    if (
-      input != null &&
-      typeof o.input_tokens === "number" &&
-      (typeof o.cache_read_input_tokens === "number" ||
-        typeof o.cache_creation_input_tokens === "number")
-    ) {
-      if (typeof o.cache_read_input_tokens === "number" && cached != null) {
-        input = input + cached;
-      }
-      if (
-        typeof o.cache_creation_input_tokens === "number" &&
-        cacheWrite != null
-      ) {
-        input = input + cacheWrite;
-      }
-    }
+    const { input, output, cached, cacheWrite } = normalizeUsage(u);
     if (input != null) this.seenInput = Math.max(this.seenInput ?? 0, input);
     if (output != null)
       this.seenOutput = Math.max(this.seenOutput ?? 0, output);
@@ -303,8 +307,4 @@ export class SseUsageObserver extends Transform {
       }
     }
   }
-}
-
-function num(v: unknown): number | null {
-  return typeof v === "number" && Number.isFinite(v) ? v : null;
 }

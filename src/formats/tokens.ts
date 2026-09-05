@@ -162,10 +162,21 @@ export function readMaxOutputTokens(
   return undefined;
 }
 
+export interface NormalizedUsage {
+  input?: number;
+  output?: number;
+  cached?: number;
+  cacheWrite?: number;
+}
+
 // Extract upstream-reported token usage from a parsed response body.
-// Works across Anthropic, OpenAI Chat, and OpenAI Responses shapes.
 // Returns {} when no usage info is present (e.g. passthrough / streaming).
-//
+export function readResponseUsage(body: unknown): NormalizedUsage {
+  if (!body || typeof body !== "object" || !("usage" in body)) return {};
+  return normalizeUsage(body.usage);
+}
+
+// Normalize one provider usage object for buffered and streaming responses.
 // `input` is the TOTAL input tokens including cached - the same convention
 // OpenAI's `prompt_tokens` uses. Anthropic reports cache buckets separately
 // (cache_read_input_tokens / cache_creation_input_tokens) and its
@@ -177,35 +188,24 @@ export function readMaxOutputTokens(
 // separately for cost visibility. `computeCostUsd` subtracts both from `input`
 // to derive the uncached billable portion - so `input` MUST include both
 // buckets or the subtraction double-counts.
-export function readResponseUsage(body: unknown): {
-  input?: number;
-  output?: number;
-  cached?: number;
-  cacheWrite?: number;
-} {
-  if (!body || typeof body !== "object") return {};
-  const u = (body as { usage?: unknown }).usage;
-  if (!u || typeof u !== "object") return {};
-  const o = u as Record<string, unknown>;
-  const out: {
-    input?: number;
-    output?: number;
-    cached?: number;
-    cacheWrite?: number;
-  } = {};
-  // OpenAI Chat: prompt_tokens already includes cached - use as-is.
-  if (typeof o.prompt_tokens === "number") out.input = o.prompt_tokens;
-  if (typeof o.completion_tokens === "number") out.output = o.completion_tokens;
-  // Anthropic / Responses: input_tokens + output_tokens.
-  if (typeof o.input_tokens === "number") out.input = o.input_tokens;
-  if (typeof o.output_tokens === "number") out.output = o.output_tokens;
-  // Gemini native generateContent: usageMetadata.promptTokenCount is already
-  // the total prompt size; cachedContentTokenCount is the cache-read subset.
-  if (typeof o.promptTokenCount === "number") out.input = o.promptTokenCount;
-  if (typeof o.candidatesTokenCount === "number")
-    out.output = o.candidatesTokenCount;
-  if (typeof o.totalTokenCount === "number" && out.input === undefined) {
-    const rest = o.totalTokenCount - (out.output ?? 0);
+export function normalizeUsage(usage: unknown): NormalizedUsage {
+  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return {};
+  const o = usage as Record<string, unknown>;
+  const out: NormalizedUsage = {};
+  // Prefer Responses/Anthropic fields over Chat, and native Gemini fields
+  // when present. Invalid counts are absent, not authoritative zeroes.
+  const anthropicInput = numOrNull(o.input_tokens);
+  const geminiInput = numOrNull(o.promptTokenCount);
+  const input = geminiInput ?? anthropicInput ?? numOrNull(o.prompt_tokens);
+  const output =
+    numOrNull(o.candidatesTokenCount) ??
+    numOrNull(o.output_tokens) ??
+    numOrNull(o.completion_tokens);
+  if (input != null) out.input = input;
+  if (output != null) out.output = output;
+  const total = numOrNull(o.totalTokenCount);
+  if (total != null && out.input === undefined) {
+    const rest = total - (out.output ?? 0);
     if (rest >= 0) out.input = rest;
   }
   const cached = readCachedTokens(o);
@@ -220,12 +220,10 @@ export function readResponseUsage(body: unknown): {
   // always means "total input including cached" (the convention
   // computeCostUsd expects). For OpenAI, prompt_tokens already includes
   // both buckets, so only add when detecting the Anthropic shape.
-  if (typeof o.input_tokens === "number") {
-    let add = 0;
-    if (typeof o.cache_read_input_tokens === "number") add += cached ?? 0;
-    if (typeof o.cache_creation_input_tokens === "number")
-      add += cacheWrite ?? 0;
-    if (add > 0 && out.input != null) out.input = o.input_tokens + add;
+  if (anthropicInput != null && geminiInput == null) {
+    const read = numOrNull(o.cache_read_input_tokens) ?? 0;
+    const write = numOrNull(o.cache_creation_input_tokens) ?? 0;
+    out.input = anthropicInput + read + write;
   }
   return out;
 }
