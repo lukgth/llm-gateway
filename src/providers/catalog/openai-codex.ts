@@ -32,6 +32,31 @@ import { CODEX_CLIENT_VERSION, codexIdentityHeaders, parseCodexModels } from "..
 // at /backend-api/wham/usage (sibling of the codex api family).
 const CODEX_USAGE_PATH = "/backend-api/wham/usage";
 
+// Codex wham/usage window lengths (codex-lb's constants): 5h primary, 7d
+// weekly, 30d monthly. Anything else falls back to the position's default
+// identity with the raw length noted, so a novel upstream window still renders.
+const HOUR = 3_600;
+const DAY = 24 * HOUR;
+const WINDOW_LENGTHS: Array<{ seconds: number; id: string; label: string }> = [
+  { seconds: 5 * HOUR, id: "session", label: "Session" },
+  { seconds: 7 * DAY, id: "weekly", label: "Weekly" },
+  { seconds: 30 * DAY, id: "monthly", label: "Monthly" },
+];
+
+function windowIdentity(
+  limitWindowSeconds: unknown,
+  fallbackId: string,
+  fallbackLabel: string,
+): { id: string; label: string } {
+  if (typeof limitWindowSeconds === "number" && limitWindowSeconds > 0) {
+    const known = WINDOW_LENGTHS.find(
+      (w) => w.seconds === limitWindowSeconds,
+    );
+    if (known) return { id: known.id, label: known.label };
+  }
+  return { id: fallbackId, label: fallbackLabel };
+}
+
 class OpenAICodexAdapter extends OpenAICompatibleAdapter {
   // The Codex backend speaks Responses natively for every model; per-link
   // endpoint pins still win via routeFor (preferredEndpoint is skipped when
@@ -210,13 +235,18 @@ class OpenAICodexAdapter extends OpenAICompatibleAdapter {
     const rl = rateLimit as Record<string, unknown>;
     const windows: ProviderKeyUsageWindow[] = [];
 
+    // primary_window/secondary_window are POSITIONS, not fixed durations. For
+    // paid plans primary is the 5-hour rolling window and secondary the weekly
+    // one, but free accounts get a single 30-day monthly quota in the primary
+    // slot (OpenAI's free-plan policy; codex-lb normalizes the same way). The
+    // authoritative length is limit_window_seconds, so derive id/label from it.
     const windowDefs: Array<{
       key: string;
-      id: string;
-      label: string;
+      fallbackId: string;
+      fallbackLabel: string;
     }> = [
-      { key: "primary_window", id: "session", label: "Session" },
-      { key: "secondary_window", id: "weekly", label: "Weekly" },
+      { key: "primary_window", fallbackId: "session", fallbackLabel: "Session" },
+      { key: "secondary_window", fallbackId: "weekly", fallbackLabel: "Weekly" },
     ];
 
     for (const def of windowDefs) {
@@ -227,6 +257,12 @@ class OpenAICodexAdapter extends OpenAICompatibleAdapter {
       if (usedVal === undefined || usedVal === null) continue;
       const used = typeof usedVal === "number" ? usedVal : Number(usedVal);
       if (!Number.isFinite(used)) continue;
+
+      const { id, label } = windowIdentity(
+        win["limit_window_seconds"],
+        def.fallbackId,
+        def.fallbackLabel,
+      );
 
       let resetsAt: string | undefined;
       const resetAt = win["reset_at"];
@@ -247,8 +283,8 @@ class OpenAICodexAdapter extends OpenAICompatibleAdapter {
       }
 
       windows.push({
-        id: def.id,
-        label: def.label,
+        id,
+        label,
         used,
         limit: 100,
         unit: "percent",
@@ -264,7 +300,20 @@ class OpenAICodexAdapter extends OpenAICompatibleAdapter {
       };
     }
 
-    return { windows };
+    // The account's subscription tier rides at the top level of the wham/usage
+    // payload (codex-lb parses the same field). Surface it the way glm.ts /
+    // commandcode.ts do - a "Plan:" note under the key. Lowercase upstream
+    // values ("pro", "team", "free") read like a proper noun.
+    const planType =
+      body && typeof body === "object"
+        ? (body as Record<string, unknown>)["plan_type"]
+        : undefined;
+    const message =
+      typeof planType === "string" && planType.trim().length > 0
+        ? `Plan: ${planType.trim().charAt(0).toUpperCase()}${planType.trim().slice(1).toLowerCase()}`
+        : undefined;
+
+    return { windows, ...(message ? { message } : {}) };
   }
 }
 

@@ -101,7 +101,7 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
   // otherwise). Registered before "/providers/:id" so "usage" isn't parsed as an
   // id. Keys are masked here; the raw secret never leaves the backend.
   r.get("/providers/usage", requireAdmin, async (_req, res) => {
-    res.json(await buildUsageReports(db));
+    res.json(await buildUsageReports(db, ctx.providerCredentials));
   });
 
   r.post("/providers", requireAdmin, (req, res) => {
@@ -301,7 +301,9 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
     const provider = getProvider(db, String(req.params.id));
     if (!provider)
       return res.status(404).json({ error: { message: "not found" } });
-    res.json(await buildUsageReport(provider, db));
+    res.json(
+      await buildUsageReport(provider, db, ctx.providerCredentials),
+    );
   });
 
   // Probe upstream models via the adapter's fetchModels() seam (honors any
