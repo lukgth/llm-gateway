@@ -191,6 +191,28 @@ export function ConfigForm({
           </FormSection>
         )}
 
+        {provider.catalogId === "hypercharm" && (
+          <FormSection
+            title="Billing"
+            desc="Hypercredit balance bar (1 Hypercredit = 5¢)."
+          >
+            <SettingRow
+              label="Credits per period"
+              hint="Hypercredits your tier grants per refresh (free = 100, $20 tier = 250 daily)."
+            >
+              <Input
+                type="number"
+                min={1}
+                value={(form.providerConfig?.creditsPerPeriod as number) ?? 100}
+                onChange={(e) =>
+                  setConfig("creditsPerPeriod", Number(e.target.value) || 100)
+                }
+                className="sm:max-w-48"
+              />
+            </SettingRow>
+          </FormSection>
+        )}
+
         <FormSection
           title="Wire format & routing"
           desc="How the gateway addresses this provider and whether it converts."

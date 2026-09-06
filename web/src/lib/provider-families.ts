@@ -31,6 +31,7 @@ export const PROVIDER_FAMILIES: readonly ProviderFamily[] = [
   { label: "NewAPI", brand: "newapi", ids: ["newapi"] },
   { label: "OpenCode", brand: "opencode", ids: ["opencode", "opencode-go"] },
   { label: "Command Code", brand: "commandcode", ids: ["commandcode"] },
+  { label: "HyperCharm", brand: "hypercharm", ids: ["hypercharm"] },
   { label: "Xiaomi", brand: "mimo", ids: ["xiaomi-mimo"] },
   {
     label: "Qwen",

@@ -36,6 +36,7 @@ import newapiSvg from "@lobehub/icons-static-svg/icons/newapi.svg?raw";
 import ollamaSvg from "@lobehub/icons-static-svg/icons/ollama.svg?raw";
 import clineSvg from "@lobehub/icons-static-svg/icons/cline.svg?raw";
 import commandcodeSvg from "../assets/brands/commandcode.svg?raw";
+import hypercharmSvg from "../assets/brands/hypercharm.svg?raw";
 
 // Ordered: more specific patterns before broader ones (e.g. "gemini" before
 // a generic "google", "kimi" before "k2").
@@ -110,6 +111,7 @@ const PROVIDER_BRANDS: Record<string, { svg: string; label: string }> = {
   xai: { svg: grokSvg, label: "xAI" },
   kimi: { svg: kimiSvg, label: "Kimi" },
   commandcode: { svg: commandcodeSvg, label: "Command Code" },
+  hypercharm: { svg: hypercharmSvg, label: "HyperCharm" },
   // Catalog-ID aliases - pages that call ProviderIcon with brand={provider.catalogId}
   // need entries for IDs that differ from the template's brand field.
   "opencode-go": { svg: opencodeSvg, label: "OpenCode" },
