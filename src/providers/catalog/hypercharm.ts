@@ -104,9 +104,14 @@ class HyperCharmAdapter extends OpenAICompatibleAdapter {
 
     // Compute the dollar bar in integer cents (no resetsAt because /credits
     // carries no refresh timestamp - same reasoning as newapi.ts).
+    //
+    // Strict ceiling: allocation x $0.05, ALWAYS. A balance above the
+    // allocation (stacked never-expiring bundle credits) must NOT expand the
+    // bar - excess used just clamps to 0, keeping the bar an honest picture
+    // of the tier's own budget.
     const creditsPerPeriod = readCreditsPerPeriod(ctx.provider);
-    const limitCents = Math.round(Math.max(creditsPerPeriod, balance) * CENTS_PER_CREDIT);
-    const usedCents = Math.max(0, Math.round(Math.max(0, creditsPerPeriod - balance) * CENTS_PER_CREDIT));
+    const limitCents = Math.round(creditsPerPeriod * CENTS_PER_CREDIT);
+    const usedCents = Math.round(Math.max(0, creditsPerPeriod - balance) * CENTS_PER_CREDIT);
     const window: ProviderKeyUsageWindow = {
       id: "hypercredits",
       label: "Balance",

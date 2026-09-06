@@ -101,10 +101,10 @@ test("tier allocation from providerConfig creditsPerPeriod", async () => {
   assert.deepEqual(result.windows, [{ id: "hypercredits", label: "Balance", used: 8.32, limit: 12.5, unit: "dollars" }]);
 });
 
-test("bundle credits over allocation still report correctly", async () => {
+test("bundle credits above the allocation clamp used to 0 without expanding the bar", async () => {
   const result = await hypercharm.keyUsage(usageCtx(json({ balance: 300 })));
   assert.equal(result.message, "300 Hypercredits remaining");
-  assert.deepEqual(result.windows, [{ id: "hypercredits", label: "Balance", used: 0, limit: 15, unit: "dollars" }]);
+  assert.deepEqual(result.windows, [{ id: "hypercredits", label: "Balance", used: 0, limit: 5, unit: "dollars" }]);
 });
 
 test("a disabled key is reported without querying the upstream", async () => {

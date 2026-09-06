@@ -198,7 +198,7 @@ export function ConfigForm({
           >
             <SettingRow
               label="Credits per period"
-              hint="Hypercredits your tier grants per refresh (free = 100, $20 tier = 250 daily)."
+              hint="Hypercredits your tier grants per refresh (free = 100, $20 tier = 250 daily). Balances above this (bundle credits) expand the bar ceiling to match."
             >
               <Input
                 type="number"
