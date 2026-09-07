@@ -8,10 +8,16 @@ import {
 import { WireKind } from "../../types";
 import type { ProviderKeyUsageWindow } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
-import { withOpenCodeAttribution } from "../opencode";
+import {
+  stampOpenCodeSessionHeader,
+  withOpenCodeAttribution,
+} from "../opencode";
+import type { AnyRequestTransform } from "../../formats/pipeline";
+import { onRequest } from "../../formats/pipeline";
+import type { Provider } from "../../types";
 
 // OpenCode Go - a paid subscription tier at opencode.ai/go, distinct from Zen.
-// Supports both /chat/completions and /messages.
+// Supports /chat/completions, /messages, and /responses.
 //
 // Quota via GET {origin}/v1/usage with `Authorization: Bearer <apiKey>`.
 // Response:
@@ -45,12 +51,12 @@ function windowFrom(
 }
 
 class OpenCodeGoAdapter extends OpenAICompatibleAdapter {
-  // Both advertised wire kinds (Chat + Messages) carry canonical OpenCode
-  // attribution (`x-opencode-session` + `x-opencode-client: cli`) on top of
-  // the engine-composed headers, delegating to the inherited
-  // OpenAI-compatible builder without changing URL or body. keyUsage() is
-  // intentionally untouched: it is a provider quota endpoint with no
-  // completion body/session context.
+  // All three advertised wire kinds (Chat + Messages + Responses) carry
+  // canonical OpenCode attribution (`x-opencode-session` +
+  // `x-opencode-client: cli`) on top of the engine-composed headers,
+  // delegating to the inherited OpenAI-compatible builder without changing
+  // URL or body. keyUsage() is intentionally untouched: it is a provider
+  // quota endpoint with no completion body/session context.
   override chatCompletions(ctx: BuildCtx): BuiltRequest {
     return super.chatCompletions({
       ...ctx,
@@ -58,8 +64,52 @@ class OpenCodeGoAdapter extends OpenAICompatibleAdapter {
     });
   }
 
+  // Stamp `x-opencode-session` from the CLIENT-shaped body before any format
+  // conversion: the converters drop conversation-identity fields
+  // (messages->chat loses metadata.user_id), so deriving post-conversion
+  // would mint a different session per wire format. One stage per wire
+  // format (Chat, Messages, Responses); buildTransformPlan runs exactly the
+  // one matching the client format. Headers-only side effect - the body
+  // passes through unchanged, and withOpenCodeAttribution in the build
+  // methods remains the final canonicalizer (strips case variants, applies
+  // `cli`, fills the static fallback UUID when the transform found no
+  // identity).
+  override requestTransforms(_provider: Provider): AnyRequestTransform[] {
+    return [
+      onRequest("chat", "opencode:session", (body, ctx) => {
+        stampOpenCodeSessionHeader(
+          body as unknown as Record<string, unknown>,
+          ctx.headers,
+        );
+        return body;
+      }),
+      onRequest("messages", "opencode:session", (body, ctx) => {
+        stampOpenCodeSessionHeader(
+          body as unknown as Record<string, unknown>,
+          ctx.headers,
+        );
+        return body;
+      }),
+      onRequest("responses", "opencode:session", (body, ctx) => {
+        stampOpenCodeSessionHeader(
+          body as unknown as Record<string, unknown>,
+          ctx.headers,
+        );
+        return body;
+      }),
+    ];
+  }
+
+
   override messages(ctx: BuildCtx): BuiltRequest {
     return super.messages({
+      ...ctx,
+      headers: withOpenCodeAttribution(ctx.headers, ctx.body),
+    });
+  }
+
+  override responses(ctx: BuildCtx): BuiltRequest {
+    return super.responses({
       ...ctx,
       headers: withOpenCodeAttribution(ctx.headers, ctx.body),
     });
@@ -156,12 +206,12 @@ export const opencodeGo = new OpenCodeGoAdapter({
   id: "opencode-go",
   label: "OpenCode Go",
   blurb:
-    "OpenCode Go subscription - both /chat/completions and /messages endpoints.",
+    "OpenCode Go subscription - /chat/completions, /messages, and /responses endpoints.",
   brand: "opencode",
   docsUrl: "https://opencode.ai/docs/go/",
   defaults: {
     baseUrl: "https://opencode.ai/zen/go",
-    endpoints: [WireKind.Chat, WireKind.Messages],
+    endpoints: [WireKind.Chat, WireKind.Messages, WireKind.Responses],
     authScheme: "bearer",
     nativeConversion: false,
   },
