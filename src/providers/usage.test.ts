@@ -1190,6 +1190,55 @@ test("ollamaCloud.keyUsage: a single valid limit returns only that window", asyn
   assert.equal(res.message, "Last 4 weeks cost: $1.25"); // 1.25 already 2dp
 });
 
+test("ollamaCloud.keyUsage: monthly-only credits bucket -> percent window with no resetsAt", async () => {
+  const p = prov({ catalogId: "ollama-cloud" });
+  const res = await ollamaCloud.keyUsage(
+    ollamaCloudCtx(p, async () =>
+      jsonResponse(200, {
+        activity: { cost: "0.00000", period: { type: "last_4_weeks" } },
+        limits: {
+          monthly: { usage: 0.001 },
+        },
+      }),
+    ),
+  );
+  // Credits accounts only get the monthly bucket; it must be a valid window.
+  assert.equal(res.unavailable, undefined);
+  assert.equal(res.windows.length, 1);
+  assert.equal(res.windows[0].id, "monthly");
+  assert.equal(res.windows[0].label, "Monthly usage");
+  assert.equal(res.windows[0].used, 0.1);
+  assert.equal(res.windows[0].limit, 100);
+  assert.equal(res.windows[0].unit, "percent");
+  // The endpoint exposes no monthly reset timestamp (it falls on the
+  // account's signup day-of-month), so the window must omit resetsAt.
+  assert.equal("resetsAt" in res.windows[0], false);
+});
+
+test("ollamaCloud.keyUsage: session+weekly+monthly all present -> three windows in order", async () => {
+  const p = prov({ catalogId: "ollama-cloud" });
+  const res = await ollamaCloud.keyUsage(
+    ollamaCloudCtx(p, async () =>
+      jsonResponse(200, {
+        limits: {
+          session: { usage: 0.122 },
+          weekly: { usage: 0.045 },
+          monthly: { usage: 0.3 },
+        },
+      }),
+    ),
+  );
+  // Upstream flips between the legacy session/weekly shape and the credits
+  // monthly shape, so all three buckets must coexist in a stable order.
+  assert.deepEqual(
+    res.windows.map((w) => w.id),
+    ["session", "weekly", "monthly"],
+  );
+  assert.equal(res.windows[0].used, 12.2);
+  assert.equal(res.windows[1].used, 4.5);
+  assert.equal(res.windows[2].used, 30);
+});
+
 test("ollamaCloud.keyUsage: invalid values are skipped independently; all-invalid -> unavailable", async () => {
   const p = prov({ catalogId: "ollama-cloud" });
   const partial = await ollamaCloud.keyUsage(
@@ -1274,7 +1323,7 @@ test("ollamaCloud.keyUsage: malformed JSON and a missing limits envelope -> unav
   assert.equal(noLimits.message, "Could not parse quota data.");
 });
 
-test("ollamaCloud reset-time calendar anchors to Monday 00:00 UTC (weekly) and 5h ticks (session)", () => {
+test("ollamaCloud reset-time calendar: weekly anchors Monday 00:00 UTC, session rides the Unix-epoch 5h grid", () => {
   const HOUR = 3_600_000;
   const DAY = 86_400_000;
   // 2026-08-17 is a Monday.
@@ -1288,24 +1337,25 @@ test("ollamaCloud reset-time calendar anchors to Monday 00:00 UTC (weekly) and 5
   );
   // The next weekly reset after any point in the week is the following Monday.
   assert.equal(ollamaNextWeeklyReset(mondayNoon), Date.parse("2026-08-24T00:00:00Z"));
-  // Session reset: the next 5h tick strictly after `now`, on the grid anchored
-  // at the current week's Monday 00:00 UTC.
-  // 07:00 Monday = 7h after anchor -> next tick at 10:00 (elapsed=10h).
-  assert.equal(ollamaNextSessionReset(Date.parse("2026-08-17T07:00:00Z")), Date.parse("2026-08-17T10:00:00Z"));
-  // 03:30 -> next tick 05:00.
-  assert.equal(ollamaNextSessionReset(Date.parse("2026-08-17T03:30:00Z")), Date.parse("2026-08-17T05:00:00Z"));
-  // Exactly 00:00 anchor -> next session tick, not the same instant.
-  assert.equal(ollamaNextSessionReset(Date.parse("2026-08-17T00:00:00Z")), Date.parse("2026-08-17T05:00:00Z"));
-  // Guards: resetsAt is always in the future and never duplicated.
-  const nextWeekly = new Date(ollamaNextWeeklyReset(Date.now())).getTime();
-  assert.equal(nextWeekly > Date.now(), true);
-  const nextSession = new Date(ollamaNextSessionReset(Date.now())).getTime();
-  assert.equal(nextSession > Date.now(), true);
+  // Session reset: the next 5h tick strictly after `now` on the grid anchored
+  // at the Unix epoch (session buckets reset on the fixed 5h grid measured
+  // from epoch, independent of the weekly calendar).
+  // 07:00 Monday is exactly on the epoch grid -> next tick at 12:00.
+  assert.equal(ollamaNextSessionReset(Date.parse("2026-08-17T07:00:00Z")), Date.parse("2026-08-17T12:00:00Z"));
+  // 03:30 -> next tick 07:00.
+  assert.equal(ollamaNextSessionReset(Date.parse("2026-08-17T03:30:00Z")), Date.parse("2026-08-17T07:00:00Z"));
+  // Monday 00:00Z is 3h into an epoch window, so the next tick is 02:00Z -
+  // this case proves the weekly and session grids differ.
+  assert.equal(ollamaNextSessionReset(Date.parse("2026-08-17T00:00:00Z")), Date.parse("2026-08-17T02:00:00Z"));
+  // Sunday 23:00 is exactly on the epoch grid -> next tick 04:00 Monday.
+  assert.equal(ollamaNextSessionReset(Date.parse("2026-08-23T23:00:00Z")), Date.parse("2026-08-24T04:00:00Z"));
+  // Guards: resetsAt is always in the future.
+  assert.equal(ollamaNextWeeklyReset(Date.now()) > Date.now(), true);
+  assert.equal(ollamaNextSessionReset(Date.now()) > Date.now(), true);
+  const nextWeekly = ollamaNextWeeklyReset(Date.now());
+  const nextSession = ollamaNextSessionReset(Date.now());
   // Weekly reset is a multiple of 7d from a Monday 00:00 anchor; session reset
-  // is always a multiple of 5h after a Monday 00:00 anchor.
+  // is always a multiple of 5h since the Unix epoch.
   assert.equal((nextWeekly - ollamaWeeklyResetAnchor(Date.now())) % (7 * DAY) === 0, true);
-  assert.equal(
-    (nextSession - ollamaWeeklyResetAnchor(Date.now())) % HOUR === 0,
-    true,
-  );
+  assert.equal(nextSession % (5 * HOUR) === 0, true);
 });

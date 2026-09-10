@@ -9,23 +9,17 @@ import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
 class OllamaLocalAdapter extends OpenAICompatibleAdapter {}
 
-// Ollama Cloud usage envelope from GET /api/usage:
-//   {
-//     "activity": {
-//       "cost": "0.00000",
-//       "period": { "type": "last_4_weeks" }
-//     },
-//     "limits": {
-//       "session": { "usage": 0.122 },  // fractional [0,1] of a 5-hour window
-//       "weekly":  { "usage": 0.045 }   // fractional [0,1] of a 7-day window
-//     }
-//   }
-// Each usage entry is an independent consumed fraction of its own window, NOT a
-// wall-clock timestamp - Ollama's pricing FAQ defines only a cadence ("reset
-// every 5 hours" / "every 7 days") and never publishes a shared reset anchor.
-// The `/api/usage` shape carries no reset timestamp, so `resetsAt` is omitted
-// and both windows render as percent-consumed rather than layering session on
-// top of weekly.
+// Ollama Cloud usage envelope from GET /api/usage. The endpoint is
+// undocumented and has flipped shapes over time: legacy plans report `session`
+// (5h) + `weekly` (7d) buckets, while newer credits-based plans report a single
+// `monthly` bucket. It has served monthly-only, both legacy buckets, or a mix,
+// so every bucket is optional and whichever are present are reported.
+// Each `usage` is a consumed fraction [0,1] of that bucket's own cap, not a
+// wall-clock timestamp. The endpoint carries no reset timestamps: only the 5h
+// / 7d cadences are known (with community-observed anchor grids), and the
+// monthly reset day is tied to the account's signup date, which is not exposed,
+// so the monthly window omits `resetsAt` and all windows render as
+// percent-consumed rather than layering session on top of weekly.
 interface OllamaUsagePeriod {
   type?: string;
 }
@@ -41,6 +35,7 @@ interface OllamaUsageResponse {
   limits?: {
     session?: OllamaUsageLimit;
     weekly?: OllamaUsageLimit;
+    monthly?: OllamaUsageLimit;
   };
 }
 
@@ -48,9 +43,9 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
 // /api/usage returns no reset timestamps, only cadences (session 5h, weekly 7d).
-// The anchors below are the operator-observed convention: weekly resets Monday
-// 00:00 UTC, and the 5-hour session clock is anchored at the same Monday 00:00,
-// so a session reset is a multiple of 5h from that point. Always UTC (DST-free).
+// The anchors below are the community-observed convention: the 5-hour session
+// clock rides the Unix-epoch grid, while the weekly clock resets Monday 00:00
+// UTC. Always UTC (DST-free).
 
 // Monday 00:00:00.000Z of the UTC week containing `ms`.
 export function ollamaWeeklyResetAnchor(ms: number): number {
@@ -66,16 +61,14 @@ export function ollamaNextWeeklyReset(ms: number): number {
   return ollamaWeeklyResetAnchor(ms) + 7 * DAY_MS;
 }
 
-// Next session reset: the next 5-hour tick strictly after `ms`, on a grid
-// anchored at Monday 00:00 UTC (a reset lands at the anchor, then every 5h).
-// Snaps `ms` up to the next grid multiple of 5h past the anchor, excluding the
-// exact-anchor instant itself. The 5h grid is independent of the weekly clock:
-// it never accumulates on top of the weekly window.
+// Next session reset: the next 5-hour tick strictly after `ms`, on a fixed
+// grid measured from the Unix epoch (1970-01-01T00:00:00Z), NOT from Monday
+// 00:00 UTC - the two grids differ because a week (168h) is not a whole number
+// of 5h sessions. Community observation (ollama/ollama#12532) confirms
+// reset_in = 18000 - epoch%18000.
 export function ollamaNextSessionReset(ms: number): number {
-  const anchor = ollamaWeeklyResetAnchor(ms);
   const periodMs = 5 * HOUR_MS;
-  const elapsed = ms - anchor;
-  return anchor + (Math.floor(elapsed / periodMs) + 1) * periodMs;
+  return (Math.floor(ms / periodMs) + 1) * periodMs;
 }
 
 class OllamaCloudAdapter extends OpenAICompatibleAdapter {
@@ -176,6 +169,18 @@ class OllamaCloudAdapter extends OpenAICompatibleAdapter {
         limit: 100,
         unit: "percent",
         resetsAt: new Date(ollamaNextWeeklyReset(now)).toISOString(),
+      });
+    }
+    // Monthly has no exposed reset day (tied to the account's signup date), so
+    // it carries no resetsAt - the endpoint exposes no timestamp for it.
+    const monthly = ratio(limits.monthly);
+    if (monthly !== null) {
+      windows.push({
+        id: "monthly",
+        label: "Monthly usage",
+        used: monthly,
+        limit: 100,
+        unit: "percent",
       });
     }
 
