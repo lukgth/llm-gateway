@@ -635,7 +635,7 @@ test("DeepSeek reasoner: low effort overrides _thinking_disabled=false", () => {
 });
 
 test("DeepSeek v4 model family is recognized as a reasoner", () => {
-  for (const model of ["deepseek-v4", "deepseek-v4-pro"]) {
+  for (const model of ["deepseek-v4", "deepseek-v4-pro", "deepseek-flash"]) {
     const body: Record<string, unknown> = {
       model,
       messages: [{ role: "user", content: "hi" }],
