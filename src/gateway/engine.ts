@@ -21,6 +21,7 @@ import https from "https";
 import { URL } from "url";
 import { pipeline as streamPipeline, PassThrough } from "stream";
 import { collectResponsesSse } from "../formats/sse/responses-collector";
+import { collectChatSse } from "../formats/sse/chat-collector";
 import type { IncomingMessage } from "http";
 import type { Request, Response } from "express";
 import type { Database as DB } from "better-sqlite3";
@@ -146,13 +147,14 @@ const MAX_CREDIT_ROTATIONS = 100;
 // usable again with no restart needed).
 const CREDIT_BALANCE_COOLDOWN_MS = 60 * 60 * 1000;
 
-async function readResponsesSse(
+async function readBufferedSse(
   upRes: IncomingMessage,
+  format: "chat" | "responses",
 ): Promise<Record<string, unknown>> {
   const text = await readErrorBody(upRes, MAX_BUFFER_BYTES);
   if (Buffer.byteLength(text) >= MAX_BUFFER_BYTES)
-    throw new Error("upstream Responses stream too large");
-  return collectResponsesSse(text);
+    throw new Error(`upstream ${format === "chat" ? "Chat Completions" : "Responses"} stream too large`);
+  return format === "chat" ? collectChatSse(text) : collectResponsesSse(text);
 }
 
 export class ForwardingEngine {
@@ -1639,10 +1641,11 @@ export class ForwardingEngine {
     }
     if (
       !ctx.isStream &&
-      route.providerFmt === "responses" &&
+      (route.providerFmt === "responses" ||
+        (route.providerFmt === "chat" && provider.catalogId === "opencode")) &&
       isEventStream(effectiveHeaders)
     ) {
-      const response = await readResponsesSse(upRes);
+      const response = await readBufferedSse(upRes, route.providerFmt);
       const bufferedHeaders = {
         ...effectiveHeaders,
         "content-type": "application/json",

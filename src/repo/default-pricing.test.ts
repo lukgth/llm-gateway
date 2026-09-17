@@ -91,6 +91,7 @@ test("defaultPricingFor: resolves exact values for every newly added id", () => 
     ["claude-mythos-5-1", 10, 50, 0.25],
     ["gpt-6-astra", 10, 50, 1],
     ["gpt-5.6-sol", 4, 20, 0.4],
+    ["deepseek-flash", 0.3, 1.2, 0.006],
     ["deepseek-v4-flash-vision-exp", 0.44, 1.32, 0.014],
     ["glm-5.3-flash", 0.15, 0.5, 0.03],
     ["gemini-3.8-flash", 1.5, 7.5, 0.15],
@@ -140,6 +141,12 @@ test("defaultPricingFor: DeepSeek entries resolve the conservative peak scalars"
   assert.equal(flash!.promptPer1m, 0.44);
   assert.equal(flash!.completionPer1m, 1.32);
   assert.equal(flash!.cachedPer1m, 0.014);
+
+  const v41 = defaultPricingFor("deepseek-flash");
+  assert.ok(v41);
+  assert.equal(v41!.promptPer1m, 0.3);
+  assert.equal(v41!.completionPer1m, 1.2);
+  assert.equal(v41!.cachedPer1m, 0.006);
 });
 
 test("defaultPricingFor: gemini-3.1-pro-preview resolves the exact preview id", () => {
@@ -264,7 +271,7 @@ test("defaultPricingFor: cache-write rates match published 5-minute/default-tier
   }
   // Earlier OpenAI generations and providers with no published write price
   // omit the field, so computeCostUsd falls back to the cached rate.
-  for (const id of ["gpt-5.5", "deepseek-v4-flash", "gemini-3.7-flash"]) {
+  for (const id of ["gpt-5.5", "deepseek-v4-flash", "deepseek-flash", "gemini-3.7-flash"]) {
     const m = defaultPricingFor(id);
     assert.ok(m, `expected to resolve ${id}`);
     assert.equal(m!.cacheWritePer1m, undefined, `${id} cacheWritePer1m`);

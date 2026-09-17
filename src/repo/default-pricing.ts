@@ -269,6 +269,21 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
   // the official PEAK rate as the conservative scalar reference - we cannot
   // pick a rate by UTC time and may not invent an average.
   {
+    // DeepSeek-V4.1-Flash (official id `deepseek-flash`; 1M context / 384K max
+    // output). Peak rates stored as the conservative scalar per the block
+    // convention above; off-peak is 50% of peak (cache-hit $0.003, cache-miss
+    // input $0.15, output $0.6 per 1M). Peak hours 01:00-04:00 and 06:00-10:00
+    // UTC Mon-Fri. No distinct cache-write price published, so the field is
+    // omitted and computeCostUsd falls back to the cached rate.
+    // https://api-docs.deepseek.com/quick_start/pricing/
+    id: "deepseek-flash",
+    label: "DeepSeek V4.1 Flash",
+    brand: "deepseek",
+    promptPer1m: 0.3,
+    completionPer1m: 1.2,
+    cachedPer1m: 0.006,
+  },
+  {
     id: "deepseek-v4-pro",
     label: "DeepSeek V4 Pro",
     brand: "deepseek",

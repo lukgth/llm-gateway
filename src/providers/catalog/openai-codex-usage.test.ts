@@ -91,16 +91,20 @@ function usageCtx(
   } as UsageCtx;
 }
 
-// A successful usage response with both windows.
-const okUsage = () => ({
+// A successful usage response with both windows and the account's plan tier.
+// limit_window_seconds: 5h primary + 7d secondary (the paid-plan shape).
+const okUsage = (planType: string | null = "pro") => ({
   json: () => ({
+    ...(planType !== null ? { plan_type: planType } : {}),
     rate_limit: {
       primary_window: {
         used_percent: 12,
+        limit_window_seconds: 5 * 3_600,
         reset_at: 1_756_000_000, // fixed Unix timestamp (seconds)
       },
       secondary_window: {
         used_percent: 34,
+        limit_window_seconds: 7 * 86_400,
         reset_at: 1_756_000_000,
       },
     },
@@ -131,6 +135,42 @@ test("a successful response yields two percent windows", async () => {
   assert.equal(weekly.limit, 100);
   assert.equal(weekly.unit, "percent");
   assert.equal(weekly.resetsAt, new Date(1_756_000_000 * 1000).toISOString());
+});
+
+test("plan_type surfaces as a Plan message on the key", async () => {
+  const result = await openaiCodex.keyUsage(usageCtx(okUsage()));
+  assert.equal(result.message, "Plan: Pro");
+  const odd = await openaiCodex.keyUsage(usageCtx(okUsage("TEAM")));
+  assert.equal(odd.message, "Plan: Team");
+  // No plan_type in the payload - no message, windows unaffected.
+  const absent = await openaiCodex.keyUsage(usageCtx(okUsage(null)));
+  assert.equal(absent.message, undefined);
+  assert.equal(absent.windows.length, 2);
+});
+
+test("a 30-day primary window (free plan) is labeled Monthly", async () => {
+  // Free accounts carry a single 30-day quota in the PRIMARY slot with no
+  // secondary - codex-lb's normalize_rate_limit_windows treats it as monthly.
+  const result = await openaiCodex.keyUsage(
+    usageCtx({
+      json: () => ({
+        plan_type: "free",
+        rate_limit: {
+          primary_window: {
+            used_percent: 1,
+            limit_window_seconds: 30 * 86_400,
+            reset_at: 1_791_183_002,
+          },
+          secondary_window: null,
+        },
+      }),
+    }),
+  );
+  assert.equal(result.windows.length, 1);
+  assert.equal(result.windows[0].id, "monthly");
+  assert.equal(result.windows[0].label, "Monthly");
+  assert.equal(result.windows[0].used, 1);
+  assert.equal(result.message, "Plan: Free");
 });
 
 test("the request hits /backend-api/wham/usage with Codex identity headers", async () => {

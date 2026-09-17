@@ -56,6 +56,7 @@ test("isDeepSeekReasoner matches DeepSeek models that support thinking toggle", 
   assert.equal(isDeepSeekReasoner("deepseek-v4"), true);
   assert.equal(isDeepSeekReasoner("deepseek-v4-something"), true);
   assert.equal(isDeepSeekReasoner("DEEPSEEK-V4"), true);
+  assert.equal(isDeepSeekReasoner("deepseek-flash"), true);
   // Non-reasoner chat models - no thinking support
   assert.equal(isDeepSeekReasoner("deepseek-chat"), false);
   assert.equal(isDeepSeekReasoner("deepseek-v3"), false);
