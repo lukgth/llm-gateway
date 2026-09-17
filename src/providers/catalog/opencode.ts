@@ -6,6 +6,8 @@ import {
 import { WireKind } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 import {
+  forceOpenCodeFreeTierStream,
+  OPENCODE_USER_AGENT_RESPONSES,
   stampOpenCodeSessionHeader,
   withOpenCodeAttribution,
 } from "../opencode";
@@ -14,26 +16,19 @@ import { onRequest } from "../../formats/pipeline";
 import type { Provider } from "../../types";
 
 // OpenCode Zen - OpenAI-compatible gateway aimed at coding agents.
-// Every Chat completion and Responses request carries canonical OpenCode
-// attribution headers (`x-opencode-session` + `x-opencode-client: cli`);
-// routing, auth, URL, and body shape are unchanged.
+// Every completion request carries the CLI-shaped OpenCode attribution. Free
+// anonymous attempts also stream upstream, matching the CLI's request body.
 class OpenCodeAdapter extends OpenAICompatibleAdapter {
-  // Stamp `x-opencode-session` from the CLIENT-shaped body before any format
-  // conversion: the converters drop conversation-identity fields
-  // (messages->chat loses metadata.user_id), so deriving post-conversion
-  // would mint a different session per wire format. One stage per wire
-  // format; buildTransformPlan runs exactly the one matching the client
-  // format. Headers-only side effect - the body passes through unchanged,
-  // and withOpenCodeAttribution below remains the final canonicalizer
-  // (strips case variants, applies `cli`, fills the static fallback UUID
-  // when the transform found no identity).
+  // Stamp identity and apply the free-tier streaming requirement before any
+  // format conversion. The converters can drop conversation fields, so the
+  // session must be derived from the client-shaped body. The final
+  // canonicalizer fills a shape-valid static fallback when needed.
   override requestTransforms(_provider: Provider): AnyRequestTransform[] {
     return [
       onRequest("chat", "opencode:session", (body, ctx) => {
-        stampOpenCodeSessionHeader(
-          body as unknown as Record<string, unknown>,
-          ctx.headers,
-        );
+        const typedBody = body as unknown as Record<string, unknown>;
+        stampOpenCodeSessionHeader(typedBody, ctx.headers);
+        forceOpenCodeFreeTierStream(typedBody, ctx.apiKey);
         return body;
       }),
       onRequest("messages", "opencode:session", (body, ctx) => {
@@ -44,10 +39,9 @@ class OpenCodeAdapter extends OpenAICompatibleAdapter {
         return body;
       }),
       onRequest("responses", "opencode:session", (body, ctx) => {
-        stampOpenCodeSessionHeader(
-          body as unknown as Record<string, unknown>,
-          ctx.headers,
-        );
+        const typedBody = body as unknown as Record<string, unknown>;
+        stampOpenCodeSessionHeader(typedBody, ctx.headers);
+        forceOpenCodeFreeTierStream(typedBody, ctx.apiKey);
         return body;
       }),
     ];
@@ -63,10 +57,13 @@ class OpenCodeAdapter extends OpenAICompatibleAdapter {
   override responses(ctx: BuildCtx): BuiltRequest {
     return super.responses({
       ...ctx,
-      headers: withOpenCodeAttribution(ctx.headers, ctx.body),
+      headers: withOpenCodeAttribution(ctx.headers, ctx.body, {
+        userAgent: OPENCODE_USER_AGENT_RESPONSES,
+      }),
     });
   }
 }
+
 
 export const opencode = new OpenCodeAdapter({
   id: "opencode",

@@ -20,10 +20,9 @@ import type { Provider } from "../../types";
 import { WireKind } from "../../types";
 import type { BuildCtx } from "../base";
 
-// Every gateway-derived session must be a lowercase UUID; only an explicit
-// caller-supplied header may be non-UUID (it is forwarded verbatim).
-const SESSION_UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// Every gateway-derived id uses the exact OpenCode CLI shape: a `ses_`/`msg_`
+// prefix, 12 lowercase hex characters, and 14 base62 characters.
+const OPENCODE_ID_RE = /^(ses_|msg_)[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 
 const PROVIDER = {
   id: "opencode-go-provider",
@@ -102,10 +101,12 @@ test("go chat build emits cli client + body-derived session and preserves header
     built.headers["x-opencode-session"],
     openCodeSessionFromBody(body),
   );
-  assert.match(built.headers["x-opencode-session"], SESSION_UUID_RE);
+  assert.match(built.headers["x-opencode-session"], OPENCODE_ID_RE);
   assert.ok(built.headers["x-opencode-session"]);
-  assert.match(built.headers["x-opencode-request"], SESSION_UUID_RE);
-  assert.equal(built.headers["user-agent"], "opencode/1.18.29");
+  assert.equal(
+    built.headers["user-agent"],
+    "opencode/1.18.31 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14",
+  );
   assert.equal(built.headers["authorization"], "Bearer go-key");
   assert.equal(built.headers["x-custom"], "keep-me");
   assert.equal(built.url, `${PROVIDER.baseUrl}/chat/completions`);
@@ -122,7 +123,7 @@ test("go messages build emits the same attribution and preserves headers/body/ur
     built.headers["x-opencode-session"],
     openCodeSessionFromBody(body),
   );
-  assert.match(built.headers["x-opencode-request"], SESSION_UUID_RE);
+  assert.match(built.headers["x-opencode-request"], OPENCODE_ID_RE);
   assert.equal(built.headers["authorization"], "Bearer go-key");
   assert.equal(built.headers["x-custom"], "keep-me");
   assert.equal(built.url, `${PROVIDER.baseUrl}/messages`);
@@ -140,9 +141,10 @@ test("go responses build emits the same attribution and preserves headers/body/u
     built.headers["x-opencode-session"],
     openCodeSessionFromBody(body),
   );
-  assert.match(built.headers["x-opencode-session"], SESSION_UUID_RE);
-  assert.match(built.headers["x-opencode-request"], SESSION_UUID_RE);
-  assert.equal(built.headers["user-agent"], "opencode/1.18.29");
+  assert.equal(
+    built.headers["user-agent"],
+    "opencode/1.18.31 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14",
+  );
   assert.equal(built.headers["authorization"], "Bearer go-key");
   assert.equal(built.headers["x-custom"], "keep-me");
   assert.equal(built.url, `${PROVIDER.baseUrl}/responses`);
@@ -166,7 +168,7 @@ test("go chat + messages + responses builds go through the buildFor seam", () =>
   assert.ok(responses.headers["x-opencode-session"]);
 });
 
-test("conflicting case variants are replaced by canonical values, supplied session retained", () => {
+test("conflicting case variants are canonicalized and invalid caller ids re-derived", () => {
   const headers = {
     authorization: "Bearer go-key",
     "X-OpenCode-Session": "caller-session",
@@ -193,9 +195,10 @@ test("conflicting case variants are replaced by canonical values, supplied sessi
     assert.deepEqual(sessionKeys, ["x-opencode-session"]);
     assert.deepEqual(clientKeys, ["x-opencode-client"]);
     assert.deepEqual(requestKeys, ["x-opencode-request"]);
-    assert.equal(built.headers["x-opencode-session"], "caller-session");
-    assert.equal(built.headers["x-opencode-request"], "caller-request");
+    assert.match(built.headers["x-opencode-session"], OPENCODE_ID_RE);
+    assert.match(built.headers["x-opencode-request"], OPENCODE_ID_RE);
     assert.equal(built.headers["x-opencode-client"], "cli");
+    assert.equal(built.headers["x-opencode-project"], "global");
     assert.equal(built.headers["x-custom"], "keep-me");
   }
 });
@@ -211,9 +214,9 @@ test("missing identity falls back to the stable gateway session, never empty", (
       built.headers["x-opencode-session"],
       OPENCODE_FALLBACK_SESSION_ID,
     );
-    assert.match(built.headers["x-opencode-session"], SESSION_UUID_RE);
+    assert.match(built.headers["x-opencode-session"], OPENCODE_ID_RE);
     assert.ok(built.headers["x-opencode-session"]);
-    assert.match(built.headers["x-opencode-request"], SESSION_UUID_RE);
+    assert.match(built.headers["x-opencode-request"], OPENCODE_ID_RE);
     assert.equal(built.headers["x-opencode-client"], "cli");
   }
 });
@@ -268,13 +271,17 @@ function stampAndBuild(
   return withOpenCodeAttribution(stamped, body);
 }
 
-test("caller-supplied session header wins verbatim even when non-UUID", () => {
+test("invalid caller session is re-derived in the CLI shape", () => {
   const out = stampAndBuild(
     { model: "m", user: "someone-else" },
     { authorization: "Bearer go-key", "X-OpenCode-Session": "caller-session" },
     WireKind.Chat,
   );
-  assert.equal(out["x-opencode-session"], "caller-session");
+  assert.equal(
+    out["x-opencode-session"],
+    openCodeSessionFromBody({ model: "m", user: "someone-else" }),
+  );
+  assert.match(out["x-opencode-session"], OPENCODE_ID_RE);
 });
 
 test("messages-client identity survives messages->chat conversion", () => {
@@ -301,7 +308,7 @@ test("messages-client identity survives messages->chat conversion", () => {
   // canonicalize - the session must match the ORIGINAL body's identity.
   const out = stampAndBuild(original, {}, WireKind.Messages);
   assert.equal(out["x-opencode-session"], openCodeSessionFromBody(original));
-  assert.match(out["x-opencode-session"], SESSION_UUID_RE);
+  assert.match(out["x-opencode-session"], OPENCODE_ID_RE);
   assert.notEqual(out["x-opencode-session"], OPENCODE_FALLBACK_SESSION_ID);
 
   // Per-conversation stability: a second turn whose message list grew still
@@ -328,7 +335,7 @@ test("raw-string metadata.user_id (chat->messages carry shape) derives a session
   };
   const out = stampAndBuild(body, {}, WireKind.Messages);
   assert.equal(out["x-opencode-session"], openCodeSessionFromBody(body));
-  assert.match(out["x-opencode-session"], SESSION_UUID_RE);
+  assert.match(out["x-opencode-session"], OPENCODE_ID_RE);
 });
 
 test("responses-client user field derives a session", () => {
@@ -338,7 +345,7 @@ test("responses-client user field derives a session", () => {
     out["x-opencode-session"],
     openCodeSessionFromBody({ user: "resp-user" }),
   );
-  assert.match(out["x-opencode-session"], SESSION_UUID_RE);
+  assert.match(out["x-opencode-session"], OPENCODE_ID_RE);
 });
 
 test("derived sessions are deterministic and identity-separating", () => {
@@ -348,8 +355,8 @@ test("derived sessions are deterministic and identity-separating", () => {
   assert.ok(a1 && a2 && b);
   assert.equal(a1, a2);
   assert.notEqual(a1, b);
-  assert.match(a1, SESSION_UUID_RE);
-  assert.match(b, SESSION_UUID_RE);
+  assert.match(a1, OPENCODE_ID_RE);
+  assert.match(b, OPENCODE_ID_RE);
 });
 
 test("no identity anywhere: stage is a no-op and build applies the fallback UUID", () => {

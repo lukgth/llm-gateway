@@ -9,6 +9,7 @@ import { WireKind } from "../../types";
 import type { ProviderKeyUsageWindow } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 import {
+  OPENCODE_USER_AGENT_RESPONSES,
   stampOpenCodeSessionHeader,
   withOpenCodeAttribution,
 } from "../opencode";
@@ -111,7 +112,9 @@ class OpenCodeGoAdapter extends OpenAICompatibleAdapter {
   override responses(ctx: BuildCtx): BuiltRequest {
     return super.responses({
       ...ctx,
-      headers: withOpenCodeAttribution(ctx.headers, ctx.body),
+      headers: withOpenCodeAttribution(ctx.headers, ctx.body, {
+        userAgent: OPENCODE_USER_AGENT_RESPONSES,
+      }),
     });
   }
 
