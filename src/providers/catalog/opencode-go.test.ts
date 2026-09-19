@@ -372,3 +372,37 @@ test("no identity anywhere: stage is a no-op and build applies the fallback UUID
   assert.equal(out["x-opencode-session"], OPENCODE_FALLBACK_SESSION_ID);
   assert.equal(out["x-opencode-client"], "cli");
 });
+
+// --- no anonymous free-tier treatment (Go is a paid subscription tier) -----
+
+test("go never claims the anonymous Zen identity and never rewrites the body", () => {
+  // No key configured at all: the auth header stays ABSENT (the failure is
+  // honest) instead of becoming Zen's free-tier `public` key.
+  const keyless = opencodeGo.chatCompletions(
+    buildCtx({
+      apiKey: null,
+      body: { model: "big-pickle" },
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  assert.equal("authorization" in keyless.headers, false);
+  assert.deepEqual(keyless.body, { model: "big-pickle" });
+
+  // Even a Zen free-roster model id gets no stream forcing and no placeholder
+  // tools through Go: that contract belongs to the Zen adapter alone.
+  const stages = opencodeGo.requestTransforms(PROVIDER as unknown as Provider);
+  const stage = (stages as TaggedRequestTransform[]).find(
+    (s) => s.format === WireKind.Chat,
+  );
+  assert.ok(stage);
+  const body: Record<string, unknown> = { model: "big-pickle" };
+  stage.apply(body as never, {
+    provider: PROVIDER as unknown as Provider,
+    clientFmt: WireKind.Chat,
+    providerFmt: WireKind.Chat,
+    apiKey: null,
+    upstreamModel: "big-pickle",
+  } as TransformCtx);
+  assert.equal("stream" in body, false);
+  assert.equal("tools" in body, false);
+});
