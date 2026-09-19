@@ -150,10 +150,16 @@ export interface AttemptResult {
    * apply none) and rotates to another key. */
   creditBalanceExhausted?: boolean;
   /** The pre-flight count_tokens gate found the input over the model's context
-   * window for this provider (Claude Code Sonnet 4.6 → 200k). Abandon this
-   * provider and fail over to the next hop WITHOUT any key-health penalty - the
-   * request simply doesn't fit here, it's not a key/auth/rate-limit problem. */
+   *  window for this provider (Claude Code Sonnet 4.6 → 200k). Abandon this
+   *  provider and fail over to the next hop WITHOUT any key-health penalty - the
+   *  request simply doesn't fit here, it's not a key/auth/rate-limit problem. */
   skipProvider?: boolean;
+  /** The upstream refused the REQUEST itself, not the credential - currently
+   *  only OpenCode Zen's free-tier gate (`403 FreeTierError`, see
+   *  isOpencodeFreeTierRefusal). The refusal body is committed to the client
+   *  verbatim, but forward() must not spend a retry on it or feed it back into
+   *  key health: the anonymous key is still perfectly usable. */
+  refusal?: boolean;
 }
 
 // Upstream-reported usage shape (subset of readResponseUsage's return).

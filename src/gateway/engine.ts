@@ -100,6 +100,7 @@ import {
   clineRetryDelayMs,
   isClineFreeLimitError,
 } from "../providers/clinefree";
+import { isOpencodeFreeTierRefusal } from "../providers/opencode";
 import {
   contextWindowLimit,
   countInputTokens,
@@ -760,7 +761,13 @@ export class ForwardingEngine {
             // durable extra pull in the pool for future long-context traffic.
             if (sawCreditError)
               this.keyHealth.markCreditProven(entry.provider.id, pick.keyHash);
-          } else if (result.status && AUTH_FAIL_STATUS.has(result.status)) {
+          } else if (
+            result.status &&
+            AUTH_FAIL_STATUS.has(result.status) &&
+            // A Zen free-tier refusal is committed with its upstream body but
+            // is a verdict on the REQUEST, never evidence the key is dead.
+            !result.refusal
+          ) {
             if (managedCredential && pick) {
               // Managed credentials get one forced refresh and one immediate retry,
               // independent of the provider's ordinary retry budget. The selector
@@ -942,6 +949,21 @@ export class ForwardingEngine {
     // No upstream usage to apply - release the reservation so a failed request
     // doesn't permanently inflate the key's daily counter.
     this.settleUsage(ctx, first?.provider ?? null, {});
+    // No attempt got far enough to re-distill the debug snapshot from an
+    // outbound body, so it is still the client-body capture from forward().
+    // Stamp the selected hop's upstream model onto it so the snapshot agrees
+    // with the row's `upstream_model` column instead of showing the client
+    // alias (which is what the client sent, not what was attempted).
+    if (ctx.debug && first) {
+      try {
+        ctx.debugRequest = captureRequest({
+          ...ctx.requestBody,
+          model: first.upstreamModel,
+        });
+      } catch {
+        /* keep the client-body capture */
+      }
+    }
     this.recordLog(
       ctx,
       first?.provider ?? null,
@@ -1558,12 +1580,27 @@ export class ForwardingEngine {
       return { committed: true, status, error: `upstream ${status}` };
     }
 
+    // OpenCode Zen's free tier answers a request it does not consider to come
+    // from its CLI with `403 FreeTierError`. That refuses the REQUEST, not the
+    // credential - the anonymous `public` key is still fine - so it must not be
+    // treated as a dead key: no markAuthFailed, no disableDeadKey, no retry (an
+    // identical retry gets an identical verdict). Read the body once here and
+    // fall through to the generic non-2xx path below, which forwards the
+    // upstream body to the client verbatim.
+    let zenRefusalBody: string | null = null;
+    if (provider.catalogId === "opencode" && AUTH_FAIL_STATUS.has(status))
+      zenRefusalBody = await readErrorBody(upRes, MAX_BUFFER_BYTES);
+    const zenFreeTierRefusal =
+      provider.catalogId === "opencode" &&
+      isOpencodeFreeTierRefusal(status, zenRefusalBody);
+
     // Auth failure (bad/revoked key): don't commit this to the client - the
     // key is dead, not the request. Read the body (for logging/reason only,
     // never forwarded) and fail this attempt over so forward()'s retry loop
     // can disable the key and pick another one, same as a rate limit.
-    if (AUTH_FAIL_STATUS.has(status)) {
-      const errBody = await readErrorBody(upRes, MAX_BUFFER_BYTES);
+    if (AUTH_FAIL_STATUS.has(status) && !zenFreeTierRefusal) {
+      const errBody =
+        zenRefusalBody ?? (await readErrorBody(upRes, MAX_BUFFER_BYTES));
       logUpstreamNon2xx(this.logger, {
         status,
         provider: provider.id,
@@ -1583,7 +1620,11 @@ export class ForwardingEngine {
     }
 
     if (status < 200 || status >= 300) {
-      const errText = await readErrorBody(upRes, MAX_BUFFER_BYTES);
+      // The refusal pre-check above may already have read this body (an
+      // upstream response body can only be consumed once); reuse it rather
+      // than re-reading an exhausted stream and forwarding nothing.
+      const errText =
+        zenRefusalBody ?? (await readErrorBody(upRes, MAX_BUFFER_BYTES));
       logUpstreamNon2xx(this.logger, {
         status,
         provider: provider.id,
@@ -1606,7 +1647,12 @@ export class ForwardingEngine {
         res.writeHead(status, out);
         res.end(buf);
       }
-      return { committed: true, status, error: `upstream ${status}` };
+      return {
+        committed: true,
+        status,
+        error: `upstream ${status}`,
+        ...(zenFreeTierRefusal ? { refusal: true } : {}),
+      };
     }
     // ChatGPT's Codex backend streams Responses SSE without a Content-Type.
     // Scope this protocol inference to the bespoke Codex Responses route: an
@@ -2746,7 +2792,14 @@ export class ForwardingEngine {
           creditBalanceExhausted: true,
         };
       }
-      const authFailed = AUTH_FAIL_STATUS.has(res.status);
+      // A Zen free-tier refusal is a verdict on the request, not the key -
+      // never let it disable/lock out the (anonymous) key here either.
+      const authFailed =
+        AUTH_FAIL_STATUS.has(res.status) &&
+        !(
+          provider.catalogId === "opencode" &&
+          isOpencodeFreeTierRefusal(res.status, res.text)
+        );
       logUpstreamNon2xx(this.logger, {
         status: res.status,
         provider: provider.id,

@@ -3688,3 +3688,95 @@ test("headerless Codex Responses SSE buffers and converts for a non-stream Chat 
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+// --- OpenCode Zen free-tier refusal accounting -----------------------------
+
+// A Zen free-tier refusal (`403 FreeTierError`) refuses the REQUEST, not the
+// credential: the anonymous `public` key is still fine. It must therefore be
+// forwarded to the client verbatim, without spending a retry and without
+// feeding key health (markAuthFailed / disableDeadKey) - otherwise a single
+// unattributable request would disable the provider's only key.
+test("a Zen free-tier refusal is forwarded verbatim and never poisons the key", async () => {
+  const FREE_TIER_BODY = JSON.stringify({
+    type: "error",
+    error: {
+      type: "FreeTierError",
+      message:
+        "Error from provider (Console): OpenCode's free tier can only be used from within OpenCode",
+    },
+  });
+  let attempts = 0;
+  let seenBody: Record<string, unknown> | undefined;
+  const server = http.createServer((req, res) => {
+    attempts++;
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(c as Buffer));
+    req.on("end", () => {
+      try {
+        seenBody = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      } catch {
+        seenBody = undefined;
+      }
+      res.writeHead(403, { "content-type": "application/json" });
+      res.end(FREE_TIER_BODY);
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "zen",
+      name: "zen",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["public"],
+      catalogId: "opencode",
+      authScheme: "bearer",
+      // More than one attempt, so a spurious retry would show up as attempts>1.
+      retryAttempts: 3,
+    });
+    const m = createModel(db, {
+      alias: "zen-free",
+      providers: [{ providerId: "zen", upstreamModel: "mimo-v2.5-free" }],
+    });
+    const model = getModel(db, m.id)!;
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const { res, state } = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctxFor(model, {
+        model: "zen-free",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    // The upstream verdict reaches the client verbatim.
+    assert.equal(state.statusCode, 403);
+    assert.equal(JSON.stringify(state.body), FREE_TIER_BODY);
+    // No retry: an identical retry gets an identical verdict.
+    assert.equal(attempts, 1);
+    // The anonymous key survives with no health penalty recorded.
+    const keys = listProviderKeys(db, "zen");
+    assert.equal(keys.length, 1);
+    assert.equal(keys[0].enabled, true);
+    const health = db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM provider_key_health WHERE provider_id = 'zen'",
+      )
+      .get() as { n: number };
+    assert.equal(health.n, 0);
+    // The outbound request still carried the whole free-tier contract.
+    assert.equal(seenBody?.stream, true);
+    assert.ok(Array.isArray(seenBody?.tools) && seenBody.tools.length > 0);
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
