@@ -452,6 +452,9 @@ export interface TransformDefInfo {
   blurb: string;
   phases: TransformPhase[];
   params: ParamSpec[];
+  /** A switch rather than a body op (added entry enables an engine-level
+   *  feature) - rendered without a phase choice or params. */
+  marker?: boolean;
 }
 
 // --- Resolved transform stack (read-only preview of what a provider does) ----
@@ -498,7 +501,6 @@ export interface ProviderModel {
   maxOutputTokens: number | null;
   capabilities: ModelCapabilities | null;
   transforms: ModelTransformConfig[];
-  piiRedaction: boolean;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -512,7 +514,6 @@ export interface ProviderModelInput {
   maxOutputTokens?: number | null;
   capabilities?: ModelCapabilities | null;
   transforms?: ModelTransformConfig[];
-  piiRedaction?: boolean;
   notes?: string | null;
 }
 

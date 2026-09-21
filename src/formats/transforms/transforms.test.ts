@@ -3,7 +3,12 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getTransformDef, listTransformDefs, buildModelTransforms } from ".";
+import {
+  getTransformDef,
+  listTransformDefs,
+  buildModelTransforms,
+  PII_TRANSFORM_ID,
+} from ".";
 import type { TransformCtx } from "../pipeline";
 
 const ctx = {} as TransformCtx; // transforms here don't read ctx
@@ -24,6 +29,7 @@ test("library lists the built-in transforms with param specs", () => {
     "delete-field",
     "rename-field",
     "clamp-number",
+    "pii-redaction",
   ])
     assert.ok(ids.includes(id), `missing ${id}`);
   for (const d of listTransformDefs()) {
@@ -31,6 +37,35 @@ test("library lists the built-in transforms with param specs", () => {
     assert.ok(d.phases.length > 0, `${d.id} has no phases`);
     assert.ok(Array.isArray(d.params));
   }
+  // The PII entry is a SWITCH: the UI needs `marker` to render it without a
+  // phase picker, and it carries no params of its own.
+  const pii = listTransformDefs().find((d) => d.id === PII_TRANSFORM_ID);
+  assert.equal(pii?.marker, true);
+  assert.deepEqual(pii?.params, []);
+});
+
+test("a marker transform never becomes a pipeline body stage", () => {
+  // PII redaction is enforced by the ENGINE (on the built body, failing closed
+  // by skipping the hop). If the marker ever leaked into the pipeline it would
+  // run as an inert body op and, worse, a throw inside it is swallowed by
+  // buildModelTransforms' wrapper - so this is the property that keeps a
+  // redaction request from degrading into an unredacted one.
+  for (const phase of ["request", "response"] as const) {
+    const stages = buildModelTransforms(
+      [{ id: PII_TRANSFORM_ID, phase, params: {} }],
+      phase,
+    );
+    assert.deepEqual(stages, [], `marker leaked into the ${phase} pipeline`);
+  }
+  // A real transform next to the marker still builds normally.
+  const mixed = buildModelTransforms(
+    [
+      { id: PII_TRANSFORM_ID, phase: "request", params: {} },
+      { id: "set-field", phase: "request", params: { path: "x", value: "1" } },
+    ],
+    "request",
+  );
+  assert.deepEqual(mixed.map((s) => s.name), ["model:set-field"]);
 });
 
 test("set-field sets a value, JSON-coercing when possible", () => {

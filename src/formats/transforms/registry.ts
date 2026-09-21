@@ -27,6 +27,15 @@ export interface TransformDef {
   phases: TransformPhase[];
   params: ParamSpec[];
   build: (params: Record<string, unknown>) => BodyXform;
+  /**
+   * This entry is a SWITCH, not a body op. Its presence in a model's transform
+   * list enables a feature the ENGINE implements itself (PII redaction: it must
+   * run on the final built body, after the adapter, and fail CLOSED by skipping
+   * the hop - neither of which a body stage can do). buildModelTransforms skips
+   * marked defs, so a marker never becomes a pipeline stage; `build` must exist
+   * for the interface but is never called.
+   */
+  marker?: true;
 }
 
 function str(v: unknown): string | undefined {
@@ -73,6 +82,10 @@ function coerceValue(raw: unknown): unknown {
     return raw;
   }
 }
+
+/** Library id of the PII-redaction switch. The engine reads this entry's
+ *  presence on an imported model; the pipeline never applies it. */
+export const PII_TRANSFORM_ID = "pii-redaction";
 
 const LIBRARY: TransformDef[] = [
   {
@@ -273,6 +286,19 @@ const LIBRARY: TransformDef[] = [
     params: [],
     build: () => sanitizeToolArgs(),
   },
+  {
+    id: PII_TRANSFORM_ID,
+    label: "PII redaction",
+    blurb:
+      "Replace detected personal data (names, emails, phone numbers, …) with placeholders before the request reaches this provider, and restore the real values in the response. Only conversation content is scanned - message text, thinking, tool results and tool-call arguments - so your system prompt and tool definitions are left untouched. Runs in the gateway, on the final outgoing body; if the analyzer can't be reached the hop is skipped entirely rather than sending anything unredacted. Requires the master switch and the Presidio URLs in Settings → Privacy.",
+    // Request phase only because the redaction is an outbound action - the
+    // restore is the engine's, and there is no phase to choose (see `marker`).
+    phases: REQUEST,
+    params: [],
+    marker: true,
+    // Never called: a marker is not a body transform (see TransformDef.marker).
+    build: () => (b) => b,
+  },
 ];
 
 export const TRANSFORM_LIBRARY: Record<string, TransformDef> =
@@ -290,5 +316,6 @@ export function listTransformDefs(): TransformDefInfo[] {
     blurb: d.blurb,
     phases: d.phases,
     params: d.params,
+    marker: d.marker,
   }));
 }

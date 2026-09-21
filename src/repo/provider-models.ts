@@ -20,7 +20,6 @@ interface ProviderModelRow {
   max_output_tokens: number | null;
   capabilities: string | null;
   transforms: string;
-  pii_redaction: number;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -39,7 +38,6 @@ function mapProviderModel(r: ProviderModelRow): ProviderModel {
       null,
     ),
     transforms: parseJsonArray<ModelTransformConfig>(r.transforms),
-    piiRedaction: !!r.pii_redaction,
     notes: r.notes,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -124,7 +122,6 @@ export function upsertProviderModel(
         maxOutputTokens: input.maxOutputTokens,
         capabilities: input.capabilities,
         transforms: input.transforms,
-        piiRedaction: input.piiRedaction,
         notes: input.notes,
       }) ?? existing
     );
@@ -132,10 +129,10 @@ export function upsertProviderModel(
   db.prepare(
     `INSERT INTO provider_models
        (provider_id, upstream_id, display_name, context_window,
-        max_output_tokens, capabilities, transforms, pii_redaction, notes,
+        max_output_tokens, capabilities, transforms, notes,
         created_at, updated_at)
      VALUES (@provider_id, @upstream_id, @display_name, @context_window,
-        @max_output_tokens, @capabilities, @transforms, @pii_redaction, @notes,
+        @max_output_tokens, @capabilities, @transforms, @notes,
         @created_at, @updated_at)`,
   ).run({
     provider_id: input.providerId,
@@ -145,7 +142,6 @@ export function upsertProviderModel(
     max_output_tokens: input.maxOutputTokens ?? null,
     capabilities: serializeCapabilities(input.capabilities),
     transforms: JSON.stringify(input.transforms ?? []),
-    pii_redaction: input.piiRedaction ? 1 : 0,
     notes: input.notes ?? null,
     created_at: now,
     updated_at: now,
@@ -180,17 +176,13 @@ export function updateProviderModel(
         : existing.capabilities,
     transforms:
       patch.transforms !== undefined ? patch.transforms : existing.transforms,
-    pii_redaction:
-      patch.piiRedaction !== undefined
-        ? patch.piiRedaction
-        : existing.piiRedaction,
     notes: patch.notes !== undefined ? patch.notes : existing.notes,
   };
   db.prepare(
     `UPDATE provider_models SET
        display_name=@display_name, context_window=@context_window,
        max_output_tokens=@max_output_tokens, capabilities=@capabilities,
-       transforms=@transforms, pii_redaction=@pii_redaction, notes=@notes,
+       transforms=@transforms, notes=@notes,
        updated_at=@updated_at
      WHERE id=@id`,
   ).run({
@@ -200,7 +192,6 @@ export function updateProviderModel(
     max_output_tokens: next.max_output_tokens ?? null,
     capabilities: serializeCapabilities(next.capabilities),
     transforms: JSON.stringify(next.transforms ?? []),
-    pii_redaction: next.pii_redaction ? 1 : 0,
     notes: next.notes ?? null,
     updated_at: now,
   });

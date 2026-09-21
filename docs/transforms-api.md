@@ -576,6 +576,21 @@ Built-in defs, grouped by how generic they are:
 | `anthropic-cache` | request | Adds `cache_control:{type:"ephemeral", ttl}` breakpoints to the stable prefix (last `system` block, last tool, last message) for Anthropic prompt caching. `ttl` = `5m` (default) or `1h`. **A family default for every Anthropic-native provider** (see below) - usually not picked manually; add it here explicitly only to override the `ttl` for one specific model. No-ops on a non-Anthropic-shaped body (see `looksOpenAIShaped`'s doc comment) - a real concern now that this runs unconditionally as a family default, not just when a user opted in. |
 | `system-prepend` | request | Prepends a user-supplied system instruction (Anthropic `system` field or a chat system message) |
 | `sanitize-tool-args` | response | Fixes malformed tool-call arguments from non-Claude models: numeric strings → numbers, clamp `Read.limit` ≤ 2000, drop negative offsets / invalid pdf `pages`. **Also a family default for every Anthropic-native provider.** |
+| `pii-redaction` | — | **A marker, not a body op.** Adding it to an imported model switches on PII redaction for that model: detected personal data is replaced with `[[PII_<ENTITY>_<n>]]` placeholders before the request leaves the gateway and the real values are restored in the response. Scans **conversation content only** - message text, thinking, tool results (`tool_result` content, Responses `function_call_output.output`) and tool-call arguments. The **system prompt** (`system`/`instructions`, system/developer-role messages) and **tool definitions** (`tools`/`functions`) are deliberately left alone: they are operator-authored, and mangling a tool schema would break tool calling. Requires the master switch + Presidio URLs in Settings → Privacy; a hop whose analyzer can't run is SKIPPED (never sent unredacted) and the request fails over. See `marker` below. |
+
+### Markers: library entries that are switches, not stages
+
+A `TransformDef` may set `marker: true`. Its presence in a model's
+`ModelTransformConfig[]` enables a feature the ENGINE implements itself, and
+`buildModelTransforms` skips it, so a marker NEVER becomes a pipeline stage
+(there is a test pinning this). The UI renders it without a phase picker or
+params - it reads as a switch that is on because the entry exists.
+
+PII redaction is the only marker today, and it has to be one: the redaction must
+run on the bytes the adapter actually built (after every request transform) and
+a failure must fail CLOSED by skipping the hop. A body stage can do neither -
+`buildModelTransforms` swallows a throwing stage and passes the body through
+unchanged, which for redaction would mean silently sending the PII.
 
 A model's configured list (`ModelTransformConfig[]`) is resolved to actual
 `RequestTransform`/`ResponseTransform` stages by `formats/transforms/apply.ts`:

@@ -1,9 +1,17 @@
 // Request-side PII redaction.
 //
-// Walks ONLY conversation content - message text, thinking, tool RESULTS, and
-// tool-call ARGUMENTS - and replaces every span Presidio detects with a
-// placeholder token. Structural keys and tool SCHEMAS are never touched, so a
-// redaction can't alter a tool definition or a routing parameter.
+// Walks CONVERSATION CONTENT and nothing else: message text, thinking, tool
+// RESULTS (where a command's output, a file read, or an API response can carry a
+// secret), and tool-call ARGUMENTS. Every span Presidio detects is replaced with
+// a placeholder token; the response-side re-hydrator puts the originals back.
+//
+// Deliberately NOT redacted:
+//   - the SYSTEM PROMPT (`system` / `instructions`, and system/developer-role
+//     messages) - operator-authored, not user data;
+//   - TOOL DEFINITIONS (`tools` / `functions`) - names, descriptions and schemas
+//     are authored by the operator or the client, and mangling one would break
+//     tool calling for a model that can no longer match its own schema;
+//   - structural keys (model, tool_choice, response_format, metadata, …).
 //
 // The span list comes from ONE analyzer request for the whole body; the token
 // map it returns is what the response-side re-hydrator resolves against.
@@ -138,17 +146,13 @@ function collectContentStrings(body: Json): {
     }
   };
 
-  // --- system / instructions (both formats) ---
-  push(body, "system", body.system);
-  if (Array.isArray(body.system))
-    for (const block of body.system) collectBlock(block);
-  push(body, "instructions", body.instructions);
-
   // --- chat / messages: messages[] ---
   if (Array.isArray(body.messages)) {
     for (const raw of body.messages) {
       if (!raw || typeof raw !== "object") continue;
       const msg = raw as Record<string, unknown>;
+      // The system prompt is the operator's own text - never redacted.
+      if (msg.role === "system" || msg.role === "developer") continue;
       if (typeof msg.content === "string") push(msg, "content", msg.content);
       else if (Array.isArray(msg.content))
         for (const block of msg.content) collectBlock(block);
@@ -167,15 +171,27 @@ function collectContentStrings(body: Json): {
   if (Array.isArray(body.input)) {
     body.input.forEach((item, i) => {
       if (typeof item === "string") {
+        // A bare string item is user-supplied input, not the system prompt.
         slots.push({ owner: body.input as unknown[], key: i, value: item });
         return;
       }
       if (!item || typeof item !== "object") return;
       const it = item as Record<string, unknown>;
+      // Responses carries its system prompt as a developer/system-role input
+      // item - same rule as a chat system message: left alone.
+      if (it.role === "system" || it.role === "developer") return;
       if (typeof it.content === "string") push(it, "content", it.content);
       else if (Array.isArray(it.content))
         for (const block of it.content) collectBlock(block);
       if (it.type === "function_call") collectJsonField(it, "arguments");
+      // A tool's OUTPUT - the Responses twin of an Anthropic tool_result, and
+      // the likeliest place for a command's output to carry a secret.
+      if (it.type === "function_call_output") {
+        const output = it.output;
+        if (typeof output === "string") push(it, "output", output);
+        else if (Array.isArray(output))
+          for (const block of output) collectBlock(block);
+      }
     });
   }
 

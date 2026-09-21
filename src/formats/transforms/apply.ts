@@ -19,6 +19,9 @@ export function buildModelTransforms(
     if (c.phase !== phase) continue;
     const def = getTransformDef(c.id);
     if (!def || !def.phases.includes(phase)) continue;
+    // A marker is a switch, not a body op - the engine reads its presence
+    // elsewhere (PII redaction) and it must never reach the pipeline.
+    if (def.marker) continue;
     let fn;
     try {
       fn = def.build(c.params ?? {});

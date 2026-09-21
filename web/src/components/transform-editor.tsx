@@ -81,11 +81,19 @@ export function TransformEditor({
                 <span className="text-sm font-medium text-foreground">
                   {def?.label ?? t.id}
                 </span>
-                <PhasePicker
-                  phases={def?.phases ?? ["request", "response"]}
-                  value={t.phase}
-                  onChange={(phase) => patch(i, { phase })}
-                />
+                {def?.marker ? (
+                  // A marker has no phase to choose - it is a switch that is on
+                  // because the entry exists.
+                  <Badge variant="secondary" className="text-success">
+                    on
+                  </Badge>
+                ) : (
+                  <PhasePicker
+                    phases={def?.phases ?? ["request", "response"]}
+                    value={t.phase}
+                    onChange={(phase) => patch(i, { phase })}
+                  />
+                )}
               </div>
               <div className="flex items-center gap-1">
                 <Button

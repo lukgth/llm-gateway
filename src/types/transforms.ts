@@ -39,4 +39,7 @@ export interface TransformDefInfo {
   blurb: string;
   phases: TransformPhase[];
   params: ParamSpec[];
+  /** A switch rather than a body op: adding the entry enables an engine-level
+   *  feature, so the UI shows no phase choice and no params for it. */
+  marker?: boolean;
 }

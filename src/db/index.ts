@@ -87,7 +87,6 @@ CREATE TABLE IF NOT EXISTS provider_models (
   max_output_tokens INTEGER,
   capabilities      TEXT,
   transforms        TEXT NOT NULL DEFAULT '[]',
-  pii_redaction     INTEGER NOT NULL DEFAULT 0,
   notes             TEXT,
   created_at        TEXT NOT NULL,
   updated_at        TEXT NOT NULL,
@@ -468,15 +467,9 @@ function migrate(db: DB): void {
   // fallback hop can advertise a smaller context window and be skipped safely.
   addColumnIfMissing(db, "model_providers", "context_window", "INTEGER");
   addColumnIfMissing(db, "model_providers", "max_output_tokens", "INTEGER");
-  // Per-hop PII-redaction override (null = inherit the imported model's flag).
+  // Per-hop PII-redaction override (null = inherit the imported model's own
+  // setting, which is its PII-redaction transform entry).
   addColumnIfMissing(db, "model_providers", "pii_redaction", "INTEGER");
-  // Imported-model PII redaction opt-in.
-  addColumnIfMissing(
-    db,
-    "provider_models",
-    "pii_redaction",
-    "INTEGER NOT NULL DEFAULT 0",
-  );
   // Anthropic-style capability listing captured when a rich upstream model is
   // imported (JSON; null when the provider reports none).
   addColumnIfMissing(db, "provider_models", "capabilities", "TEXT");

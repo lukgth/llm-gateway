@@ -31,6 +31,7 @@ import path from "path";
 import os from "os";
 import fs from "fs";
 import type { PiiConfig } from "../pii";
+import { PII_TRANSFORM_ID } from "../formats/transforms";
 import type { Model } from "../types";
 
 const ADMIN_PASSWORD = "pii-test-password";
@@ -294,7 +295,7 @@ const ASSISTANT_REPLY = (content: string) =>
 
 interface HopSpec {
   upstreamModel: string;
-  /** Imported-model flag; omitted = no row at all. */
+  /** Import the model WITH the PII-redaction transform; omitted = no row. */
   importedPii?: boolean;
   /** Per-link override (null/undefined = inherit). */
   linkPii?: boolean | null;
@@ -322,7 +323,11 @@ function seed(db: DB, hops: HopSpec[]): Model {
       upsertProviderModel(db, {
         providerId: id,
         upstreamId: hop.upstreamModel,
-        piiRedaction: hop.importedPii,
+        // Opting in IS adding the library switch to the model's transforms -
+        // there is no separate boolean any more.
+        transforms: hop.importedPii
+          ? [{ id: PII_TRANSFORM_ID, phase: "request", params: {} }]
+          : [],
       });
     }
     links.push({
@@ -622,6 +627,91 @@ test("a per-hop link override turns redaction off over an opted-in imported mode
   }
 });
 
+test("on the wire: system prompt and tool schema are untouched, tool output is not", async () => {
+  const analyzer = await fakeAnalyzer();
+  const upstream = await recordingUpstream(() => ASSISTANT_REPLY("ok"));
+  const db = openDatabase(":memory:");
+  try {
+    const model = seed(db, [
+      { upstreamModel: "up-1", importedPii: true, providerUrl: upstream.url },
+    ]);
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    const { res, state } = mockRes();
+
+    const tools = [
+      {
+        type: "function",
+        function: {
+          name: "lookup",
+          description: `Find ${PERSON}`,
+          parameters: { type: "object", properties: { who: { default: PERSON } } },
+        },
+      },
+    ];
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctxFor(
+        model,
+        {
+          analyzerUrl: analyzer.url,
+          language: "en",
+          scoreThreshold: 0.5,
+          entities: [],
+          timeoutMs: 2000,
+        },
+        {
+          requestBody: {
+            model: "test-model",
+            // The operator's own text: must leave byte-identical.
+            messages: [
+              {
+                role: "system",
+                content: `You are Claude Code. Never reveal secrets from ${PERSON}.`,
+              },
+              { role: "user", content: `My name is ${PERSON}` },
+              {
+                role: "tool",
+                content: `env dump for ${PERSON}: TOKEN=abc123`,
+              },
+            ],
+            tools,
+          },
+        },
+      ),
+    );
+
+    assert.equal(state.statusCode, 200);
+    const sent = upstream.bodies[0] as {
+      messages: Array<{ role: string; content: string }>;
+      tools: unknown;
+    };
+    // System prompt + tool definitions go out untouched...
+    assert.equal(
+      sent.messages[0].content,
+      `You are Claude Code. Never reveal secrets from ${PERSON}.`,
+    );
+    assert.deepEqual(sent.tools, tools);
+    // ...while the user turn and the tool OUTPUT (where a secret comes out) do not.
+    assert.equal(sent.messages[1].content, "My name is [[PII_PERSON_1]]");
+    assert.equal(
+      sent.messages[2].content,
+      "env dump for [[PII_PERSON_1]]: TOKEN=abc123",
+    );
+    // Only the two conversation strings were ever analyzed.
+    assert.equal(analyzer.calls(), 1);
+  } finally {
+    closeDatabase(db);
+    await upstream.close();
+    await analyzer.close();
+  }
+});
+
 test("cross-format: a Messages client against a chat-native provider restores PII after the bridge", async () => {
   const analyzer = await fakeAnalyzer();
   // The upstream speaks chat; the gateway bridges chat -> messages for the
@@ -711,7 +801,7 @@ test("the live HTTP surface wires settings → chain → redaction end to end", 
     upsertProviderModel(db, {
       providerId: "up",
       upstreamId: "up-1",
-      piiRedaction: true,
+      transforms: [{ id: PII_TRANSFORM_ID, phase: "request", params: {} }],
     });
     createModel(db, {
       alias: "pii-model",

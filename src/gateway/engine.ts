@@ -49,6 +49,7 @@ import {
 import {
   modelTransformBags,
   dropOverriddenDefaults,
+  PII_TRANSFORM_ID,
 } from "../formats/transforms";
 import {
   KeyHealthStore,
@@ -275,8 +276,12 @@ export class ForwardingEngine {
         link.upstreamModel,
       );
       // Redaction needs BOTH the global master switch (pii present) and this
-      // hop's opt-in: the link override wins over the imported model's flag.
-      const redact = !!pii && (link.piiRedaction ?? imported?.piiRedaction ?? false);
+      // hop's opt-in: the link override wins over the imported model's own
+      // setting, which is the PII-redaction entry in its transform list (added
+      // from the transform library - see PII_TRANSFORM_ID).
+      const importedPii =
+        imported?.transforms.some((t) => t.id === PII_TRANSFORM_ID) ?? false;
+      const redact = !!pii && (link.piiRedaction ?? importedPii);
       chain.push({
         provider,
         upstreamModel: link.upstreamModel,

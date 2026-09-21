@@ -129,6 +129,11 @@ export default function ModelEditor() {
   const [catalogLoading, setCatalogLoading] = useState<Set<string>>(new Set());
   // Per-hop success/error hit counts, keyed by "providerId:upstreamModel".
   const [hopStats, setHopStats] = useState<Record<string, HopStat>>({});
+  // Global redaction switch (Settings > Privacy). The per-hop PII control is
+  // only meaningful while it is on, so the column is HIDDEN entirely when it is
+  // off rather than shown in an inert state. The per-hop values still round-trip
+  // through save() either way - hiding is presentational only.
+  const [piiEnabled, setPiiEnabled] = useState(false);
 
   // Hydrate the form from a model (edit) or defaults (new).
   const hydrate = useCallback((m: Model | null) => {
@@ -163,6 +168,10 @@ export default function ModelEditor() {
 
   useEffect(() => {
     api.listProviders().then(setProviders).catch(toast.error);
+    api
+      .getSettings()
+      .then((s) => setPiiEnabled(s.piiEnabled === true))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -208,6 +217,14 @@ export default function ModelEditor() {
     () => providers.filter((p) => p.enabled),
     [providers],
   );
+
+  // Chain grid track. The PII column exists only while global redaction is on,
+  // and the template has to lose that track with it - otherwise the rows would
+  // keep an empty 5.75rem gap and the header would stop lining up with its
+  // column.
+  const chainGrid = piiEnabled
+    ? "grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_6.5rem_10rem_3rem_5.75rem_3.5rem_3.5rem_3.25rem]"
+    : "grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_6.5rem_10rem_3rem_3.5rem_3.5rem_3.25rem]";
 
   // Load a provider's imported-model catalog once (cached). Called when a chain
   // row targets a provider we haven't fetched yet.
@@ -604,16 +621,23 @@ export default function ModelEditor() {
             </div>
           ) : (
             <div className="no-scrollbar overflow-x-auto rounded-lg border border-border">
-              <div className="grid min-w-220 grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_6.5rem_10rem_3rem_5.75rem_3.5rem_3.5rem_3.25rem] items-center gap-3 border-b border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
+              <div
+                className={cn(
+                  "grid min-w-220 items-center gap-3 border-b border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground",
+                  chainGrid,
+                )}
+              >
                 <span>Hop</span>
                 <span>Provider</span>
                 <span>Upstream model</span>
                 <span>Endpoint</span>
                 <span className="pl-3">Conversion</span>
                 <span>Active</span>
-                <span title="PII redaction for this hop (inherit / on / off)">
-                  PII
-                </span>
+                {piiEnabled && (
+                  <span title="PII redaction for this hop (inherit / on / off)">
+                    PII
+                  </span>
+                )}
                 <span className="text-right" title="Successful hits (2xx)">
                   Success
                 </span>
@@ -649,7 +673,8 @@ export default function ModelEditor() {
                       ref={registerRow(i)}
                       style={rowStyle(i)}
                       className={cn(
-                        "relative grid min-w-220 grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_6.5rem_10rem_3rem_5.75rem_3.5rem_3.5rem_3.25rem] items-center gap-3 bg-card px-3 py-2.5 text-sm",
+                        "relative grid min-w-220 items-center gap-3 bg-card px-3 py-2.5 text-sm",
+                        chainGrid,
                         dragging
                           ? // Floats above the list, locked to vertical motion
                             // only (rowStyle only ever sets translateY) -
@@ -821,45 +846,47 @@ export default function ModelEditor() {
                           title={row.enabled ? "Disable hop" : "Enable hop"}
                         />
                       </div>
-                      <div
-                        className="flex h-8 items-center"
-                        role="group"
-                        aria-label="PII redaction for this hop"
-                      >
-                        <div className="inline-flex items-center gap-0.5 rounded-md border border-border bg-muted/40 p-0.5">
-                          {PII_MODES.map((m) => {
-                            const active = row.piiRedaction === m.value;
-                            return (
-                              <Button
-                                key={m.label}
-                                type="button"
-                                variant="ghost"
-                                size="icon-xs"
-                                aria-pressed={active}
-                                aria-label={`PII redaction: ${m.label}`}
-                                title={m.hint}
-                                className={cn(
-                                  "hover:bg-transparent",
-                                  active
-                                    ? `${m.tint} bg-card shadow-sm hover:bg-card`
-                                    : "text-muted-foreground/50 hover:text-foreground",
-                                )}
-                                onClick={() =>
-                                  setChain((c) =>
-                                    c.map((r, j) =>
-                                      j === i
-                                        ? { ...r, piiRedaction: m.value }
-                                        : r,
-                                    ),
-                                  )
-                                }
-                              >
-                                <m.icon className="size-3.5" />
-                              </Button>
-                            );
-                          })}
+                      {piiEnabled && (
+                        <div
+                          className="flex h-8 items-center"
+                          role="group"
+                          aria-label="PII redaction for this hop"
+                        >
+                          <div className="inline-flex items-center gap-0.5 rounded-md border border-border bg-muted/40 p-0.5">
+                            {PII_MODES.map((m) => {
+                              const active = row.piiRedaction === m.value;
+                              return (
+                                <Button
+                                  key={m.label}
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  aria-pressed={active}
+                                  aria-label={`PII redaction: ${m.label}`}
+                                  title={m.hint}
+                                  className={cn(
+                                    "hover:bg-transparent",
+                                    active
+                                      ? `${m.tint} bg-card shadow-sm hover:bg-card`
+                                      : "text-muted-foreground/50 hover:text-foreground",
+                                  )}
+                                  onClick={() =>
+                                    setChain((c) =>
+                                      c.map((r, j) =>
+                                        j === i
+                                          ? { ...r, piiRedaction: m.value }
+                                          : r,
+                                      ),
+                                    )
+                                  }
+                                >
+                                  <m.icon className="size-3.5" />
+                                </Button>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
+                      )}
                       {(() => {
                         const stat =
                           hopStats[`${row.providerId}:${row.upstreamModel}`];

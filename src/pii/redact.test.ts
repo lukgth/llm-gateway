@@ -99,7 +99,7 @@ test("the same value twice yields one token", async (t) => {
   assert.equal(map.size, 1);
 });
 
-test("redacts system, tool_result and tool_use but never a tool schema", async (t) => {
+test("redacts tool results and tool_use but never a tool schema", async (t) => {
   const name = "Ada Lovelace";
   const stub = stubAnalyzer((text) =>
     text.includes(name) ? [span("PERSON", name, text)] : [],
@@ -107,7 +107,6 @@ test("redacts system, tool_result and tool_use but never a tool schema", async (
   t.after(stub.restore);
 
   const body: Json = {
-    system: `You are helping ${name}.`,
     tools: [
       {
         name: "lookup",
@@ -128,7 +127,6 @@ test("redacts system, tool_result and tool_use but never a tool schema", async (
   const before = JSON.stringify(body.tools);
   const map = await redactBody(body, cfg);
 
-  assert.equal(body.system, "You are helping [[PII_PERSON_1]].");
   const blocks = (
     body.messages as Array<{ content: Array<Record<string, unknown>> }>
   )[0].content;
@@ -136,6 +134,96 @@ test("redacts system, tool_result and tool_use but never a tool schema", async (
   assert.deepEqual(blocks[1].input, { who: "[[PII_PERSON_1]]" });
   // Tool DEFINITIONS are not conversation content.
   assert.equal(JSON.stringify(body.tools), before);
+  assert.deepEqual([...map], [["[[PII_PERSON_1]]", name]]);
+});
+
+test("the system prompt is never touched (chat + messages)", async (t) => {
+  const name = "Ada Lovelace";
+  const stub = stubAnalyzer((text) =>
+    text.includes(name) ? [span("PERSON", name, text)] : [],
+  );
+  t.after(stub.restore);
+
+  const body: Json = {
+    system: [
+      { type: "text", text: `You are helping ${name}.` },
+      { type: "text", text: `Never reveal secrets from ${name}.` },
+    ],
+    messages: [
+      { role: "system", content: `System message mentioning ${name}.` },
+      { role: "developer", content: `Developer note about ${name}.` },
+      { role: "user", content: `My name is ${name}` },
+      { role: "assistant", content: `Hello ${name}` },
+    ],
+  };
+  const systemBefore = JSON.stringify(body.system);
+  const messages = body.messages as Array<{ content: string }>;
+  const sysBefore = messages[0].content;
+  const devBefore = messages[1].content;
+
+  const map = await redactBody(body, cfg);
+
+  // Operator-authored text is left byte-identical: no tokens, no analyzer call.
+  assert.equal(JSON.stringify(body.system), systemBefore);
+  assert.equal(messages[0].content, sysBefore);
+  assert.equal(messages[1].content, devBefore);
+  // Conversation turns still are.
+  assert.equal(messages[2].content, "My name is [[PII_PERSON_1]]");
+  assert.equal(messages[3].content, "Hello [[PII_PERSON_1]]");
+  // Only the two conversation turns were ever sent to the analyzer.
+  assert.deepEqual(stub.texts(), [
+    `My name is ${name}`,
+    `Hello ${name}`,
+  ]);
+  assert.deepEqual([...map], [["[[PII_PERSON_1]]", name]]);
+});
+
+test("a Responses body leaves instructions alone and redacts tool output", async (t) => {
+  const name = "Ada Lovelace";
+  const stub = stubAnalyzer((text) =>
+    text.includes(name) ? [span("PERSON", name, text)] : [],
+  );
+  t.after(stub.restore);
+
+  const body: Json = {
+    instructions: `You are helping ${name}.`,
+    input: [
+      { role: "developer", content: `Note about ${name}.` },
+      { role: "user", content: [{ type: "input_text", text: `Ping ${name}` }] },
+      {
+        type: "function_call",
+        call_id: "c1",
+        name: "shell",
+        arguments: '{"cmd":"grep Ada Lovelace .env"}',
+      },
+      // A tool's output - the likeliest place a secret comes out.
+      { type: "function_call_output", call_id: "c1", output: `TOKEN=abc ${name}` },
+      {
+        type: "function_call_output",
+        call_id: "c2",
+        output: [{ type: "output_text", text: `env for ${name}` }],
+      },
+    ],
+  };
+  const instructionsBefore = body.instructions;
+  const map = await redactBody(body, cfg);
+
+  assert.equal(body.instructions, instructionsBefore);
+  const input = body.input as Array<Record<string, unknown>>;
+  assert.equal(
+    (input[0].content as string),
+    `Note about ${name}.`,
+  );
+  assert.deepEqual(input[1].content, [
+    { type: "input_text", text: "Ping [[PII_PERSON_1]]" },
+  ]);
+  assert.deepEqual(JSON.parse(input[2].arguments as string), {
+    cmd: "grep [[PII_PERSON_1]] .env",
+  });
+  assert.equal(input[3].output, "TOKEN=abc [[PII_PERSON_1]]");
+  assert.deepEqual(input[4].output, [
+    { type: "output_text", text: "env for [[PII_PERSON_1]]" },
+  ]);
   assert.deepEqual([...map], [["[[PII_PERSON_1]]", name]]);
 });
 

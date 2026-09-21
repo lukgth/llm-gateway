@@ -29,7 +29,6 @@ import { TableCell, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import {
   Tooltip,
@@ -59,7 +58,6 @@ export function ModelRow({
   );
   const [maxOut, setMaxOut] = useState(model.maxOutputTokens?.toString() ?? "");
   const [notes, setNotes] = useState(model.notes ?? "");
-  const [pii, setPii] = useState(model.piiRedaction === true);
   const [transforms, setTransforms] = useState<ModelTransformConfig[]>(
     model.transforms,
   );
@@ -94,7 +92,6 @@ export function ModelRow({
     contextWindow !== (model.contextWindow?.toString() ?? "") ||
     maxOut !== (model.maxOutputTokens?.toString() ?? "") ||
     notes !== (model.notes ?? "") ||
-    pii !== model.piiRedaction ||
     JSON.stringify(transforms) !== JSON.stringify(model.transforms) ||
     JSON.stringify(capabilities) !== JSON.stringify(model.capabilities);
 
@@ -109,7 +106,6 @@ export function ModelRow({
         notes: notes || null,
         transforms,
         capabilities,
-        piiRedaction: pii,
       });
       toast.success("Saved");
       onChanged();
@@ -320,19 +316,6 @@ export function ModelRow({
                   onChange={(e) => setNotes(e.target.value)}
                 />
               </Field>
-              <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-3">
-                <div className="min-w-0">
-                  <div className="text-xs font-medium text-foreground">
-                    PII redaction
-                  </div>
-                  <p className="mt-0.5 text-[0.7rem] text-muted-foreground">
-                    Strip detected personal data from requests to this model and
-                    restore it in the response. Requires the global switch in
-                    Settings. Chains can override this per hop.
-                  </p>
-                </div>
-                <Switch checked={pii} onCheckedChange={setPii} />
-              </div>
               <div>
                 <span className="mb-2 block text-xs font-medium text-foreground">
                   Default transforms{" "}
