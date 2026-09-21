@@ -482,6 +482,12 @@ export const api = {
   getSettings: () => req<Settings>("/api/settings"),
   updateSettings: (input: Partial<Settings>) =>
     req<Settings>("/api/settings", json("PUT", input)),
+  testPii: () =>
+    req<{
+      ok: boolean;
+      analyzer: { ok: boolean; detail: string; entities?: string[] };
+      anonymizer: { ok: boolean; detail: string };
+    }>("/api/settings/pii/test", { method: "POST" }),
   changePassword: (password: string) =>
     req<{ ok: boolean }>("/api/settings/password", json("POST", { password })),
 

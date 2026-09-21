@@ -22,6 +22,8 @@ export interface ProviderModel {
   capabilities: ModelCapabilities | null;
   /** Ordered per-model transform config (from the transform library). */
   transforms: ModelTransformConfig[];
+  /** Opt this imported model into PII redaction (needs the global switch too). */
+  piiRedaction: boolean;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -35,5 +37,6 @@ export interface ProviderModelInput {
   maxOutputTokens?: number | null;
   capabilities?: ModelCapabilities | null;
   transforms?: ModelTransformConfig[];
+  piiRedaction?: boolean;
   notes?: string | null;
 }

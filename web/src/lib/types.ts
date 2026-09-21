@@ -392,6 +392,8 @@ export interface ModelProviderLink {
   contextWindow: number | null;
   /** Per-hop max-output override (null = inherit). */
   maxOutputTokens: number | null;
+  /** Per-hop PII-redaction override (null = inherit the imported model's flag). */
+  piiRedaction: boolean | null;
 }
 
 export interface ModelLinkIdentity {
@@ -404,6 +406,7 @@ export interface ModelLinkInput extends ModelLinkIdentity {
   endpoint?: string | null;
   contextWindow?: number | null;
   maxOutputTokens?: number | null;
+  piiRedaction?: boolean | null;
 }
 
 export interface BatchModelLinkOps {
@@ -495,6 +498,7 @@ export interface ProviderModel {
   maxOutputTokens: number | null;
   capabilities: ModelCapabilities | null;
   transforms: ModelTransformConfig[];
+  piiRedaction: boolean;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -508,6 +512,7 @@ export interface ProviderModelInput {
   maxOutputTokens?: number | null;
   capabilities?: ModelCapabilities | null;
   transforms?: ModelTransformConfig[];
+  piiRedaction?: boolean;
   notes?: string | null;
 }
 
@@ -712,6 +717,13 @@ export interface Settings {
   webProviderBaseUrl: string;
   webProviderApiKey: string;
   disabledApiKeyMessage: string;
+  piiEnabled: boolean;
+  piiAnalyzerUrl: string;
+  piiAnonymizerUrl: string;
+  piiLanguage: string;
+  piiScoreThreshold: number;
+  piiEntities: string[];
+  piiTimeoutMs: number;
   /** Read-only process-start configuration; edit config.json and restart. */
   bootstrap?: {
     port: number;
@@ -769,6 +781,7 @@ export interface ModelInput {
     endpoint?: string | null;
     contextWindow?: number | null;
     maxOutputTokens?: number | null;
+    piiRedaction?: boolean | null;
   }>;
   pricing?: {
     promptPer1m?: number | null;

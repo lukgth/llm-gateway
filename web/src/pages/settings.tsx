@@ -28,6 +28,7 @@ const SECTIONS = [
   { id: "models", label: "Models" },
   { id: "limits", label: "Runtime" },
   { id: "webtools", label: "Integrations" },
+  { id: "privacy", label: "Privacy" },
   { id: "maintenance", label: "Maintenance" },
   { id: "password", label: "Access" },
 ] as const;
@@ -37,6 +38,8 @@ type SectionId = (typeof SECTIONS)[number]["id"];
 export default function Settings() {
   const [s, setS] = useState<SettingsT | null>(null);
   const [exempt, setExempt] = useState("");
+  const [entities, setEntities] = useState("");
+  const [testingPii, setTestingPii] = useState(false);
   const [saving, setSaving] = useState(false);
   const [active, setActive] = useState<SectionId>("models");
 
@@ -121,6 +124,7 @@ export default function Settings() {
       .then((data) => {
         setS(data);
         setExempt((data.exposeExempt || []).join(", "));
+        setEntities((data.piiEntities || []).join(", "));
       })
       .catch(toast.error);
   }, []);
@@ -144,12 +148,41 @@ export default function Settings() {
           .split(",")
           .map((x) => x.trim())
           .filter(Boolean),
+        piiEntities: entities
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean),
       });
       toast.success("Settings saved");
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : (e as Error).message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const testPii = async () => {
+    setTestingPii(true);
+    try {
+      const r = await api.testPii();
+      if (r.ok) {
+        const types = r.analyzer.entities?.length
+          ? ` (${r.analyzer.entities.join(", ")})`
+          : "";
+        toast.success(
+          `Analyzer: ${r.analyzer.detail}${types} · Anonymizer: ${r.anonymizer.detail}`,
+        );
+      } else {
+        const sides = [
+          !r.analyzer.ok ? `Analyzer: ${r.analyzer.detail}` : null,
+          !r.anonymizer.ok ? `Anonymizer: ${r.anonymizer.detail}` : null,
+        ].filter(Boolean);
+        toast.error(sides.join(" · "));
+      }
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : (e as Error).message);
+    } finally {
+      setTestingPii(false);
     }
   };
 
@@ -356,6 +389,99 @@ export default function Settings() {
                   onChange={(e) => set("webProviderApiKey", e.target.value)}
                   placeholder="(optional)"
                 />
+              </SettingRow>
+            </FormSection>
+          </div>
+        )}
+
+        {active === "privacy" && (
+          <div className="max-w-3xl">
+            <FormSection
+              title="PII redaction"
+              desc="Detected personal data is replaced with placeholder tokens before a request reaches a provider, and restored in the response. Models opt in individually."
+            >
+              <SettingRow
+                label="Redact PII before sending to providers"
+                hint="Master switch. Only imported models with their own PII toggle enabled are redacted; a hop whose redaction can't run is skipped and the request fails over."
+              >
+                <div className="sm:flex sm:justify-end">
+                  <Switch
+                    checked={s.piiEnabled}
+                    onCheckedChange={(v) => set("piiEnabled", v)}
+                  />
+                </div>
+              </SettingRow>
+              <SettingRow
+                label="Analyzer URL"
+                hint="Presidio analyzer base URL (POST /analyze)."
+              >
+                <Input
+                  value={s.piiAnalyzerUrl}
+                  onChange={(e) => set("piiAnalyzerUrl", e.target.value)}
+                  placeholder="http://localhost:5001"
+                />
+              </SettingRow>
+              <SettingRow
+                label="Anonymizer URL"
+                hint="Presidio anonymizer base URL - used by the test button below."
+              >
+                <Input
+                  value={s.piiAnonymizerUrl}
+                  onChange={(e) => set("piiAnonymizerUrl", e.target.value)}
+                  placeholder="http://localhost:5002"
+                />
+              </SettingRow>
+              <SettingRow label="Language" hint="Presidio analyzer language.">
+                <Input
+                  value={s.piiLanguage}
+                  onChange={(e) => set("piiLanguage", e.target.value)}
+                  placeholder="en"
+                />
+              </SettingRow>
+              <SettingRow
+                label="Score threshold"
+                hint="Minimum confidence (0-1) before a detection is redacted."
+              >
+                <Input
+                  type="number"
+                  step="0.05"
+                  value={s.piiScoreThreshold}
+                  onChange={(e) =>
+                    set("piiScoreThreshold", Number(e.target.value))
+                  }
+                />
+              </SettingRow>
+              <SettingRow
+                label="Entity types"
+                hint="Comma-separated Presidio entity types, e.g. PERSON, EMAIL_ADDRESS. Blank = every type the analyzer supports."
+              >
+                <Input
+                  value={entities}
+                  onChange={(e) => setEntities(e.target.value)}
+                  placeholder="(all)"
+                />
+              </SettingRow>
+              <SettingRow
+                label="Analyzer timeout (ms)"
+                hint="A timed-out analysis skips the hop rather than sending it unredacted."
+              >
+                <Input
+                  type="number"
+                  value={s.piiTimeoutMs}
+                  onChange={(e) => set("piiTimeoutMs", Number(e.target.value))}
+                />
+              </SettingRow>
+              <SettingRow
+                label="Test connection"
+                hint="Checks both Presidio services and runs a sample detection. Uses the saved URLs - save first if you just changed them."
+              >
+                <Button
+                  variant="outline"
+                  onClick={testPii}
+                  disabled={testingPii}
+                >
+                  {testingPii ? "Testing…" : "Test connection"}
+                </Button>
               </SettingRow>
             </FormSection>
           </div>

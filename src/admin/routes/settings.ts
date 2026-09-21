@@ -12,6 +12,7 @@ import { listModels } from "../../repo/models";
 import { listApiKeys } from "../../repo/api-keys";
 import { getSettings, saveSettings } from "../../repo/settings";
 import { listWebProviders } from "../../web-tools/backends";
+import { probePresidio } from "../../pii";
 import type { Settings } from "../../types";
 import type { RouteCtx } from "./types";
 import { bad } from "./respond";
@@ -62,6 +63,13 @@ export function registerSettingsRoutes(ctx: RouteCtx, auth: AdminAuth): void {
       webProviderBaseUrl: s.webProviderBaseUrl,
       webProviderApiKey: s.webProviderApiKey,
       disabledApiKeyMessage: s.disabledApiKeyMessage,
+      piiEnabled: s.piiEnabled,
+      piiAnalyzerUrl: s.piiAnalyzerUrl,
+      piiAnonymizerUrl: s.piiAnonymizerUrl,
+      piiLanguage: s.piiLanguage,
+      piiScoreThreshold: s.piiScoreThreshold,
+      piiEntities: s.piiEntities,
+      piiTimeoutMs: s.piiTimeoutMs,
       bootstrap: {
         port: bootstrap.port,
         dataDir: bootstrap.dataDir,
@@ -117,10 +125,38 @@ export function registerSettingsRoutes(ctx: RouteCtx, auth: AdminAuth): void {
         });
       patch.disabledApiKeyMessage = body.disabledApiKeyMessage.trim();
     }
+    if (typeof body.piiEnabled === "boolean") patch.piiEnabled = body.piiEnabled;
+    if (typeof body.piiAnalyzerUrl === "string")
+      patch.piiAnalyzerUrl = body.piiAnalyzerUrl.trim();
+    if (typeof body.piiAnonymizerUrl === "string")
+      patch.piiAnonymizerUrl = body.piiAnonymizerUrl.trim();
+    if (typeof body.piiLanguage === "string")
+      patch.piiLanguage = body.piiLanguage.trim() || "en";
+    if (typeof body.piiScoreThreshold === "number")
+      patch.piiScoreThreshold = Math.min(1, Math.max(0, body.piiScoreThreshold));
+    if (Array.isArray(body.piiEntities))
+      patch.piiEntities = body.piiEntities.filter(
+        (e): e is string => typeof e === "string" && e.trim().length > 0,
+      );
+    if (typeof body.piiTimeoutMs === "number")
+      patch.piiTimeoutMs = Math.min(60000, Math.max(100, body.piiTimeoutMs));
     saveSettings(db, patch);
     router.reload();
     broadcast(["settings", "overview"], "settings:update");
     res.json(publicSettings());
+  });
+
+  r.post("/settings/pii/test", requireAdmin, async (_req, res) => {
+    const s = getSettings(db);
+    // probePresidio never throws - failures come back as ok:false + detail.
+    res.json(
+      await probePresidio({
+        analyzerUrl: s.piiAnalyzerUrl,
+        anonymizerUrl: s.piiAnonymizerUrl,
+        language: s.piiLanguage || "en",
+        timeoutMs: s.piiTimeoutMs,
+      }),
+    );
   });
 
   r.post("/settings/password", requireAdmin, (req, res) => {

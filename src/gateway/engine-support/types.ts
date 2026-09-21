@@ -8,6 +8,7 @@ import type {
   Provider,
 } from "../../types";
 import type { ProviderAdapter } from "../../providers";
+import type { PiiConfig } from "../../pii";
 import type {
   RequestTransform,
   ResponseTransform,
@@ -35,6 +36,8 @@ export interface ChainEntry {
   maxOutputTokens: number | null;
   familyTransforms: ModelTransformConfig[];
   ownTransforms: ModelTransformConfig[];
+  /** PII redaction for this hop; null = off. */
+  pii: PiiConfig | null;
 }
 
 // Per-attempt route plan: where to send + the ordered transform stages (format
@@ -92,6 +95,8 @@ export interface ForwardContext {
     baseUrl: string;
     apiKey: string;
   };
+  /** Global PII redaction config; absent when the master switch is off. */
+  pii?: PiiConfig;
 }
 
 export interface AttemptResult {
@@ -160,6 +165,9 @@ export interface AttemptResult {
    *  verbatim, but forward() must not spend a retry on it or feed it back into
    *  key health: the anonymous key is still perfectly usable. */
   refusal?: boolean;
+  /** Set when PII redaction could not run for this hop (Presidio unreachable or
+   *  unconfigured). Never a key penalty - the hop is skipped, like `skipProvider`. */
+  piiSkipped?: boolean;
 }
 
 // Upstream-reported usage shape (subset of readResponseUsage's return).

@@ -114,6 +114,13 @@ export function parseProviderInput(
   };
 }
 
+// Tri-state: undefined = key absent (keep), null = explicit inherit, boolean = value.
+function parseNullableBool(v: unknown): boolean | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  return typeof v === "boolean" ? v : undefined;
+}
+
 export function parseModelInput(
   body: unknown,
   requireCreate = false,
@@ -154,6 +161,7 @@ export function parseModelInput(
           contextWindow: p.contextWindow == null ? null : num(p.contextWindow),
           maxOutputTokens:
             p.maxOutputTokens == null ? null : num(p.maxOutputTokens),
+          piiRedaction: parseNullableBool(p.piiRedaction),
         }))
       : undefined,
     pricing:
@@ -580,6 +588,7 @@ function parseModelLink(value: unknown): ModelLinkInput {
         : item.maxOutputTokens === null
           ? null
           : num(item.maxOutputTokens),
+    piiRedaction: parseNullableBool(item.piiRedaction),
   };
 }
 

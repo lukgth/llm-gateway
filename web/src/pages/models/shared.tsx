@@ -15,6 +15,8 @@ export interface ChainRow {
   upstreamModel: string;
   enabled: boolean;
   endpoint: string | null;
+  /** Per-hop PII-redaction override (null = inherit the imported model's flag). */
+  piiRedaction: boolean | null;
 }
 
 // Short endpoint tag for the list-row chain badges (legacy per-hop endpoint

@@ -19,6 +19,8 @@ export interface ModelProviderLink {
   contextWindow: number | null;
   /** Per-hop override of max output tokens. null = inherit. */
   maxOutputTokens: number | null;
+  /** Per-hop PII-redaction override. null = inherit the imported model's flag. */
+  piiRedaction: boolean | null;
 }
 
 export interface Model {

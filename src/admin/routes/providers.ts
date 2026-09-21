@@ -463,6 +463,7 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
         capabilities:
           b.capabilities == null ? null : parseCapabilities(b.capabilities),
         transforms,
+        piiRedaction: b.piiRedaction === true,
         notes: b.notes == null ? null : str(b.notes),
       });
       res.status(201).json(pm);
@@ -528,6 +529,7 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
                   ? null
                   : parseCapabilities(m.capabilities),
               transforms: parseTransformConfig(m.transforms),
+              piiRedaction: m.piiRedaction === true,
               notes: m.notes == null ? null : str(m.notes),
             });
             if (had) result.updated++;
@@ -600,6 +602,8 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
           b.transforms === undefined
             ? undefined
             : parseTransformConfig(b.transforms),
+        piiRedaction:
+          b.piiRedaction === undefined ? undefined : b.piiRedaction === true,
         notes:
           b.notes === undefined
             ? undefined

@@ -63,6 +63,7 @@ import {
   buildTransformPlan,
   applyBodyTransforms,
   type TransformCtx,
+  type StreamTransform,
 } from "../formats/pipeline";
 import { collectDefaults } from "../formats/transforms/defaults";
 import {
@@ -72,6 +73,12 @@ import {
 } from "./sse-ping";
 import { SseUsageObserver } from "./sse-usage";
 import { requestJson, type JsonResponse } from "./http";
+import {
+  redactBody,
+  rehydrateBuffer,
+  rehydrateTransform,
+  type PiiConfig,
+} from "../pii";
 import { detectWebTools } from "../web-tools/tools";
 import { runWebToolLoop } from "../web-tools/loop";
 import { getWebProvider, DEFAULT_PROVIDER } from "../web-tools/backends";
@@ -250,7 +257,7 @@ export class ForwardingEngine {
 
   // --- chain + route --------------------------------------------------------
 
-  private buildChain(model: Model | null): ChainEntry[] {
+  private buildChain(model: Model | null, pii?: PiiConfig): ChainEntry[] {
     if (!model) return [];
     const enabledProviders = new Map(
       listProviders(this.db, false).map((p) => [p.id, p]),
@@ -267,6 +274,9 @@ export class ForwardingEngine {
         provider.id,
         link.upstreamModel,
       );
+      // Redaction needs BOTH the global master switch (pii present) and this
+      // hop's opt-in: the link override wins over the imported model's flag.
+      const redact = !!pii && (link.piiRedaction ?? imported?.piiRedaction ?? false);
       chain.push({
         provider,
         upstreamModel: link.upstreamModel,
@@ -287,6 +297,7 @@ export class ForwardingEngine {
           imported?.transforms ?? [],
         ),
         ownTransforms: imported?.transforms ?? [],
+        pii: redact ? pii! : null,
       });
     }
     if (chain.length === 0) {
@@ -299,6 +310,8 @@ export class ForwardingEngine {
           maxOutputTokens: model.maxOutputTokens ?? null,
           familyTransforms: familyDefaultTransforms(provider),
           ownTransforms: [],
+          // No configured chain means no imported model to opt in from.
+          pii: null,
         });
     }
 
@@ -395,7 +408,28 @@ export class ForwardingEngine {
         ...(adapterBag.response ?? []),
         ...ownBag.response,
       ],
-      stream: [...defaults.stream, ...(adapterBag.stream ?? [])],
+      // Appended LAST so buildTransformPlan's untagged placement puts it after
+      // the format bridge, on the final client-format bytes. The re-hydrator is
+      // format-agnostic, so it must not be tagged.
+      stream: [
+        ...defaults.stream,
+        ...(adapterBag.stream ?? []),
+        ...(entry.pii
+          ? [
+              {
+                name: "pii-rehydrate",
+                label: "PII rehydration",
+                blurb:
+                  "Restores PII redacted on the way out, in the client's stream.",
+                group: "pii-redaction",
+                create: (cx: TransformCtx) =>
+                  rehydrateTransform(
+                    cx.state?.piiMap as Map<string, string> | undefined,
+                  ),
+              } satisfies StreamTransform,
+            ]
+          : []),
+      ],
     };
 
     const plan = buildTransformPlan(clientFmt, endpointPlan, extra, onStage);
@@ -444,19 +478,14 @@ export class ForwardingEngine {
     // an OpenAI-type client), so both Messages and Chat clients qualify; the loop
     // works in Messages shape internally and emits back in the client's format.
     // Responses clients (`input`, not `messages`) fall through to the normal proxy.
+    //
+    // Dispatched AFTER the chain is built: the loop writes the client stream
+    // itself and cannot redact, so it may only run when some hop did NOT opt in.
     const clientFmt = pathFmt(ctx.clientPath);
-    if (
-      ctx.webTools?.enabled &&
-      (clientFmt === "messages" || clientFmt === "chat") &&
-      this.hasWebTools(ctx.requestBody)
-    ) {
-      await this.forwardWebToolLoop(req, res, ctx, startedAt);
-      return;
-    }
 
     let chain: ChainEntry[];
     try {
-      chain = this.buildChain(ctx.resolvedModel);
+      chain = this.buildChain(ctx.resolvedModel, ctx.pii);
     } catch (err) {
       // A DB read while building the chain failed (e.g. SQLITE_BUSY). Fail the
       // request cleanly instead of letting the rejection escape to a 500.
@@ -494,6 +523,20 @@ export class ForwardingEngine {
       return;
     }
 
+    if (
+      ctx.webTools?.enabled &&
+      (clientFmt === "messages" || clientFmt === "chat") &&
+      this.hasWebTools(ctx.requestBody)
+    ) {
+      if (chain.some((e) => !e.pii)) {
+        await this.forwardWebToolLoop(req, res, ctx, startedAt);
+        return;
+      }
+      // Every hop needs redaction, which the loop cannot perform. Fall through
+      // to the normal proxy path, which will skip those hops and answer 502.
+      this.logger.warn("web_tool_loop_skipped_pii", { model: ctx.alias });
+    }
+
     let lastReason = "no attempts";
     let first: ChainEntry | null = null;
     // Soonest epoch-ms at which ANY hop's key pool frees up, folded across every
@@ -503,6 +546,15 @@ export class ForwardingEngine {
     // Retry-After pointing here, rather than a generic 502. Stays null if any
     // exhaustion was for a non-rate-limit reason (dead keys, build failures).
     let earliestRetryAt: number | null = null;
+    // Set once PII redaction has failed for this request. Every later hop that
+    // needs redaction is skipped WITHOUT another Presidio round-trip (the
+    // service is down; re-probing it per hop would just stack timeouts), and
+    // the chain fails over to the hops configured without redaction.
+    let piiUnavailable = false;
+    // The MOST SPECIFIC PII failure seen (the hop that actually tried), so an
+    // exhausted chain reports the analyzer's own error rather than the generic
+    // latch message.
+    let piiReason: string | null = null;
     const foldRetryAt = (at: number | null): void => {
       if (at && at > Date.now()) {
         earliestRetryAt =
@@ -511,6 +563,16 @@ export class ForwardingEngine {
     };
     for (const entry of chain) {
       if (!first) first = entry;
+      if (entry.pii && piiUnavailable) {
+        lastReason = piiReason ?? "PII analyzer unavailable";
+        this.logger.warn("provider_skipped_pii_unavailable", {
+          provider: entry.provider.id,
+          model: entry.upstreamModel,
+          failover:
+            entry === chain[chain.length - 1] ? "exhausted" : "next-provider",
+        });
+        continue; // next chain member
+      }
       let route: Route;
       try {
         route = this.buildRoute(ctx.clientPath, entry, ctx.reqId, ctx.alias);
@@ -681,6 +743,26 @@ export class ForwardingEngine {
               entry === chain[chain.length - 1] ? "exhausted" : "next-provider",
           });
           break;
+        }
+
+        // PII redaction could not run for this hop. Not a key fault: latch the
+        // failure, abandon this provider with no health penalty and no
+        // attempt-budget cost, and fail over to the next chain member - a hop
+        // configured WITHOUT redaction is exactly the fallback the operator
+        // asked for. The original body is never sent to a hop that needs
+        // redaction (attemptOnce returns before opening a socket).
+        if (result.piiSkipped) {
+          piiUnavailable = true;
+          piiReason = result.reason || "PII redaction unavailable";
+          lastReason = piiReason;
+          this.logger.warn("provider_skipped_pii_unavailable", {
+            provider: entry.provider.id,
+            model: entry.upstreamModel,
+            reason: lastReason,
+            failover:
+              entry === chain[chain.length - 1] ? "exhausted" : "next-provider",
+          });
+          break; // leave the retry loop → next chain member
         }
 
         // Long-context usage-credits 429: NOT a key fault - this key's
@@ -1038,11 +1120,7 @@ export class ForwardingEngine {
     req: Request,
     res: Response,
     ctx: ForwardContext,
-    entry: {
-      provider: Provider;
-      upstreamModel: string;
-      endpoint: string | null;
-    },
+    entry: ChainEntry,
     route: Route,
     startedAt: number,
     pick: KeyPick | null,
@@ -1132,6 +1210,35 @@ export class ForwardingEngine {
         url: defaultUrl,
         headers: defaultHeaders,
       });
+
+      // Redact AFTER the adapter's build phase: `built.body` is byte-for-byte
+      // what the provider receives, so nothing can be re-introduced downstream.
+      // A redaction failure fails CLOSED for this hop: the attempt returns
+      // before any socket is opened, so this provider never sees the
+      // unredacted body.
+      //
+      // Rewritten on a CLONE, never in place: the built body can alias
+      // ctx.requestBody, and a later hop (or a retry) must rebuild from the
+      // client's ORIGINAL text - each hop runs its own redaction with its own
+      // fresh token map, and a hop WITHOUT redaction gets the raw body.
+      if (entry.pii) {
+        try {
+          const redacted = structuredClone(built.body) as Record<
+            string,
+            unknown
+          >;
+          attemptCtx.state!.piiMap = await redactBody(redacted, entry.pii);
+          built.body = redacted;
+        } catch (err) {
+          const reason = `pii redaction failed: ${(err as Error).message}`;
+          this.logger.warn("pii_redaction_unavailable", {
+            provider: provider.id,
+            model: upstreamModel,
+            err: (err as Error).message,
+          });
+          return { committed: false, piiSkipped: true, reason };
+        }
+      }
 
       // JSON.stringify can throw on a BigInt / circular structure a transform or
       // builder produced - keep it (and the URL parse) inside the guard so the
@@ -2065,7 +2172,10 @@ export class ForwardingEngine {
           res,
           status,
           headers,
-          stripped,
+          rehydrateBuffer(
+            stripped,
+            attemptCtx.state?.piiMap as Map<string, string> | undefined,
+          ),
           provider.catalogId === "claude-code",
         );
         return {};
@@ -2106,13 +2216,19 @@ export class ForwardingEngine {
         res,
         status,
         headers,
-        stripped,
+        rehydrateBuffer(
+          stripped,
+          attemptCtx.state?.piiMap as Map<string, string> | undefined,
+        ),
         provider.catalogId === "claude-code",
       );
       return { ...actual, debugResponse };
     }
 
-    const out = Buffer.from(JSON.stringify(outBody), "utf8");
+    const out = rehydrateBuffer(
+      Buffer.from(JSON.stringify(outBody), "utf8"),
+      attemptCtx.state?.piiMap as Map<string, string> | undefined,
+    );
     const clientHeaders =
       provider.catalogId === "claude-code"
         ? bareResponseHeaders(attemptCtx.respHeaders)
@@ -2327,13 +2443,19 @@ export class ForwardingEngine {
     | { ok: true; body: Record<string, unknown>; usage: StreamUsageLike }
     | { ok: false; status: number; reason: string }
   > {
-    const chain = this.buildChain(ctx.resolvedModel);
+    const chain = this.buildChain(ctx.resolvedModel, ctx.pii);
     if (chain.length === 0)
       return { ok: false, status: 502, reason: "no providers" };
 
     let lastReason = "no attempts";
     let lastStatus = 502;
     for (const entry of chain) {
+      // The loop writes the client stream itself and has no way to rehydrate,
+      // so a hop that opted into redaction can't serve it (see forward()).
+      if (entry.pii) {
+        lastReason = "PII redaction is not available on the web-tool path";
+        continue;
+      }
       const route = this.buildRoute(
         "/v1/messages",
         entry,
@@ -2902,7 +3024,7 @@ export class ForwardingEngine {
     const cfg = ctx.webTools!;
     // Upstream provider for logging attribution only (the loop selects the
     // upstream internally per turn via runMessagesTurn -> buildChain).
-    const chain = this.buildChain(ctx.resolvedModel);
+    const chain = this.buildChain(ctx.resolvedModel, ctx.pii);
     const logProvider = chain[0]?.provider ?? null;
     const upstreamModel = chain[0]?.upstreamModel ?? null;
 

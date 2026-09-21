@@ -321,6 +321,19 @@ export class GatewayRouter {
           baseUrl: settings.webProviderBaseUrl || "",
           apiKey: settings.webProviderApiKey || "",
         },
+        // A blank analyzer URL still yields a config (not undefined), so a
+        // misconfigured master switch makes every opted-in hop fail and fail
+        // over - never a silent pass-through of PII.
+        pii:
+          settings.piiEnabled === true
+            ? {
+                analyzerUrl: settings.piiAnalyzerUrl || "",
+                language: settings.piiLanguage || "en",
+                scoreThreshold: settings.piiScoreThreshold,
+                entities: settings.piiEntities ?? [],
+                timeoutMs: settings.piiTimeoutMs,
+              }
+            : undefined,
       };
       // Don't let an async rejection escape Express's sync handler.
       this.engine.forward(req, res, ctx).catch((err) => {

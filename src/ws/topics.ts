@@ -82,6 +82,13 @@ export function fetchTopic(
         webToolsProvider: s.webToolsProvider,
         webProviderBaseUrl: s.webProviderBaseUrl,
         webProviderApiKey: s.webProviderApiKey,
+        piiEnabled: s.piiEnabled,
+        piiAnalyzerUrl: s.piiAnalyzerUrl,
+        piiAnonymizerUrl: s.piiAnonymizerUrl,
+        piiLanguage: s.piiLanguage,
+        piiScoreThreshold: s.piiScoreThreshold,
+        piiEntities: s.piiEntities,
+        piiTimeoutMs: s.piiTimeoutMs,
       };
     }
   }

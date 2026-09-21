@@ -23,6 +23,20 @@ export interface Settings {
   /** Message returned in Anthropic-compatible auth errors when a known gateway
    *  API key exists but is disabled/revoked. */
   disabledApiKeyMessage: string;
+  /** Master switch for PII redaction. Models opt in individually on top of this. */
+  piiEnabled: boolean;
+  /** Presidio analyzer base URL (POST /analyze, GET /health). */
+  piiAnalyzerUrl: string;
+  /** Presidio anonymizer base URL; used by the Settings test button only. */
+  piiAnonymizerUrl: string;
+  /** Presidio language hint; the analyzer requires one. */
+  piiLanguage: string;
+  /** Analyzer confidence threshold, 0..1. */
+  piiScoreThreshold: number;
+  /** Presidio entity types to look for; empty = every entity the analyzer supports. */
+  piiEntities: string[];
+  /** Analyzer request timeout in milliseconds. */
+  piiTimeoutMs: number;
   adminPasswordHash: string | null;
   jwtSecret: string;
 }
@@ -42,6 +56,13 @@ export const DEFAULT_SETTINGS: Settings = {
   webProviderApiKey: "",
   disabledApiKeyMessage:
     "Your API key was revoked. Please contact your gateway's administrator for help.",
+  piiEnabled: false,
+  piiAnalyzerUrl: "",
+  piiAnonymizerUrl: "",
+  piiLanguage: "en",
+  piiScoreThreshold: 0.5,
+  piiEntities: [],
+  piiTimeoutMs: 10000,
   adminPasswordHash: null,
   jwtSecret: "",
 };

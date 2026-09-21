@@ -121,6 +121,7 @@ export default function ModelEditor() {
         upstreamModel: p.upstreamModel,
         enabled: p.enabled,
         endpoint: p.endpoint ?? null,
+        piiRedaction: p.piiRedaction ?? null,
       })) ?? [],
     );
     setPromptPer1m(m?.pricing?.promptPer1m?.toString() ?? "");
@@ -289,6 +290,7 @@ export default function ModelEditor() {
         upstreamModel: alias || "",
         enabled: true,
         endpoint: null,
+        piiRedaction: null,
       },
     ]);
   };
@@ -328,6 +330,7 @@ export default function ModelEditor() {
         upstreamModel: r.upstreamModel,
         enabled: r.enabled,
         endpoint: r.endpoint || null,
+        piiRedaction: r.piiRedaction,
       })),
       pricing: {
         promptPer1m: promptPer1m ? Number(promptPer1m) : null,
@@ -570,13 +573,16 @@ export default function ModelEditor() {
             </div>
           ) : (
             <div className="no-scrollbar overflow-x-auto rounded-lg border border-border">
-              <div className="grid min-w-220 grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_6.5rem_10rem_3rem_3.5rem_3.5rem_3.25rem] items-center gap-3 border-b border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
+              <div className="grid min-w-220 grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_6.5rem_10rem_3rem_3.5rem_3.5rem_3.5rem_3.25rem] items-center gap-3 border-b border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
                 <span>Hop</span>
                 <span>Provider</span>
                 <span>Upstream model</span>
                 <span>Endpoint</span>
                 <span className="pl-3">Conversion</span>
                 <span>Active</span>
+                <span title="PII redaction for this hop (inherit / on / off)">
+                  PII
+                </span>
                 <span className="text-right" title="Successful hits (2xx)">
                   Success
                 </span>
@@ -612,7 +618,7 @@ export default function ModelEditor() {
                       ref={registerRow(i)}
                       style={rowStyle(i)}
                       className={cn(
-                        "relative grid min-w-220 grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_6.5rem_10rem_3rem_3.5rem_3.5rem_3.25rem] items-center gap-3 bg-card px-3 py-2.5 text-sm",
+                        "relative grid min-w-220 grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_6.5rem_10rem_3rem_3.5rem_3.5rem_3.5rem_3.25rem] items-center gap-3 bg-card px-3 py-2.5 text-sm",
                         dragging
                           ? // Floats above the list, locked to vertical motion
                             // only (rowStyle only ever sets translateY) -
@@ -783,6 +789,42 @@ export default function ModelEditor() {
                           }
                           title={row.enabled ? "Disable hop" : "Enable hop"}
                         />
+                      </div>
+                      <div className="flex h-8 items-center">
+                        <Select
+                          value={
+                            row.piiRedaction === null
+                              ? "inherit"
+                              : row.piiRedaction
+                                ? "on"
+                                : "off"
+                          }
+                          onValueChange={(v) =>
+                            setChain((c) =>
+                              c.map((r, j) =>
+                                j === i
+                                  ? {
+                                      ...r,
+                                      piiRedaction:
+                                        v === "inherit" ? null : v === "on",
+                                    }
+                                  : r,
+                              ),
+                            )
+                          }
+                        >
+                          <SelectTrigger
+                            className="h-8 text-xs"
+                            title="PII redaction for this hop (inherit / on / off)"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="inherit">Inherit</SelectItem>
+                            <SelectItem value="on">On</SelectItem>
+                            <SelectItem value="off">Off</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       {(() => {
                         const stat =

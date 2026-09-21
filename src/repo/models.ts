@@ -44,6 +44,7 @@ interface LinkRow {
   endpoint: string | null;
   context_window: number | null;
   max_output_tokens: number | null;
+  pii_redaction: number | null;
 }
 
 interface LinkJoinedRow extends LinkRow {
@@ -89,6 +90,8 @@ function mapModel(r: ModelRow, links: LinkJoinedRow[]): Model {
         endpoint: l.endpoint ?? null,
         contextWindow: l.context_window ?? null,
         maxOutputTokens: l.max_output_tokens ?? null,
+        piiRedaction:
+          l.pii_redaction == null ? null : !!l.pii_redaction,
       })),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -106,7 +109,7 @@ function mapModel(r: ModelRow, links: LinkJoinedRow[]): Model {
 
 const LINK_JOIN =
   "SELECT mp.model_id, mp.provider_id, mp.upstream_model, mp.priority, mp.enabled, mp.endpoint, " +
-  "mp.context_window, mp.max_output_tokens, " +
+  "mp.context_window, mp.max_output_tokens, mp.pii_redaction, " +
   "p.name AS provider_name, p.enabled AS provider_enabled " +
   "FROM model_providers mp LEFT JOIN providers p ON p.id = mp.provider_id";
 export function listModels(db: DB, includeDisabled = true): Model[] {
@@ -167,6 +170,7 @@ export interface ModelInput {
     endpoint?: string | null;
     contextWindow?: number | null;
     maxOutputTokens?: number | null;
+    piiRedaction?: boolean | null;
   }>;
   pricing?: {
     promptPer1m?: number | null;
@@ -333,6 +337,7 @@ export interface BatchModelLinkOps {
       endpoint?: string | null;
       contextWindow?: number | null;
       maxOutputTokens?: number | null;
+      piiRedaction?: boolean | null;
     }
   >;
   /** Listed identities move to the front in this exact order. */
@@ -357,13 +362,13 @@ function upsertLink(
   db.prepare(
     `INSERT INTO model_providers
        (model_id, provider_id, upstream_model, priority, enabled, endpoint,
-        context_window, max_output_tokens)
+        context_window, max_output_tokens, pii_redaction)
      VALUES (@model_id, @provider_id, @upstream_model, @priority, @enabled,
-        @endpoint, @context_window, @max_output_tokens)
+        @endpoint, @context_window, @max_output_tokens, @pii_redaction)
      ON CONFLICT(model_id, provider_id, upstream_model) DO UPDATE SET
        priority=@priority, enabled=@enabled,
        endpoint=@endpoint, context_window=@context_window,
-       max_output_tokens=@max_output_tokens`,
+       max_output_tokens=@max_output_tokens, pii_redaction=@pii_redaction`,
   ).run({
     model_id: modelId,
     provider_id: link.providerId,
@@ -373,6 +378,8 @@ function upsertLink(
     endpoint: link.endpoint || null,
     context_window: link.contextWindow ?? null,
     max_output_tokens: link.maxOutputTokens ?? null,
+    pii_redaction:
+      link.piiRedaction == null ? null : link.piiRedaction ? 1 : 0,
   });
 }
 
@@ -420,6 +427,10 @@ export function batchModelLinks(
           link.maxOutputTokens !== undefined
             ? link.maxOutputTokens
             : saved.maxOutputTokens,
+        piiRedaction:
+          link.piiRedaction !== undefined
+            ? link.piiRedaction
+            : saved.piiRedaction,
       });
       result.updated++;
       current = getModel(db, modelId)!.providers;
