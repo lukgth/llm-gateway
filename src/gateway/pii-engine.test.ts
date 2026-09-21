@@ -712,6 +712,114 @@ test("on the wire: system prompt and tool schema are untouched, tool output is n
   }
 });
 
+test("precedence: a hop's explicit Off beats the model's PII transform; Inherit defers to it", async () => {
+  const analyzer = await fakeAnalyzer();
+  const upstream = await recordingUpstream(() => ASSISTANT_REPLY("ok"));
+  const db = openDatabase(":memory:");
+  const app = buildApp(db);
+  const server = http.createServer(app);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  try {
+    createProvider(db, {
+      id: "up",
+      name: "up",
+      baseUrl: upstream.url,
+      apiKeys: ["k1"],
+      retryAttempts: 1,
+    });
+    // PII ON at the imported-model level (the transform library switch).
+    upsertProviderModel(db, {
+      providerId: "up",
+      upstreamId: "up-1",
+      transforms: [{ id: PII_TRANSFORM_ID, phase: "request", params: {} }],
+    });
+    saveSettings(db, {
+      exposePrefix: "",
+      piiEnabled: true,
+      piiAnalyzerUrl: analyzer.url,
+      piiLanguage: "en",
+      piiScoreThreshold: 0.5,
+      piiEntities: [],
+      piiTimeoutMs: 2000,
+    });
+
+    const login = await fetch(`${origin}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD }),
+    });
+    const { token } = (await login.json()) as { token: string };
+    const admin = {
+      "content-type": "application/json",
+      authorization: `Bearer ${token}`,
+    };
+    const call = async () => {
+      const res = await fetch(`${origin}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "pii-model",
+          messages: [{ role: "user", content: `My name is ${PERSON}` }],
+        }),
+      });
+      assert.equal(res.status, 200);
+      await res.json();
+      return userContent(upstream.bodies[upstream.bodies.length - 1]);
+    };
+
+    // 1. Chain hop says OFF - it must beat the model's transform.
+    const created = (await (
+      await fetch(`${origin}/api/models`, {
+        method: "POST",
+        headers: admin,
+        body: JSON.stringify({
+          alias: "pii-model",
+          providers: [
+            { providerId: "up", upstreamModel: "up-1", piiRedaction: false },
+          ],
+        }),
+      })
+    ).json()) as { id: string };
+    assert.equal(await call(), `My name is ${PERSON}`);
+    assert.equal(analyzer.calls(), 0, "an Off hop must not call the analyzer");
+
+    // 2. Chain hop says INHERIT - the model's transform decides, so it redacts.
+    const put = async (piiRedaction: boolean | null) => {
+      const res = await fetch(`${origin}/api/models/${created.id}`, {
+        method: "PUT",
+        headers: admin,
+        body: JSON.stringify({
+          alias: "pii-model",
+          providers: [{ providerId: "up", upstreamModel: "up-1", piiRedaction }],
+        }),
+      });
+      assert.equal(res.status, 200);
+      // The value survived the round trip through the API + DB.
+      const saved = (await res.json()) as {
+        providers: Array<{ piiRedaction: boolean | null }>;
+      };
+      return saved.providers[0].piiRedaction;
+    };
+    assert.equal(await put(null), null);
+    assert.equal(await call(), "My name is [[PII_PERSON_1]]");
+
+    // 3. Chain hop says ON explicitly - redacts too.
+    assert.equal(await put(true), true);
+    assert.equal(await call(), "My name is [[PII_PERSON_1]]");
+
+    // 4. And back to OFF: the hop wins again.
+    assert.equal(await put(false), false);
+    assert.equal(await call(), `My name is ${PERSON}`);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+    closeDatabase(db);
+    await upstream.close();
+    await analyzer.close();
+  }
+});
+
 test("cross-format: a Messages client against a chat-native provider restores PII after the bridge", async () => {
   const analyzer = await fakeAnalyzer();
   // The upstream speaks chat; the gateway bridges chat -> messages for the

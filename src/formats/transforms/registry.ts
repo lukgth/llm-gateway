@@ -290,7 +290,7 @@ const LIBRARY: TransformDef[] = [
     id: PII_TRANSFORM_ID,
     label: "PII redaction",
     blurb:
-      "Replace detected personal data (names, emails, phone numbers, …) with placeholders before the request reaches this provider, and restore the real values in the response. Only conversation content is scanned - message text, thinking, tool results and tool-call arguments - so your system prompt and tool definitions are left untouched. Runs in the gateway, on the final outgoing body; if the analyzer can't be reached the hop is skipped entirely rather than sending anything unredacted. Requires the master switch and the Presidio URLs in Settings → Privacy.",
+      "Replace detected personal data (names, emails, phone numbers, …) with placeholders before the request reaches this provider, and restore the real values in the response. Only conversation content is scanned - message text, thinking, tool results and tool-call arguments - so your system prompt and tool definitions are left untouched. A fallback-chain hop can override this per hop (Inherit / On / Off); this setting is what 'Inherit' defers to. Runs in the gateway, on the final outgoing body; if the analyzer can't be reached the hop is skipped entirely rather than sending anything unredacted. Requires the master switch and the Presidio URLs in Settings → Privacy.",
     // Request phase only because the redaction is an outbound action - the
     // restore is the engine's, and there is no phase to choose (see `marker`).
     phases: REQUEST,
