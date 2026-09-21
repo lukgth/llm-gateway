@@ -534,6 +534,12 @@ export function FormSection({
 // One horizontal setting row inside a FormSection: label + optional hint on the
 // left, the control aligned on the right. Labels line up across rows, actions
 // share the same right edge - much clearer than stacked cards.
+//
+// The label column is a FIXED 46% at sm+ (not content-sized): with an auto-width
+// label column each row's hint length shifted that row's control start, so a
+// form of inputs rendered as a ragged staircase (measured: controls starting at
+// 634 / 641 / 658px in one section). Fixed width => every control in every
+// section starts at the same x and is the same width.
 export function SettingRow({
   label,
   hint,
@@ -547,7 +553,7 @@ export function SettingRow({
 }) {
   return (
     <div className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-      <div className="min-w-0 sm:max-w-[46%]">
+      <div className="min-w-0 sm:w-[46%] sm:shrink-0">
         <label
           htmlFor={htmlFor}
           className="block text-sm font-medium text-foreground"

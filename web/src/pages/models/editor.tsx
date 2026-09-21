@@ -15,6 +15,9 @@ import {
   Trash2,
   RefreshCw,
   Loader2,
+  CornerDownRight,
+  ShieldCheck,
+  ShieldOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
@@ -60,6 +63,34 @@ const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
   { id: "capabilities", label: "Capabilities" },
   { id: "chain", label: "Chain" },
 ];
+
+// Tri-state per-hop PII redaction. A dropdown for three values is heavy inside a
+// dense chain row, so this is a segmented control: the active segment is raised
+// and each state carries its own icon + colour, so the state of every hop in the
+// chain is readable at a glance without opening anything.
+const PII_MODES = [
+  {
+    value: null,
+    label: "Inherit",
+    hint: "Inherit this provider model's PII redaction setting",
+    icon: CornerDownRight,
+    tint: "text-muted-foreground",
+  },
+  {
+    value: true,
+    label: "On",
+    hint: "Redact PII on this hop",
+    icon: ShieldCheck,
+    tint: "text-success",
+  },
+  {
+    value: false,
+    label: "Off",
+    hint: "Send this hop's requests unredacted, whatever the provider model says",
+    icon: ShieldOff,
+    tint: "text-destructive",
+  },
+] as const;
 
 export default function ModelEditor() {
   const { id } = useParams();
@@ -573,7 +604,7 @@ export default function ModelEditor() {
             </div>
           ) : (
             <div className="no-scrollbar overflow-x-auto rounded-lg border border-border">
-              <div className="grid min-w-220 grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_6.5rem_10rem_3rem_3.5rem_3.5rem_3.5rem_3.25rem] items-center gap-3 border-b border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
+              <div className="grid min-w-220 grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_6.5rem_10rem_3rem_5.75rem_3.5rem_3.5rem_3.25rem] items-center gap-3 border-b border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
                 <span>Hop</span>
                 <span>Provider</span>
                 <span>Upstream model</span>
@@ -618,7 +649,7 @@ export default function ModelEditor() {
                       ref={registerRow(i)}
                       style={rowStyle(i)}
                       className={cn(
-                        "relative grid min-w-220 grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_6.5rem_10rem_3rem_3.5rem_3.5rem_3.5rem_3.25rem] items-center gap-3 bg-card px-3 py-2.5 text-sm",
+                        "relative grid min-w-220 grid-cols-[2.75rem_11rem_minmax(10rem,1fr)_6.5rem_10rem_3rem_5.75rem_3.5rem_3.5rem_3.25rem] items-center gap-3 bg-card px-3 py-2.5 text-sm",
                         dragging
                           ? // Floats above the list, locked to vertical motion
                             // only (rowStyle only ever sets translateY) -
@@ -790,41 +821,44 @@ export default function ModelEditor() {
                           title={row.enabled ? "Disable hop" : "Enable hop"}
                         />
                       </div>
-                      <div className="flex h-8 items-center">
-                        <Select
-                          value={
-                            row.piiRedaction === null
-                              ? "inherit"
-                              : row.piiRedaction
-                                ? "on"
-                                : "off"
-                          }
-                          onValueChange={(v) =>
-                            setChain((c) =>
-                              c.map((r, j) =>
-                                j === i
-                                  ? {
-                                      ...r,
-                                      piiRedaction:
-                                        v === "inherit" ? null : v === "on",
-                                    }
-                                  : r,
-                              ),
-                            )
-                          }
-                        >
-                          <SelectTrigger
-                            className="h-8 text-xs"
-                            title="PII redaction for this hop (inherit / on / off)"
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="inherit">Inherit</SelectItem>
-                            <SelectItem value="on">On</SelectItem>
-                            <SelectItem value="off">Off</SelectItem>
-                          </SelectContent>
-                        </Select>
+                      <div
+                        className="flex h-8 items-center"
+                        role="group"
+                        aria-label="PII redaction for this hop"
+                      >
+                        <div className="inline-flex items-center gap-0.5 rounded-md border border-border bg-muted/40 p-0.5">
+                          {PII_MODES.map((m) => {
+                            const active = row.piiRedaction === m.value;
+                            return (
+                              <Button
+                                key={m.label}
+                                type="button"
+                                variant="ghost"
+                                size="icon-xs"
+                                aria-pressed={active}
+                                aria-label={`PII redaction: ${m.label}`}
+                                title={m.hint}
+                                className={cn(
+                                  "hover:bg-transparent",
+                                  active
+                                    ? `${m.tint} bg-card shadow-sm hover:bg-card`
+                                    : "text-muted-foreground/50 hover:text-foreground",
+                                )}
+                                onClick={() =>
+                                  setChain((c) =>
+                                    c.map((r, j) =>
+                                      j === i
+                                        ? { ...r, piiRedaction: m.value }
+                                        : r,
+                                    ),
+                                  )
+                                }
+                              >
+                                <m.icon className="size-3.5" />
+                              </Button>
+                            );
+                          })}
+                        </div>
                       </div>
                       {(() => {
                         const stat =
