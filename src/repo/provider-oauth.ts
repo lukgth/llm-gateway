@@ -168,14 +168,15 @@ export function listAllProviderOAuthViews(
   return result;
 }
 
-export function listActiveProviderOAuthHealthKeys(
+export function listSelectableProviderOAuthHealthKeys(
   db: DB,
   providerId: string,
 ): string[] {
   const rows = db
     .prepare(
       `SELECT id FROM provider_oauth_credentials
-       WHERE provider_id = ? AND status = 'active' ORDER BY created_at, id`,
+       WHERE provider_id = ? AND status IN ('active', 'reauth_required')
+       ORDER BY created_at, id`,
     )
     .all(providerId) as Array<{ id: string }>;
   return rows.map((row) => oauthHealthKey(row.id));

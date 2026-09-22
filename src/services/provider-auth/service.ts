@@ -86,7 +86,7 @@ export class ProviderAuthService {
     if (!integration.import)
       throw new Error("Provider does not support importing credentials");
     const credential = await integration.import(input);
-    if (credential.expiresAt <= Date.now())
+    if (credential.expiresAt <= Date.now() && !credential.secrets.refreshToken)
       throw new Error("The imported credential is already expired");
     // Imported credentials arrive fully resolved - no device transaction,
     // no polling, no verification. The session is immediately ready for the
@@ -99,7 +99,13 @@ export class ProviderAuthService {
       flow: "import",
       transaction: null,
       state: "ready",
-      expiresAt: credential.expiresAt,
+      // An expired access token WITH a refresh token still imports: the row
+      // revives on first use. Give the session a short adoption window so
+      // ready()/sweep() don't discard it before it is attached to a provider.
+      expiresAt:
+        credential.expiresAt > Date.now()
+          ? credential.expiresAt
+          : Date.now() + 10 * 60_000,
       intervalMs: 0,
       nextPollAt: 0,
       verificationUri: "",

@@ -165,14 +165,18 @@ function stringOrUndefined(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
-function resolveExpiry(claims: JwtClaims, earlierThan?: number): number {
+function resolveExpiry(
+  claims: JwtClaims,
+  earlierThan?: number,
+  allowExpired = false,
+): number {
   const exp = typeof claims.exp === "number" ? claims.exp : Number(claims.exp);
   if (!Number.isFinite(exp) || exp <= 0)
     throw new Error("Codex access token has no usable expiry");
   const expMs = exp < 10_000_000_000 ? exp * 1_000 : exp;
   const resolved =
     earlierThan !== undefined && earlierThan < expMs ? earlierThan : expMs;
-  if (resolved <= Date.now())
+  if (resolved <= Date.now() && !allowExpired)
     throw new Error(
       "Codex access token is expired; re-authenticate and import a fresh session",
     );
@@ -428,7 +432,15 @@ class CodexAuthIntegration implements ProviderAuthIntegration {
       throw new Error(
         "Codex auth JSON must contain a valid access token JWT with expiry",
       );
-    const expiresAt = resolveExpiry(accessClaims, cookieExpiry(root));
+    const refreshToken = stringOrUndefined(tokens.refresh_token) ??
+      stringOrUndefined(tokens.refreshToken);
+    // A past expiry is acceptable only when a refresh token survives: the row
+    // is stored with the stale expiry and refreshed on first resolve/sweep.
+    const expiresAt = resolveExpiry(
+      accessClaims,
+      cookieExpiry(root),
+      refreshToken !== undefined,
+    );
 
     // Session JSON keeps identity outside `tokens`: account.id + user.*.
     const accountObject = record(root.account);

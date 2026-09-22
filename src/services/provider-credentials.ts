@@ -3,9 +3,10 @@ import type { ProviderTestProbe } from "../types/provider-auth";
 import {
   getProviderOAuth,
   getProviderOAuthView,
-  listActiveProviderOAuthHealthKeys,
+  listAllProviderOAuthViews,
   listProviderOAuthAdminViews,
   listProviderOAuthViews,
+  listSelectableProviderOAuthHealthKeys,
   markProviderOAuthReauthRequired,
   rotateProviderOAuth,
   type ProviderOAuthView,
@@ -31,6 +32,9 @@ export class ProviderCredentialService {
     string,
     Promise<ProviderCredentialHandle>
   >();
+  // Account id -> earliest next revival attempt. Failed revival refreshes back
+  // off in-memory so a dead refresh token is not re-posted every sweep.
+  private readonly revivalBackoff = new Map<string, number>();
 
   constructor(
     private readonly db: DB,
@@ -49,7 +53,7 @@ export class ProviderCredentialService {
   }
 
   candidates(providerId: string): string[] {
-    return listActiveProviderOAuthHealthKeys(this.db, providerId);
+    return listSelectableProviderOAuthHealthKeys(this.db, providerId);
   }
 
   async testManaged(
@@ -68,14 +72,21 @@ export class ProviderCredentialService {
         error: "Provider authentication is disabled",
         models: [],
       };
-    if (view.status === "reauth_required")
-      return {
-        ok: false,
-        status: null,
-        ms: 0,
-        error: "Provider authentication must be reconnected",
-        models: [],
-      };
+    if (view.status === "reauth_required") {
+      // Attempt revival from the stored refresh token instead of failing
+      // outright; success flips the row active and testing proceeds below.
+      try {
+        await this.resolveManaged(providerId, view.id);
+      } catch (error) {
+        return {
+          ok: false,
+          status: null,
+          ms: 0,
+          error: (error as Error).message,
+          models: [],
+        };
+      }
+    }
 
     const resolved = await this.resolveManaged(providerId, view.id);
     if (!resolved) throw new Error("Provider authentication is not connected");
@@ -103,12 +114,17 @@ export class ProviderCredentialService {
     if (!view) return null;
     if (view.status === "disabled")
       throw new Error("Provider authentication is disabled");
-    if (view.status === "reauth_required")
-      throw new Error("Provider authentication must be reconnected");
     const stored = getProviderOAuth(this.db, this.crypto, providerId, resolvedId);
     if (!stored) return null;
+    // reauth_required rows revive automatically when a refresh token survived;
+    // cookie-derived rows without one still demand a manual reconnect.
+    const revive = view.status === "reauth_required";
+    if (revive && !stored.credential.secrets.refreshToken)
+      throw new Error("Provider authentication must be reconnected");
     const needsRefresh =
-      forceRefresh || stored.credential.expiresAt <= Date.now() + 5 * 60_000;
+      revive ||
+      forceRefresh ||
+      stored.credential.expiresAt <= Date.now() + 5 * 60_000;
     if (!needsRefresh) return this.handle(stored);
     const running = this.refreshes.get(stored.id);
     if (running) return running;
@@ -133,6 +149,49 @@ export class ProviderCredentialService {
     const accountId = accountIdFromHealthKey(healthKey);
     if (accountId)
       markProviderOAuthReauthRequired(this.db, providerId, accountId);
+  }
+
+  // Background sweep: proactively refresh access tokens nearing expiry and
+  // revive reauth_required rows from their stored refresh token. Never throws;
+  // per-row failures are counted. Revival failures back off for 30 minutes.
+  async sweepTokenRefreshes(): Promise<{ refreshed: number; failed: number }> {
+    let refreshed = 0;
+    let failed = 0;
+    for (const [providerId, views] of listAllProviderOAuthViews(this.db)) {
+      for (const view of views) {
+        if (view.status === "disabled") continue;
+        if (this.refreshes.has(view.id)) continue;
+        const revive = view.status === "reauth_required";
+        if (revive && Date.now() < (this.revivalBackoff.get(view.id) ?? 0))
+          continue;
+        const stored = getProviderOAuth(
+          this.db,
+          this.crypto,
+          providerId,
+          view.id,
+        );
+        if (!stored?.credential.secrets.refreshToken) continue;
+        const due =
+          revive ||
+          (view.status === "active" &&
+            stored.credential.expiresAt <= Date.now() + 15 * 60_000);
+        if (!due) continue;
+        const work = this.refresh(stored).finally(() =>
+          this.refreshes.delete(stored.id),
+        );
+        this.refreshes.set(stored.id, work);
+        try {
+          await work;
+          this.revivalBackoff.delete(view.id);
+          refreshed++;
+        } catch {
+          if (revive)
+            this.revivalBackoff.set(view.id, Date.now() + 30 * 60_000);
+          failed++;
+        }
+      }
+    }
+    return { refreshed, failed };
   }
 
   private async testCredential(

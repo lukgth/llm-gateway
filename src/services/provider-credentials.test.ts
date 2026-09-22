@@ -9,6 +9,8 @@ import {
   createProviderOAuth,
   getProviderOAuth,
   getProviderOAuthView,
+  markProviderOAuthReauthRequired,
+  replaceProviderOAuth,
   setProviderOAuthEnabled,
 } from "../repo/provider-oauth";
 import { ProviderAuthCrypto } from "./provider-auth/crypto";
@@ -311,5 +313,166 @@ test("expired credential without a refresh token is marked reauth_required witho
   } finally {
     closeDatabase(db);
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("reauth_required rows revive from their stored refresh token", async () => {
+  const ctx = setup(Date.now() + 60 * 60_000);
+  try {
+    const view = getProviderOAuthView(ctx.db, ctx.provider.id)!;
+    markProviderOAuthReauthRequired(ctx.db, ctx.provider.id, view.id);
+    // Selectable while reauth_required: the engine must still see it.
+    assert.deepEqual(ctx.service.candidates(ctx.provider.id), [
+      `oauth:${view.id}`,
+    ]);
+    const handle = await ctx.service.resolveManaged(ctx.provider.id);
+    assert.equal(handle?.value, "workos:refreshed-token");
+    assert.equal(
+      getProviderOAuthView(ctx.db, ctx.provider.id)?.status,
+      "active",
+    );
+  } finally {
+    ctx.close();
+  }
+});
+
+test("reauth_required rows without a refresh token still demand reconnection", async () => {
+  const ctx = setup(Date.now() + 60 * 60_000);
+  try {
+    const view = getProviderOAuthView(ctx.db, ctx.provider.id)!;
+    // Cookie-derived credential: nothing to refresh with.
+    replaceProviderOAuth(ctx.db, ctx.crypto, ctx.provider.id, view.id, {
+      integrationId: "clinefree",
+      secrets: { accessToken: "cookie-access", idToken: "cookie-id" },
+      expiresAt: Date.now() + 60 * 60_000,
+      account: { accountId: "account-1", email: "user@example.com" },
+    });
+    markProviderOAuthReauthRequired(ctx.db, ctx.provider.id, view.id);
+    await assert.rejects(
+      () => ctx.service.resolveManaged(ctx.provider.id, view.id),
+      /must be reconnected/,
+    );
+  } finally {
+    ctx.close();
+  }
+});
+
+test("testManaged revives reauth_required rows instead of failing canned", async () => {
+  let refreshes = 0;
+  const ctx = setup(Date.now() + 60 * 60_000, {
+    async refresh(value) {
+      refreshes++;
+      return {
+        ...value,
+        secrets: { ...value.secrets, accessToken: "refreshed-token" },
+        expiresAt: Date.now() + 60 * 60_000,
+      };
+    },
+  });
+  try {
+    const view = getProviderOAuthView(ctx.db, ctx.provider.id)!;
+    markProviderOAuthReauthRequired(ctx.db, ctx.provider.id, view.id);
+    const result = await ctx.service.testManaged(ctx.provider.id);
+    assert.equal(result.ok, true);
+    assert.equal(refreshes, 1);
+    assert.equal(
+      getProviderOAuthView(ctx.db, ctx.provider.id)?.status,
+      "active",
+    );
+  } finally {
+    ctx.close();
+  }
+});
+
+test("testManaged reports revival failure as a failed probe", async () => {
+  const ctx = setup(Date.now() - 1, {
+    async refresh() {
+      throw new Error("network unavailable");
+    },
+  });
+  try {
+    const view = getProviderOAuthView(ctx.db, ctx.provider.id)!;
+    markProviderOAuthReauthRequired(ctx.db, ctx.provider.id, view.id);
+    const result = await ctx.service.testManaged(ctx.provider.id);
+    assert.equal(result.ok, false);
+    assert.equal(result.status, null);
+    assert.equal(result.error, "network unavailable");
+    assert.deepEqual(result.models, []);
+  } finally {
+    ctx.close();
+  }
+});
+
+test("sweep proactively refreshes near-expiry active rows", async () => {
+  const ctx = setup(Date.now() + 10 * 60_000);
+  try {
+    assert.deepEqual(await ctx.service.sweepTokenRefreshes(), {
+      refreshed: 1,
+      failed: 0,
+    });
+    const stored = getProviderOAuth(ctx.db, ctx.crypto, ctx.provider.id)!;
+    assert.equal(stored.credential.secrets.accessToken, "refreshed-token");
+  } finally {
+    ctx.close();
+  }
+});
+
+test("sweep revival failure backs off instead of hammering the token endpoint", async () => {
+  let refreshes = 0;
+  const ctx = setup(Date.now() - 1, {
+    async refresh() {
+      refreshes++;
+      throw new Error("network unavailable");
+    },
+  });
+  try {
+    const view = getProviderOAuthView(ctx.db, ctx.provider.id)!;
+    markProviderOAuthReauthRequired(ctx.db, ctx.provider.id, view.id);
+    assert.deepEqual(await ctx.service.sweepTokenRefreshes(), {
+      refreshed: 0,
+      failed: 1,
+    });
+    assert.equal(refreshes, 1);
+    assert.equal(
+      getProviderOAuthView(ctx.db, ctx.provider.id)?.status,
+      "reauth_required",
+    );
+    // Backoff: an immediate second sweep must not re-post the refresh token.
+    assert.deepEqual(await ctx.service.sweepTokenRefreshes(), {
+      refreshed: 0,
+      failed: 0,
+    });
+    assert.equal(refreshes, 1);
+  } finally {
+    ctx.close();
+  }
+});
+
+test("sweep skips disabled rows and healthy active rows", async () => {
+  let refreshes = 0;
+  const ctx = setup(Date.now() - 1, {
+    async refresh(value) {
+      refreshes++;
+      return value;
+    },
+  });
+  try {
+    // Disabled row that would otherwise be due (already expired).
+    const disabled = getProviderOAuthView(ctx.db, ctx.provider.id)!;
+    setProviderOAuthEnabled(ctx.db, ctx.provider.id, disabled.id, false);
+    // Second row: active but far from expiry → outside the 15-minute window.
+    createProviderOAuth(ctx.db, ctx.crypto, ctx.provider.id, {
+      integrationId: "clinefree",
+      secrets: { accessToken: "other", refreshToken: "other-refresh" },
+      expiresAt: Date.now() + 60 * 60_000,
+      account: { accountId: "account-2", email: "other@example.com" },
+    });
+    assert.deepEqual(await ctx.service.sweepTokenRefreshes(), {
+      refreshed: 0,
+      failed: 0,
+    });
+    assert.equal(refreshes, 0);
+  } finally {
+    ctx.close();
   }
 });

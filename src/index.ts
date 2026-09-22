@@ -129,6 +129,25 @@ function main(): void {
 
   keySyncService.start();
 
+  // Proactively refresh managed OAuth access tokens nearing expiry and revive
+  // reauth_required accounts from their stored refresh token. Runs once at
+  // boot so previously expired accounts recover without a manual re-import.
+  const oauthSweep = () => {
+    providerCredentials
+      .sweepTokenRefreshes()
+      .then(({ refreshed, failed }) => {
+        if (refreshed > 0 || failed > 0)
+          logger.info("oauth_token_sweep", { refreshed, failed });
+      })
+      .catch((err) =>
+        logger.warn("oauth_token_sweep_failed", { err: (err as Error).message }),
+      );
+  };
+  oauthSweep();
+  const sweepTimer = setInterval(oauthSweep, 5 * 60 * 1000); // every 5 min
+  if (typeof (sweepTimer as { unref?: () => void }).unref === "function")
+    (sweepTimer as { unref: () => void }).unref();
+
   // Graceful shutdown: stop accepting connections, checkpoint + close the DB
   // exactly once, then exit. The 5s timer forces exit if in-flight streams
   // won't drain; the DB is still closed cleanly on that path.

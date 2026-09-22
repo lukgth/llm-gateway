@@ -131,6 +131,26 @@ test("codex import accepts a pasted ChatGPT /api/auth/session payload", async ()
   assert.equal(JSON.stringify(credential).includes("jwe-thing"), false);
 });
 
+test("codex import accepts an expired access token when a refresh token is present", async () => {
+  const codex = createCodexAuth();
+  const pastExp = Math.floor(Date.now() / 1000) - 100;
+  const credential = await codex.import!({
+    kind: "auth_json",
+    value: JSON.stringify({
+      access_token: makeJwt(
+        accessClaims({
+          exp: pastExp,
+          "https://api.openai.com/auth": { chatgpt_account_id: "acct-stale" },
+        }),
+      ),
+      refresh_token: REFRESH_SECRET,
+    }),
+  });
+  assert.equal(credential.account.accountId, "acct-stale");
+  assert.equal(credential.secrets.refreshToken, REFRESH_SECRET);
+  assert.equal(credential.expiresAt < Date.now(), true);
+});
+
 test("codex import rejects malformed, tokenless, expired, and identity-less input", async () => {
   const codex = createCodexAuth();
   const pastExp = Math.floor(Date.now() / 1000) - 100;

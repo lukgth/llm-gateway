@@ -267,6 +267,30 @@ test("provider auth import creates a ready owner-bound session consumed once", a
         service.import("test-provider", { kind: "session_cookie", value: "c" }, "owner-a"),
       /expired/i,
     );
+
+    // Expired credentials WITH a refresh token import as ready and adopt:
+    // the stale expiry is stored and the first resolve/sweep revives it.
+    integration.import = async () => ({
+      ...imported,
+      secrets: { ...imported.secrets, refreshToken: "refresh-token" },
+      expiresAt: Date.now() - 1_000,
+    });
+    const revived = await service.import(
+      "test-provider",
+      { kind: "auth_json", value: "{}" },
+      "owner-a",
+    );
+    assert.equal(revived.state, "ready");
+    const adopted = service.adoptForNewProvider(
+      revived.id,
+      "owner-a",
+      provider.id,
+      "test-provider",
+    );
+    assert.equal(adopted.status, "active");
+    const revivedStored = getProviderOAuth(db, crypto, provider.id)!;
+    assert.equal(revivedStored.credential.secrets.refreshToken, "refresh-token");
+    assert.equal(revivedStored.credential.expiresAt < Date.now(), true);
   } finally {
     closeDatabase(db);
     fs.rmSync(dir, { recursive: true, force: true });
