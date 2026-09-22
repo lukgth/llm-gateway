@@ -2060,7 +2060,18 @@ export class ForwardingEngine {
           string,
           unknown
         >;
-      } catch {
+      } catch (err) {
+        // The upstream declared application/json but the body didn't parse -
+        // log the raw bytes (truncated) so this is diagnosable after the fact
+        // instead of silently falling through to a passthrough with no trace.
+        this.logger.warn("upstream_json_parse_failed", {
+          provider: provider.catalogId,
+          status,
+          contentType: String(headers["content-type"] || ""),
+          contentEncoding: String(headers["content-encoding"] || ""),
+          err: (err as Error).message,
+          bodyPreview: stripped.toString("utf8").slice(0, 2000),
+        });
         this.sendRaw(
           res,
           status,
