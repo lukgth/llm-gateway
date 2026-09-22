@@ -31,12 +31,12 @@ export const CLAUDE_CODE_BETA_BLACKLIST = [
 export const BILLING_SALT = "59cf53e54c78";
 
 /**
- * Latest published Claude Code version as of 2026-06-29. This is the single
+ * Latest published Claude Code version as of 2026-09-22. This is the single
  * source of truth - config.ts reads it to build the matching `user-agent`.
  * Bump when Anthropic ships a new release; otherwise requests route to
  * "extra usage".
  */
-export const CC_VERSION = "2.1.207";
+export const CC_VERSION = "2.1.280";
 
 /**
  * Anthropic requires the first content block of any OAuth-authenticated
