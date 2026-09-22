@@ -7,9 +7,11 @@ import {
   brotliDecompressSync,
   inflateRawSync,
   inflateSync,
+  zstdDecompressSync,
   createGunzip,
   createBrotliDecompress,
   createInflateRaw,
+  createZstdDecompress,
 } from "zlib";
 import type { Transform } from "stream";
 import type { IncomingMessage } from "http";
@@ -111,7 +113,9 @@ export async function readErrorBody(
             ? brotliDecompressSync(raw)
             : enc === "deflate"
               ? tryDeflate(raw)
-              : raw;
+              : enc === "zstd"
+                ? zstdDecompressSync(raw)
+                : raw;
       return decompressed.toString("utf8").slice(0, maxBytes);
     } catch {
       // Decompression failed - fall through to raw.
@@ -135,6 +139,7 @@ export function decompressStream(
   if (enc === "gzip" || enc === "x-gzip") return createGunzip();
   if (enc === "br") return createBrotliDecompress();
   if (enc === "deflate") return createInflateRaw();
+  if (enc === "zstd") return createZstdDecompress();
   return null;
 }
 
