@@ -10,7 +10,12 @@
 // thinking-config strips output_config.effort on Haiku.
 //
 // Allowlist verified against https://platform.claude.com/docs/en/api/messages
-// (19 accepted top-level body fields as of 2026-07-13).
+// (19 accepted top-level body fields as of 2026-07-13), plus `safeguards` -
+// the auto-mode classifier field Claude Code sends for server-side checks
+// (https://code.claude.com/docs/en/auto-mode-classifier-billing). A gateway
+// that strips it makes the session fall back to client-side (billed)
+// classifier requests, so it must be forwarded unchanged even though it
+// isn't in the documented Messages API spec.
 
 import type { AnthropicMessagesRequest, Json } from "../../pipeline";
 import { isModelSamplingStripped } from "../model-version";
@@ -39,6 +44,7 @@ export const ORDERED_KEYS = [
   "container",
   "inference_geo",
   "service_tier",
+  "safeguards",
 ] as const;
 
 const ALLOWED = new Set<string>([...ORDERED_KEYS]);

@@ -116,6 +116,21 @@ test("sanitize-response: preserves all valid Anthropic response fields", () => {
   assert.deepEqual(body.container, { id: "c-1", expires_at: "2026-01-01" });
 });
 
+test("sanitize-response: preserves safeguard_results (auto-mode classifier field)", () => {
+  const body = sanitizeAnthropicResponse({
+    id: "msg_1",
+    type: "message",
+    role: "assistant",
+    content: [],
+    stop_reason: "end_turn",
+    usage: {},
+    safeguard_results: [{ type: "shell_command", verdict: "allow" }],
+  });
+  assert.deepEqual(body.safeguard_results, [
+    { type: "shell_command", verdict: "allow" },
+  ]);
+});
+
 test("sanitize-response: ensures content is an array", () => {
   const body = sanitizeAnthropicResponse({
     id: "msg_1",

@@ -195,6 +195,21 @@ test("sanitize: strips sampling on fable/mythos models", () => {
   }
 });
 
+test("sanitize: preserves safeguards (auto-mode classifier field)", () => {
+  const body = sanitizeAnthropicRequest(
+    {
+      model: NEW_MODEL,
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 100,
+      safeguards: [{ type: "shell_command", command: "ls" }],
+    },
+    NEW_MODEL,
+  );
+  assert.deepEqual(body.safeguards, [
+    { type: "shell_command", command: "ls" },
+  ]);
+});
+
 test("sanitize: no-op on a clean body (no extra keys)", () => {
   const original = {
     model: OLD_MODEL,

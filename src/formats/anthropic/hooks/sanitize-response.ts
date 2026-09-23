@@ -11,7 +11,13 @@
 // the structural invariants (type: "message", role: "assistant", content is
 // an array of valid blocks).
 //
-// Allowlist verified against https://platform.claude.com/docs/en/api/messages
+// Allowlist verified against https://platform.claude.com/docs/en/api/messages,
+// plus `safeguard_results` - the auto-mode classifier field the upstream
+// returns alongside `safeguards` requests
+// (https://code.claude.com/docs/en/auto-mode-classifier-billing). Dropping it
+// makes Claude Code treat the session as ineligible for no-charge classifier
+// checks, so it must reach the client unchanged even though it isn't in the
+// documented Messages API spec.
 
 import type { AnthropicMessagesResponse } from "../../pipeline";
 
@@ -26,6 +32,7 @@ const ALLOWED_RESPONSE = new Set([
   "stop_details",
   "usage",
   "container",
+  "safeguard_results",
 ]);
 
 const VALID_STOP_REASONS = new Set([
