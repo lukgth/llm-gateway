@@ -55,6 +55,7 @@ function credentialFromTokens(
     context: string;
     hintAccountId?: string;
     hintEmail?: string;
+    hintSubscriptionType?: string;
   },
 ): ProviderAuthCredential {
   const accessClaims = jwtClaims(opts.accessToken);
@@ -86,6 +87,10 @@ function credentialFromTokens(
         opts.hintEmail,
       label: stringOrUndefined(idClaims.name) ??
         stringOrUndefined(accessClaims.name),
+      // Only the id_token carries this claim (see claimPlanType) - a refresh
+      // response commonly omits id_token entirely, so fall back to whatever
+      // plan was already on file rather than losing it on every rotation.
+      subscriptionType: claimPlanType(idClaims) ?? opts.hintSubscriptionType,
     },
   };
 }
@@ -98,6 +103,7 @@ function credentialFromPayload(
     fallbackRefreshToken?: string;
     fallbackIdToken?: string;
     fallbackAccountId?: string;
+    fallbackSubscriptionType?: string;
   },
 ): ProviderAuthCredential {
   const accessToken = stringOrUndefined(payload.accessToken) ??
@@ -116,6 +122,7 @@ function credentialFromPayload(
     expiresAt,
     context: opts.context,
     hintAccountId: opts.fallbackAccountId,
+    hintSubscriptionType: opts.fallbackSubscriptionType,
   });
   if (opts.fallbackRefreshToken && !credential.secrets.refreshToken)
     credential.secrets.refreshToken = opts.fallbackRefreshToken;
@@ -259,6 +266,54 @@ function claimAccountId(claims: Record<string, unknown>): string | undefined {
     firstOrganizationId(claims.organizations) ??
     stringOrUndefined(claims.account_id) ??
     stringOrUndefined(claims.accountId);
+}
+
+// codex-rs's own known-plan display names (protocol/src/auth.rs KnownPlan::
+// display_name) - lets a raw id_token claim value like "prolite" or
+// "self_serve_business_prolite" render exactly the way the Codex CLI itself
+// would, instead of a naive capitalize() mangling it. Anything not in this
+// table (a plan codex-rs doesn't have a name for yet) falls back to a plain
+// title-cased render of the raw value - never dropped, just less pretty.
+const CODEX_PLAN_DISPLAY_NAMES: Record<string, string> = {
+  free: "Free",
+  go: "Go",
+  plus: "Plus",
+  pro: "Pro",
+  prolite: "Pro Lite",
+  team: "Team",
+  self_serve_business_prolite: "Self Serve Business ProLite",
+  self_serve_business_usage_based: "Self Serve Business Usage Based",
+  business: "Business",
+  ent26: "Enterprise",
+  enterprise_cbp_automation: "Enterprise (Automation)",
+  enterprise_cbp_usage_based: "Enterprise CBP Usage Based",
+  enterprise: "Enterprise",
+  hc: "Enterprise",
+  edu: "Edu",
+  education: "Edu",
+  edu_plus: "Edu Plus",
+  edu_pro: "Edu Pro",
+};
+
+function planDisplayName(raw: string): string {
+  const known = CODEX_PLAN_DISPLAY_NAMES[raw.toLowerCase()];
+  if (known) return known;
+  return raw
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+// The ChatGPT subscription plan, same claim path account id comes from
+// (id_token's "https://api.openai.com/auth" claim - see codex-rs's
+// login/src/token_data.rs parse_chatgpt_jwt_claims/IdTokenInfo, which reads
+// this exact field to answer `codex login status`'s plan display). Never
+// present on the access token, only the id_token.
+function claimPlanType(claims: Record<string, unknown>): string | undefined {
+  const authClaim = record(claims["https://api.openai.com/auth"]);
+  const raw = stringOrUndefined(authClaim.chatgpt_plan_type);
+  return raw ? planDisplayName(raw) : undefined;
 }
 
 function firstOrganizationId(value: unknown): string | undefined {
@@ -471,6 +526,7 @@ class CodexAuthIntegration implements ProviderAuthIntegration {
       fallbackRefreshToken: refreshToken,
       fallbackIdToken: credential.secrets.idToken,
       fallbackAccountId: credential.account.accountId,
+      fallbackSubscriptionType: credential.account.subscriptionType,
       context: "Codex refresh response",
     });
     // credentialFromPayload builds a fresh `account`, dropping the

@@ -94,6 +94,101 @@ test("codex import parses nested auth.json and resolves claims in order", async 
   assert.equal(credential.expiresAt > Date.now(), true);
 });
 
+test("codex import surfaces the ChatGPT plan type from the id_token, same as the CLI's own `codex login status`", async () => {
+  const codex = createCodexAuth();
+  const withPlan = makeJwt({
+    email: "user@example.com",
+    exp: FUTURE_EXP,
+    "https://api.openai.com/auth": {
+      chatgpt_account_id: "acct-plan",
+      chatgpt_plan_type: "pro",
+    },
+  });
+  const credential = await codex.import!({
+    kind: "auth_json",
+    value: JSON.stringify({
+      tokens: {
+        access_token: makeJwt(accessClaims()),
+        refresh_token: REFRESH_SECRET,
+        id_token: withPlan,
+      },
+    }),
+  });
+  assert.equal(credential.account.subscriptionType, "Pro");
+});
+
+test("codex import maps every known raw plan value to codex-rs's own display name", async () => {
+  const codex = createCodexAuth();
+  const cases: Array<[string, string]> = [
+    ["free", "Free"],
+    ["plus", "Plus"],
+    ["pro", "Pro"],
+    ["prolite", "Pro Lite"],
+    ["team", "Team"],
+    ["business", "Business"],
+    ["enterprise", "Enterprise"],
+    ["hc", "Enterprise"],
+    ["ent26", "Enterprise"],
+    ["self_serve_business_prolite", "Self Serve Business ProLite"],
+    ["edu", "Edu"],
+    // codex-rs's own raw values are always snake_case (protocol/src/auth.rs
+    // KnownPlan::raw_value) - an unrecognized plan falls back to a plain
+    // title-cased render rather than being dropped.
+    ["a_plan_codex_rs_doesnt_know_about", "A Plan Codex Rs Doesnt Know About"],
+  ];
+  for (const [raw, expected] of cases) {
+    const idToken = makeJwt({
+      exp: FUTURE_EXP,
+      "https://api.openai.com/auth": {
+        chatgpt_account_id: "acct-plan",
+        chatgpt_plan_type: raw,
+      },
+    });
+    const credential = await codex.import!({
+      kind: "auth_json",
+      value: JSON.stringify({
+        tokens: { access_token: makeJwt(accessClaims()), id_token: idToken },
+      }),
+    });
+    assert.equal(credential.account.subscriptionType, expected, `raw="${raw}"`);
+  }
+});
+
+test("codex refresh carries the plan type forward when the refresh response omits an id_token", async () => {
+  const { fetchImpl } = fakeFetch(() =>
+    jsonRes(200, {
+      access_token: makeJwt(
+        accessClaims({
+          "https://api.openai.com/auth": { chatgpt_account_id: "acct-refresh" },
+        }),
+      ),
+      // No id_token in the refresh response - the only place chatgpt_plan_type
+      // ever lives, mirroring how OpenAI's real refresh grant behaves.
+    }),
+  );
+  const codex = createCodexAuth(fetchImpl);
+  const withPlan = makeJwt({
+    exp: FUTURE_EXP,
+    "https://api.openai.com/auth": {
+      chatgpt_account_id: "acct-plan",
+      chatgpt_plan_type: "team",
+    },
+  });
+  const original = await codex.import!({
+    kind: "auth_json",
+    value: JSON.stringify({
+      tokens: {
+        access_token: makeJwt(accessClaims()),
+        refresh_token: REFRESH_SECRET,
+        id_token: withPlan,
+      },
+    }),
+  });
+  assert.equal(original.account.subscriptionType, "Team");
+  const refreshed = await codex.refresh(original);
+  assert.equal(refreshed.account.subscriptionType, "Team");
+});
+
 test("codex import accepts direct snake and camel aliases", async () => {
   const codex = createCodexAuth();
   const snake = await codex.import!({
