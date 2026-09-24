@@ -209,6 +209,36 @@ test("codex import detects a personal access token and hydrates identity via who
   assert.equal(calls.length, 1);
 });
 
+test("codex import accepts a BARE personal access token (not wrapped in JSON), same UX as Claude Code's bare token paste", async () => {
+  const { fetchImpl, calls } = fakeFetch((url) => {
+    assert.match(url, /\/user-auth-credential\/whoami$/);
+    return jsonRes(200, {
+      email: "bare-pat@example.com",
+      chatgpt_account_id: "acct-bare-pat",
+      chatgpt_plan_type: "pro",
+    });
+  });
+  const codex = createCodexAuth(fetchImpl);
+  const credential = await codex.import!({
+    kind: "auth_json",
+    value: "bare-personal-access-token-value",
+  });
+  assert.equal(credential.secrets.accessToken, "bare-personal-access-token-value");
+  assert.equal(credential.account.accountId, "acct-bare-pat");
+  assert.equal(credential.account.tokenKind, "long_lived");
+  assert.equal(credential.expiresAt, NEVER_EXPIRES);
+  assert.equal(calls.length, 1);
+});
+
+test("codex import rejects a bare token the whoami endpoint refuses", async () => {
+  const { fetchImpl } = fakeFetch(() => jsonRes(401, { detail: "invalid token" }));
+  const codex = createCodexAuth(fetchImpl);
+  await assert.rejects(
+    () => codex.import!({ kind: "auth_json", value: "bare-dead-token" }),
+    /401/,
+  );
+});
+
 test("codex import accepts the camelCase personalAccessToken alias", async () => {
   const { fetchImpl } = fakeFetch(() =>
     jsonRes(200, {

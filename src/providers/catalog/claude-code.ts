@@ -8,12 +8,14 @@
 // renames so the client sees its original tool names.
 //
 // Managed-auth, import-only (same UX pattern as openai-codex.ts): the admin
-// pastes either the Claude Code OAuth credential JSON or a bare secret
-// (a long-lived sk-ant-oat01-... token, or a plain sk-ant-api03-... Console
-// key) - see services/provider-auth/integrations/claude-code.ts, which
-// detects the shape and stores it accordingly. The gateway manages refresh
-// for refreshable OAuth credentials automatically; long-lived credentials
-// (either kind) never need it. Every credential kind still flows through
+// pastes either the Claude Code OAuth credential JSON or a bare long-lived
+// sk-ant-oat01-... token - see
+// services/provider-auth/integrations/claude-code.ts, which detects the
+// shape, VALIDATES it with a real upstream call, and stores it accordingly.
+// A plain sk-ant-api03-... Console key is deliberately rejected here - that
+// belongs to the Anthropic provider (./anthropic.ts), not this one. The
+// gateway manages refresh for refreshable OAuth credentials automatically;
+// long-lived tokens never need it. Every credential kind still flows through
 // the SAME request-processing stack below unchanged - that stack already
 // applies uniformly regardless of what's authenticating the request.
 
@@ -226,7 +228,7 @@ export const claudeCode = new ClaudeCodeAdapter({
     flow: "import",
     title: "Connect Claude Code",
     description:
-      "Import Claude Code credential JSON (the claudeAiOauth object) or paste a plain secret - a long-lived sk-ant-oat01-… token or a sk-ant-api03-… Console API key.",
+      "Import Claude Code credential JSON (the claudeAiOauth object) or paste one or more long-lived sk-ant-oat01-… OAuth tokens, one per line.",
     actionLabel: "Import Claude Code credentials",
   },
   defaults: {

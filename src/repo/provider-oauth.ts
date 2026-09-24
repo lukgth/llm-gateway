@@ -340,6 +340,18 @@ export function rotateProviderOAuth(
     credential.integrationId,
     credential.secrets,
   );
+  // A refresh()'d credential's `account` is freshly built by the
+  // integration - it has no idea an admin set a custom label or tags on
+  // this row, so those would otherwise be silently wiped on every routine
+  // token rotation. Carry them forward from the row on file whenever the
+  // fresh credential doesn't explicitly specify its own (an integration
+  // that DOES resolve a real label - e.g. a newly-available profile email -
+  // still wins, exactly like today).
+  const account: ProviderAuthAccount = {
+    ...credential.account,
+    label: credential.account.label ?? current.credential.account.label,
+    tags: credential.account.tags ?? current.credential.account.tags,
+  };
   const result = db
     .prepare(
       `UPDATE provider_oauth_credentials SET integration_id=?, account_identity=?,
@@ -348,10 +360,10 @@ export function rotateProviderOAuth(
     )
     .run(
       credential.integrationId,
-      accountIdentity(credential.account),
+      accountIdentity(account),
       encrypted,
       credential.expiresAt,
-      JSON.stringify(credential.account),
+      JSON.stringify(account),
       now,
       current.id,
       current.providerId,
@@ -376,6 +388,34 @@ export function setProviderOAuthEnabled(
       `UPDATE provider_oauth_credentials SET status=?, updated_at=?
        WHERE id=? AND provider_id=?`,
     ).run(status, new Date().toISOString(), id, providerId);
+  return getProviderOAuthView(db, providerId, id)!;
+}
+
+// Updates ONLY the admin-editable, non-secret display fields (label, tags) -
+// same purpose as provider-keys.ts's label/metadata update, kept separate
+// from rotateProviderOAuth (which replaces the whole account object as part
+// of a credential refresh) so editing a tag never touches secrets, status,
+// or revision/expiry.
+export function updateProviderOAuthMetadata(
+  db: DB,
+  providerId: string,
+  id: string,
+  patch: { label?: string | null; tags?: Record<string, string> },
+): ProviderOAuthView | null {
+  const current = getProviderOAuthView(db, providerId, id);
+  if (!current) return null;
+  const account: ProviderAuthAccount = {
+    ...current.account,
+    label:
+      patch.label === undefined
+        ? current.account.label
+        : patch.label || undefined,
+    tags: patch.tags === undefined ? current.account.tags : patch.tags,
+  };
+  db.prepare(
+    `UPDATE provider_oauth_credentials SET public_metadata=?, updated_at=?
+     WHERE id=? AND provider_id=?`,
+  ).run(JSON.stringify(account), new Date().toISOString(), id, providerId);
   return getProviderOAuthView(db, providerId, id)!;
 }
 

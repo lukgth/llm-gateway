@@ -1,10 +1,15 @@
 // Managed-auth integration for OpenAI Codex.
 //
-// Codex credentials are IMPORTED: the admin pastes the contents of
-// ~/.codex/auth.json (the file codex login writes). The integration validates
-// the JWT pair and hands it to ProviderAuthService.import(), which persists
-// it through the normal encrypted provider-oauth store. Credentials with a
-// refresh_token are automatically refreshed before expiry.
+// Codex credentials are IMPORTED: the admin pastes either the contents of
+// ~/.codex/auth.json (the file codex login writes) OR a bare personal access
+// token (codex-rs AuthMode::PersonalAccessToken - a long-lived bearer token
+// with no JWT structure, validated + identified via whoami instead of claim
+// decoding, same bare-secret UX as Claude Code's sk-ant-oat01-… path). The
+// integration validates whichever shape it got and hands it to
+// ProviderAuthService.import(), which persists it through the normal
+// encrypted provider-oauth store. Credentials with a refresh_token are
+// automatically refreshed before expiry; personal access tokens never expire
+// and have no refresh grant at all.
 //
 // Web-session tokens (__Secure-next-auth.session-token) are NOT supported
 // because they are read-only on the Codex backend: they can list models but
@@ -401,7 +406,25 @@ class CodexAuthIntegration implements ProviderAuthIntegration {
   }
 
   async import(input: ProviderAuthImport): Promise<ProviderAuthCredential> {
-    return this.importAuthJson(input.value);
+    const value = input.value.trim();
+    if (!value) throw new Error("Codex credential value is required");
+    // A bare pasted secret (not JSON at all) is a personal access token
+    // pasted directly, same UX as Claude Code's bare sk-ant-oat01-… path -
+    // codex-rs's PersonalAccessTokenAuth is a long-lived bearer token with no
+    // JWT structure, so there's nothing to parse here; whoami both validates
+    // it and resolves identity. Real JSON (auth.json, a pasted session, or an
+    // explicit personal_access_token field) keeps going through
+    // importAuthJson exactly as before.
+    let looksLikeJson = false;
+    try {
+      JSON.parse(value);
+      looksLikeJson = true;
+    } catch {
+      looksLikeJson = false;
+    }
+    if (!looksLikeJson)
+      return credentialFromPersonalAccessToken(this.fetchImpl, value);
+    return this.importAuthJson(value);
   }
 
   async refresh(

@@ -3,18 +3,30 @@
 // Credentials are IMPORTED (same UX as Codex - see ./codex.ts): the admin
 // pastes either the Claude Code OAuth credential JSON (the `claudeAiOauth`
 // object from Claude Code's own secure token storage - a refreshable OAuth
-// pair with a real expiry), OR a bare secret string - a long-lived
-// `sk-ant-oat01-...` OAuth token (what Claude Code's own source calls
-// "Long-lived inference-only tokens", CLAUDE_CODE_OAUTH_TOKEN-shaped, no
-// refresh_token, never expires), OR a plain `sk-ant-api03-...` Console API
-// key. The gateway detects which shape it got and manages refresh (for the
-// first kind only) automatically from then on - the admin never has to
-// think about it again.
+// pair with a real expiry), OR a bare long-lived `sk-ant-oat01-...` OAuth
+// token (what Claude Code's own source calls "Long-lived inference-only
+// tokens", CLAUDE_CODE_OAUTH_TOKEN-shaped, no refresh_token, never expires).
+// A plain `sk-ant-api03-...` Console API key is deliberately REJECTED here -
+// that's the Anthropic provider's own credential shape (catalog/anthropic.ts,
+// plain apiKeys table), not Claude Code's; Claude Code never issues that
+// prefix, so accepting it here would just let a request silently pretend to
+// be Claude Code traffic on a key that was never authorized for it. The
+// gateway detects which shape it got and manages refresh (for the
+// refreshable OAuth kind only) automatically from then on - the admin never
+// has to think about it again.
+//
+// Every credential this integration accepts is validated with a real,
+// side-effect-free upstream call before it's ever stored - never assumed
+// valid from shape alone. Full-scope OAuth credentials (user:profile) are
+// validated via /api/oauth/profile (which also resolves account identity);
+// everything else (long-lived inference-only tokens) is validated via
+// GET /v1/models, the one endpoint every credential kind here can reach
+// without spending a real inference call. The same probe backs test().
 //
 // Full-scope OAuth credentials (user:profile) get account identity resolved
 // via /api/oauth/profile and can query /api/oauth/usage for real quota
-// windows. Long-lived user:inference-only tokens and plain API keys have
-// neither: they're observed passively via response headers only (see
+// windows. Long-lived user:inference-only tokens have neither: they're
+// observed passively via response headers only (see
 // services/anthropic/unified-usage.ts, already wired into the adapter).
 
 import type {
@@ -26,12 +38,17 @@ import type {
 } from "../types";
 import { NEVER_EXPIRES, ProviderReauthRequiredError } from "../types";
 import type { ProviderTestProbe } from "../../../types/provider-auth";
+import type { AnthropicModelList, UpstreamModel } from "../../../formats/wire/models";
+import { normalizeAnthropicModels } from "../../../providers/base/models";
 import {
+  ANTHROPIC_API_KEY_PREFIX,
   CLAUDE_AI_OAUTH_SCOPES,
   CLAUDE_CODE_CLIENT_ID,
+  CLAUDE_MODELS_URL,
   CLAUDE_OAUTH_PROFILE_URL,
   CLAUDE_OAUTH_TOKEN_PREFIX,
   CLAUDE_OAUTH_TOKEN_URL,
+  claudeProbeHeaders,
   hasProfileScope,
 } from "../../../providers/claude-code-oauth";
 
@@ -195,6 +212,64 @@ async function fetchProfile(
   };
 }
 
+// --- models probe ----------------------------------------------------------
+//
+// GET /v1/models - the one cheap, side-effect-free endpoint every credential
+// kind this integration accepts can reach (unlike /api/oauth/profile and
+// /api/oauth/usage, gated on user:profile). Used to actually VALIDATE a
+// freshly-pasted credential at import time - never assume shape alone means
+// a token works - and reused by test() so both paths agree on what
+// "reachable" means.
+interface ModelsProbeResult {
+  ok: boolean;
+  status: number | null;
+  models: UpstreamModel[];
+  error?: string;
+}
+
+async function probeModels(
+  fetchImpl: typeof fetch,
+  accessToken: string,
+  authKind: "api_key" | "oauth_token" | undefined,
+): Promise<ModelsProbeResult> {
+  let res: Response;
+  try {
+    res = await boundedFetch(fetchImpl, CLAUDE_MODELS_URL, {
+      method: "GET",
+      headers: claudeProbeHeaders(accessToken, authKind),
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      status: null,
+      models: [],
+      error: normalizeNetworkError(error, "Claude Code credential check failed").message,
+    };
+  }
+  if (!res.ok) {
+    const detail = await upstreamErrorDetail(res);
+    return {
+      ok: false,
+      status: res.status,
+      models: [],
+      error: `Claude Code credential check failed (${res.status}${detail ? `: ${detail}` : ""})`,
+    };
+  }
+  let body: Record<string, unknown>;
+  try {
+    body = await readJsonLimited(res);
+  } catch {
+    return {
+      ok: false,
+      status: res.status,
+      models: [],
+      error: "Claude Code returned an invalid model list",
+    };
+  }
+  const models = normalizeAnthropicModels(body as AnthropicModelList);
+  return { ok: true, status: res.status, models };
+}
+
 // --- credential assembly --------------------------------------------------
 
 interface ParsedOAuthBlob {
@@ -236,9 +311,25 @@ async function credentialFromOAuthBlob(
 ): Promise<ProviderAuthCredential> {
   const isRefreshable = !!blob.refreshToken && !!blob.expiresAt;
   const scopes = blob.scopes ?? (isRefreshable ? undefined : ["user:inference"]);
-  const profile = hasProfileScope(scopes)
-    ? await fetchProfile(fetchImpl, blob.accessToken)
-    : undefined;
+
+  // Validate the pasted credential with a real upstream call before ever
+  // storing it - never assume it's good just because it parsed. A
+  // profile-scoped credential gets identity resolved AND validated in one
+  // call (a failed fetch means a bad/expired token, not "no identity
+  // available"); anything else falls back to the same cheap /v1/models probe
+  // credentialFromBareSecret uses.
+  let profile: ProfileFields | undefined;
+  if (hasProfileScope(scopes)) {
+    profile = await fetchProfile(fetchImpl, blob.accessToken);
+    if (!profile)
+      throw new Error(
+        "Claude Code rejected this credential (profile check failed) - it may be expired or revoked",
+      );
+  } else {
+    const probe = await probeModels(fetchImpl, blob.accessToken, "oauth_token");
+    if (!probe.ok)
+      throw new Error(probe.error ?? "Claude Code rejected this credential");
+  }
 
   return {
     integrationId: "claude-code",
@@ -260,29 +351,40 @@ async function credentialFromOAuthBlob(
   };
 }
 
-// A bare pasted secret string: either a long-lived sk-ant-oat01-... OAuth
-// token, or a plain sk-ant-api03-... (or otherwise-shaped) Console API key.
-// The prefix is the only signal available - there's no endpoint to probe
-// that would tell them apart without spending a real request either way.
+// A bare pasted secret string: only a long-lived sk-ant-oat01-... OAuth
+// token is accepted here. A plain sk-ant-api03-... Console key is the
+// Anthropic provider's own credential shape (catalog/anthropic.ts) - Claude
+// Code never issues that prefix, so it's rejected outright rather than
+// silently stored as a "plain API key" Claude Code credential (see this
+// module's header comment). Whatever's left is validated with a real
+// GET /v1/models call before being accepted - never assumed valid from
+// shape alone.
 async function credentialFromBareSecret(
   fetchImpl: typeof fetch,
   secret: string,
 ): Promise<ProviderAuthCredential> {
-  const isOAuthToken = secret.startsWith(CLAUDE_OAUTH_TOKEN_PREFIX);
-  const scopes = isOAuthToken ? ["user:inference"] : undefined;
-  const profile = isOAuthToken && hasProfileScope(scopes)
-    ? await fetchProfile(fetchImpl, secret)
-    : undefined;
+  if (secret.startsWith(ANTHROPIC_API_KEY_PREFIX))
+    throw new Error(
+      "This is an Anthropic Console API key (sk-ant-api...), not a Claude Code credential. " +
+        "Add it under the Anthropic provider instead, or paste a Claude Code OAuth token (sk-ant-oat01-...) or credential JSON here.",
+    );
+  if (!secret.startsWith(CLAUDE_OAUTH_TOKEN_PREFIX))
+    throw new Error(
+      "Claude Code only accepts credential JSON (the claudeAiOauth object) or a bare sk-ant-oat01-… OAuth token.",
+    );
+
+  const scopes = ["user:inference"];
+  const probe = await probeModels(fetchImpl, secret, "oauth_token");
+  if (!probe.ok)
+    throw new Error(probe.error ?? "Claude Code rejected this credential");
+
   return {
     integrationId: "claude-code",
     secrets: { accessToken: secret },
     expiresAt: NEVER_EXPIRES,
     account: {
-      accountId: profile?.accountUuid,
-      email: profile?.email,
-      label: profile?.displayName,
       tokenKind: "long_lived",
-      authKind: isOAuthToken ? "oauth_token" : "api_key",
+      authKind: "oauth_token",
       scopes,
     },
   };
@@ -415,18 +517,24 @@ class ClaudeCodeAuthIntegration implements ProviderAuthIntegration {
 
   async test(credential: ProviderAuthCredential): Promise<ProviderTestProbe> {
     const started = Date.now();
-    // Only a profile-scoped credential has a cheap, side-effect-free probe
-    // endpoint available. A user:inference-only token or a plain API key has
-    // no such endpoint - probing would mean spending a real inference call,
-    // which this integration deliberately does not do (see class doc comment).
+    // A profile-scoped credential gets the richer /api/oauth/profile check
+    // (also confirms identity); everything else (long-lived user:inference-
+    // only tokens, and legacy migrated plain API keys) falls back to the
+    // same GET /v1/models probe import-time validation uses - a real
+    // upstream round-trip either way, never a hand-waved "ok: true" without
+    // actually checking the credential works.
     if (!hasProfileScope(credential.account.scopes)) {
+      const probe = await probeModels(
+        this.fetchImpl,
+        credential.secrets.accessToken,
+        credential.account.authKind,
+      );
       return {
-        ok: true,
-        status: null,
+        ok: probe.ok,
+        status: probe.status,
         ms: Date.now() - started,
-        error:
-          "Imported - no cheap probe endpoint is available for this token's scope; usage is observed passively from real requests.",
-        models: [],
+        ...(probe.error ? { error: probe.error } : {}),
+        models: probe.models,
       };
     }
     try {

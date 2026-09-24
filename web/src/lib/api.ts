@@ -197,6 +197,15 @@ export const api = {
       `/api/providers/${providerId}/auth/${accountId}`,
       json("PUT", { enabled }),
     ),
+  updateProviderAuthMetadata: (
+    providerId: string,
+    accountId: string,
+    patch: { label?: string | null; tags?: Record<string, string> },
+  ) =>
+    req<ProviderOAuthView>(
+      `/api/providers/${providerId}/auth/${accountId}`,
+      json("PUT", patch),
+    ),
   testProviderAuthConnection: (providerId: string, accountId: string) =>
     req<ProviderTestProbe>(
       `/api/providers/${providerId}/auth/${accountId}/test`,

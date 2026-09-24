@@ -240,6 +240,47 @@ export function TableSkeleton({
   );
 }
 
+// Placeholder rows for a custom CSS-grid table (the virtualized
+// role="row"/role="cell" pattern used by provider-key-manager.tsx and
+// authentication-panel.tsx - NOT the shadcn <Table> TableSkeleton above
+// renders into). Pass the exact same `gridClassName` the real rows use so
+// columns land in identical positions, and the same `rowHeight` so the
+// layout doesn't jump once real rows swap in. `cols` only needs to cover
+// the columns worth skeletonizing (a leading checkbox and trailing actions
+// column usually look better left blank).
+export function GridRowsSkeleton({
+  gridClassName,
+  rows = 8,
+  cols = 5,
+  rowHeight = 56,
+  widths = ["70%", "50%", "60%", "40%", "50%"],
+}: {
+  gridClassName: string;
+  rows?: number;
+  cols?: number;
+  rowHeight?: number;
+  widths?: string[];
+}) {
+  return (
+    <div role="rowgroup">
+      {Array.from({ length: rows }).map((_, r) => (
+        <div
+          key={r}
+          role="row"
+          className={cn(gridClassName, "items-center border-b border-border/70 px-4")}
+          style={{ height: rowHeight }}
+        >
+          {Array.from({ length: cols }).map((_, c) => (
+            <div key={c} role="cell">
+              <Skeleton className="h-4" style={{ width: widths[c % widths.length] }} />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Placeholder grid of Stat-shaped cards (label + big number), for dashboards
 // that render a `grid-cols-*` row of Stat before data arrives.
 export function StatGridSkeleton({ count = 4 }: { count?: number }) {

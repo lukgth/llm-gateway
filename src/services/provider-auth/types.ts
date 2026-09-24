@@ -70,6 +70,13 @@ export interface ProviderAuthAccount {
   /** Upstream rate-limit tier, when reported (e.g. Claude's
    *  "default_claude_ai"). Informational only. */
   rateLimitTier?: string;
+  /** Free-form operator tags, same shape and purpose as a plain provider
+   *  key's `metadata` (repo/provider-keys.ts) - never written by an
+   *  integration, only by the admin through the accounts table's tag editor.
+   *  Preserved across refresh()/rotateProviderOAuth (see repo/provider-oauth.ts
+   *  rotateProviderOAuth's explicit carry-forward), so re-authenticating an
+   *  account never silently drops tags the admin set on it. */
+  tags?: Record<string, string>;
 }
 
 export interface ProviderAuthCredential {

@@ -21,7 +21,7 @@ import { api } from "@/lib/api";
 import type { KeyStat, ProviderKey, ProviderTestResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useWsBatchTest } from "@/hooks/use-ws";
-import { EmptyState, Field, TableSearch } from "@/components/shared";
+import { EmptyState, Field, GridRowsSkeleton, TableSearch } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -560,8 +560,34 @@ export function ProviderKeyManager({
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading keys…
+          <div className="min-w-0" role="table" aria-label="Provider keys">
+            <div className="no-scrollbar max-h-[28rem] overflow-x-auto overflow-y-auto">
+              <div role="rowgroup">
+                <div
+                  role="row"
+                  className={cn(
+                    GRID,
+                    "sticky top-0 z-10 h-8 items-center border-b border-border bg-muted/30 px-4 text-xs font-medium text-muted-foreground",
+                  )}
+                >
+                  <div role="columnheader" className="flex justify-start pr-2">
+                    <Checkbox disabled aria-label="Select all visible keys" />
+                  </div>
+                  <div role="columnheader" className="truncate">Key</div>
+                  <div role="columnheader" className="hidden truncate md:block">Tags</div>
+                  <div role="columnheader" className="truncate">Status</div>
+                  <div role="columnheader" className="truncate">Active</div>
+                  <div role="columnheader" className="hidden truncate text-right md:block">Success</div>
+                  <div role="columnheader" className="hidden truncate text-right md:block">Errors</div>
+                  <div role="columnheader" className="text-right">Actions</div>
+                </div>
+              </div>
+              <GridRowsSkeleton
+                gridClassName={GRID}
+                cols={8}
+                widths={["1.25rem", "70%", "50%", "40%", "30%", "20%", "20%", "5rem"]}
+              />
+            </div>
           </div>
         ) : keys.length === 0 ? (
           <EmptyState msg="No provider keys yet - add credentials to begin routing requests" />

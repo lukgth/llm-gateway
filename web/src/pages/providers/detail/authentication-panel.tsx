@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  Check,
   Copy,
+  Download,
   Eye,
   EyeOff,
   FlaskConical,
   Loader2,
+  Pencil,
   Plus,
   Power,
   PowerOff,
@@ -21,12 +24,22 @@ import type {
   ProviderTemplate,
   ProviderTestProbe,
 } from "@/lib/types";
-import { EmptyState, TableSearch } from "@/components/shared";
+import { EmptyState, Field, GridRowsSkeleton, TableSearch } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -38,7 +51,7 @@ import { AuthStep } from "../add-provider-dialog/auth-step";
 const ROW_HEIGHT = 56;
 const HEADER_HEIGHT = 33;
 const GRID =
-  "grid gap-3 grid-cols-[2.75rem_minmax(140px,1fr)_9rem_3rem_9rem] md:grid-cols-[2.75rem_13rem_minmax(10rem,1fr)_minmax(8rem,1fr)_8rem_9rem_3rem_3.5rem_3.5rem_9rem]";
+  "grid gap-3 grid-cols-[2.75rem_minmax(140px,1fr)_9rem_3rem_9rem] md:grid-cols-[2.75rem_13rem_minmax(7rem,0.7fr)_minmax(6rem,0.8fr)_8rem_11rem_3rem_3.5rem_3.5rem_9rem]";
 
 function mask(token: string): string {
   if (token.length <= 10) return `${token.slice(0, 2)}…`;
@@ -68,6 +81,39 @@ function resetLabel(iso: string): string {
   return rt.endsWith("ago") ? `reset ${rt}` : `resets ${rt}`;
 }
 
+// A token this integration never resolves an identity for (no email, no
+// display name) - a long-lived, non-profile-scoped credential. For these the
+// admin's own label doubles as the ONLY human-readable description of the
+// account (there's nothing else to show), so the edit dialog treats it as a
+// "what is this for" field rather than a cosmetic nickname.
+function isUnidentified(account: ProviderOAuthAccount): boolean {
+  return !account.account.email && !account.account.accountId;
+}
+
+interface MetadataEntry {
+  key: string;
+  value: string;
+}
+
+function metadataEntries(metadata: Record<string, string> | undefined): MetadataEntry[] {
+  return Object.entries(metadata ?? {}).map(([key, value]) => ({ key, value }));
+}
+
+function buildMetadata(entries: MetadataEntry[]): {
+  metadata?: Record<string, string>;
+  error?: string;
+} {
+  const metadata: Record<string, string> = {};
+  for (const entry of entries) {
+    const key = entry.key.trim();
+    if (!key) return { error: "Tag keys cannot be blank" };
+    if (Object.hasOwn(metadata, key))
+      return { error: `Duplicate tag key "${key}"` };
+    metadata[key] = entry.value;
+  }
+  return { metadata };
+}
+
 export function AuthenticationPanel({
   provider,
   template,
@@ -89,6 +135,7 @@ export function AuthenticationPanel({
   const [session, setSession] = useState<ProviderAuthSession | null>(null);
   const [connectMode, setConnectMode] = useState<"add" | string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<ProviderOAuthAccount | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -121,11 +168,23 @@ export function AuthenticationPanel({
         account.account.label,
         account.account.accountId,
         account.status,
+        ...Object.entries(account.account.tags ?? {}).flat(),
       ].some((value) => value?.toLowerCase().includes(query)),
     );
   }, [accounts, filter]);
   const activeCount = accounts.filter((account) => account.status === "active").length;
   const disabledCount = accounts.filter((account) => account.status === "disabled").length;
+  const visibleIds = useMemo(
+    () => new Set(filteredRows.map((row) => row.id)),
+    [filteredRows],
+  );
+  const visibleFailedIds = useMemo(
+    () =>
+      [...results.entries()]
+        .filter(([id, result]) => visibleIds.has(id) && !result.ok)
+        .map(([id]) => id),
+    [results, visibleIds],
+  );
   const selectedAccounts = accounts.filter((account) => selected.has(account.id));
   const canEnableSelected = selectedAccounts.some(
     (account) => account.status === "disabled",
@@ -281,6 +340,34 @@ export function AuthenticationPanel({
     setConnectMode(null);
   };
 
+  const selectFailed = () => {
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const id of visibleFailedIds) next.add(id);
+      return next;
+    });
+  };
+
+  const exportAccounts = (exportedAccounts: ProviderOAuthAccount[]) => {
+    const content = exportedAccounts
+      .map((account) => account.accessToken) // raw access tokens only; no labels/metadata
+      .join("\n")
+      .concat("\n");
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const safeProviderId = provider.id.replace(/[^a-zA-Z0-9._-]+/g, "-") || "provider";
+    anchor.href = url;
+    anchor.download = `${safeProviderId}-accounts.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    toast.success(
+      `Exported ${exportedAccounts.length} account${exportedAccounts.length === 1 ? "" : "s"}`,
+    );
+  };
+
   return (
     <div className="space-y-6">
       <Card className="gap-0 overflow-hidden p-0">
@@ -302,10 +389,26 @@ export function AuthenticationPanel({
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Badge variant="success">{activeCount} active</Badge>
               {disabledCount > 0 && <Badge variant="secondary">{disabledCount} disabled</Badge>}
+              {visibleFailedIds.length > 0 && (
+                <Button variant="ghost" size="sm" onClick={selectFailed}>
+                  Select {visibleFailedIds.length} failed
+                </Button>
+              )}
             </div>
           )}
           <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
             <TableSearch value={filter} onChange={setFilter} placeholder="Search accounts…" />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loading || accounts.length === 0}
+              onClick={() => exportAccounts(selected.size > 0 ? selectedAccounts : accounts)}
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span className="hidden lg:inline">
+                Export {selected.size > 0 ? "selected" : "all"}
+              </span>
+            </Button>
             <Button variant="outline" size="sm" onClick={() => void testAll()} disabled={testingAll || activeCount === 0}>
               {testingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}
               <span className="hidden lg:inline">Test active</span>
@@ -317,8 +420,30 @@ export function AuthenticationPanel({
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading accounts…
+          <div className="min-w-0" role="table" aria-label="OAuth accounts">
+            <div className="no-scrollbar max-h-[28rem] overflow-x-auto overflow-y-auto">
+              <div role="rowgroup">
+                <div role="row" className={cn(GRID, "sticky top-0 z-10 h-8 items-center border-b border-border bg-muted/30 px-4 text-xs font-medium text-muted-foreground")}>
+                  <div role="columnheader" className="flex justify-start pr-2">
+                    <Checkbox disabled aria-label="Select all visible accounts" />
+                  </div>
+                  <div role="columnheader">Access token</div>
+                  <div role="columnheader" className="hidden md:block">Email</div>
+                  <div role="columnheader" className="hidden md:block">Info</div>
+                  <div role="columnheader" className="hidden md:block">Expires</div>
+                  <div role="columnheader">Status</div>
+                  <div role="columnheader">Active</div>
+                  <div role="columnheader" className="hidden text-right md:block">Success</div>
+                  <div role="columnheader" className="hidden text-right md:block">Errors</div>
+                  <div role="columnheader" className="text-right">Actions</div>
+                </div>
+              </div>
+              <GridRowsSkeleton
+                gridClassName={GRID}
+                cols={10}
+                widths={["1.25rem", "70%", "60%", "50%", "40%", "5rem", "1.75rem", "20%", "20%", "5rem"]}
+              />
+            </div>
           </div>
         ) : accounts.length === 0 ? (
           <EmptyState msg="No connected accounts yet - add an account to begin routing requests" />
@@ -338,7 +463,7 @@ export function AuthenticationPanel({
                   </div>
                   <div role="columnheader">Access token</div>
                   <div role="columnheader" className="hidden md:block">Email</div>
-                  <div role="columnheader" className="hidden md:block">Name</div>
+                  <div role="columnheader" className="hidden md:block">Info</div>
                   <div role="columnheader" className="hidden md:block">Expires</div>
                   <div role="columnheader">Status</div>
                   <div role="columnheader">Active</div>
@@ -376,6 +501,7 @@ export function AuthenticationPanel({
                           setConnectMode(account.id);
                         }}
                         onRemove={() => void removeAccount(account)}
+                        onEdit={() => setEditingAccount(account)}
                       />
                     </div>
                   );
@@ -386,10 +512,30 @@ export function AuthenticationPanel({
         )}
       </Card>
 
-      {connectMode && template.authentication && (
+      {connectMode === "add" && template.authentication?.flow === "import" && (
         <Card className="p-4">
           <div className="mb-4">
-            <div className="font-medium">{connectMode === "add" ? "Add account" : "Reconnect account"}</div>
+            <div className="font-medium">Add account(s)</div>
+            <p className="text-sm text-muted-foreground">
+              Paste credential JSON, or one or more bare tokens - one per line - to add several accounts at once.
+            </p>
+          </div>
+          <BulkImportFlow
+            providerId={provider.id}
+            tpl={template}
+            onDone={() => {
+              setConnectMode(null);
+              void reload();
+            }}
+            onCancel={cancelConnect}
+          />
+        </Card>
+      )}
+
+      {connectMode && connectMode !== "add" && template.authentication && (
+        <Card className="p-4">
+          <div className="mb-4">
+            <div className="font-medium">Reconnect account</div>
             <p className="text-sm text-muted-foreground">Complete device authorization, then save the connection.</p>
           </div>
           <AuthStep tpl={template} session={session} onSession={setSession} />
@@ -402,6 +548,18 @@ export function AuthenticationPanel({
             )}
           </div>
         </Card>
+      )}
+
+      {editingAccount && (
+        <AccountEditDialog
+          providerId={provider.id}
+          account={editingAccount}
+          onClose={() => setEditingAccount(null)}
+          onSaved={async () => {
+            setEditingAccount(null);
+            await reload();
+          }}
+        />
       )}
     </div>
   );
@@ -420,6 +578,7 @@ function AccountRow({
   onTest,
   onReconnect,
   onRemove,
+  onEdit,
 }: {
   account: ProviderOAuthAccount;
   selected: boolean;
@@ -433,7 +592,9 @@ function AccountRow({
   onTest: () => void;
   onReconnect: () => void;
   onRemove: () => void;
+  onEdit: () => void;
 }) {
+  const tagCount = Object.keys(account.account.tags ?? {}).length;
   const dead = account.status === "reauth_required" || !!account.health?.dead;
   const rateLimitedUntil = account.health?.rateLimitedUntil;
   const rateLimited = !!rateLimitedUntil && new Date(rateLimitedUntil).getTime() > Date.now();
@@ -476,10 +637,27 @@ function AccountRow({
       </div>
       <div role="cell" className="hidden min-w-0 truncate md:block">{account.account.email || "-"}</div>
       <div role="cell" className="hidden min-w-0 flex-col justify-center gap-0.5 md:flex">
-        <span className="truncate">{account.account.label || "-"}</span>
-        {account.account.subscriptionType && (
-          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-            <span className="truncate capitalize">{account.account.subscriptionType}</span>
+        <span
+          className="truncate"
+          title={
+            isUnidentified(account) && account.account.label
+              ? account.account.label
+              : undefined
+          }
+        >
+          {account.account.label ||
+            (isUnidentified(account) ? "No description - click edit to add one" : "-")}
+        </span>
+        {(account.account.subscriptionType || tagCount > 0) && (
+          <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            {account.account.subscriptionType && (
+              <span className="truncate capitalize">{account.account.subscriptionType}</span>
+            )}
+            {tagCount > 0 && (
+              <Badge variant="secondary" className="px-1 py-0 text-[10px] leading-4">
+                {tagCount} tag{tagCount === 1 ? "" : "s"}
+              </Badge>
+            )}
           </span>
         )}
       </div>
@@ -492,6 +670,7 @@ function AccountRow({
       <div role="cell" className={cn("hidden text-right font-mono md:block", account.stats.errors > 0 ? "text-destructive" : "text-muted-foreground")}>{account.stats.errors}</div>
       <div role="cell" className="flex items-center justify-end gap-1">
         <ActionButton label={revealed ? "Hide access token" : "Reveal access token"} onClick={onReveal}>{revealed ? <EyeOff /> : <Eye />}</ActionButton>
+        <ActionButton label="Edit description and tags" onClick={onEdit}><Pencil /></ActionButton>
         <ActionButton label="Test account" disabled={testing || account.status !== "active"} onClick={onTest}>{testing ? <Loader2 className="animate-spin" /> : <FlaskConical />}</ActionButton>
         <ActionButton label="Reconnect account" onClick={onReconnect}><RefreshCw /></ActionButton>
         <ActionButton label="Remove account" destructive onClick={onRemove}><Trash2 /></ActionButton>
@@ -508,5 +687,305 @@ function ActionButton({ label, destructive, children, ...props }: React.Componen
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
+  );
+}
+
+// Edit an account's admin-owned display fields - never touches secrets,
+// status, or expiry. For an unidentified credential (no email/accountId -
+// see isUnidentified()) the label field IS the account's only description,
+// so the copy below reframes accordingly instead of calling it a "label"
+// the way the identified case would.
+function AccountEditDialog({
+  providerId,
+  account,
+  onClose,
+  onSaved,
+}: {
+  providerId: string;
+  account: ProviderOAuthAccount;
+  onClose: () => void;
+  onSaved: () => void | Promise<void>;
+}) {
+  const unidentified = isUnidentified(account);
+  const [label, setLabel] = useState(account.account.label ?? "");
+  const [entries, setEntries] = useState<MetadataEntry[]>(() =>
+    metadataEntries(account.account.tags),
+  );
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    const built = buildMetadata(entries);
+    if (built.error) return toast.error(built.error);
+    setSaving(true);
+    try {
+      await api.updateProviderAuthMetadata(providerId, account.id, {
+        label: label.trim() || null,
+        tags: built.metadata,
+      });
+      toast.success("Account updated");
+      await onSaved();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Edit account</DialogTitle>
+          <DialogDescription>
+            {unidentified
+              ? "This credential has no email or account id to identify it - the description below is the only way to tell it apart from others."
+              : "Update the description and tags shown for this account."}
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="grid gap-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save();
+          }}
+        >
+          <div className="grid gap-4">
+            <Field label="Access token">
+              <div className="relative">
+                <Input
+                  value={account.accessToken}
+                  readOnly
+                  className="pr-10 font-mono text-sm"
+                  aria-label="Full access token"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Copy full token"
+                  title="Copy full token"
+                  className="absolute right-0.5 top-1/2 -translate-y-1/2"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(account.accessToken);
+                    toast.success("Token copied");
+                  }}
+                >
+                  <Copy />
+                </Button>
+              </div>
+            </Field>
+            <Field label={unidentified ? "Description" : "Label"}>
+              <Input
+                value={label}
+                onChange={(event) => setLabel(event.target.value)}
+                placeholder={
+                  unidentified
+                    ? "What is this account for? e.g. \"personal - max plan\""
+                    : "Optional human-readable label"
+                }
+                autoFocus
+              />
+            </Field>
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <MetadataFields entries={entries} onChange={setEntries} />
+          </div>
+
+          <DialogFooter className="border-t border-border pt-4">
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+              Save changes
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MetadataFields({
+  entries,
+  onChange,
+}: {
+  entries: MetadataEntry[];
+  onChange: (entries: MetadataEntry[]) => void;
+}) {
+  const add = () => onChange([...entries, { key: "", value: "" }]);
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <div className="text-xs font-medium">Tags</div>
+          <div className="text-xs text-muted-foreground">
+            Optional values such as uuid, tier, or region.
+          </div>
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={add}>
+          <Plus className="h-3.5 w-3.5" /> Add tag
+        </Button>
+      </div>
+      {entries.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">
+          No tags.
+        </p>
+      ) : (
+        <div className="max-h-56 space-y-3 overflow-y-auto pr-1">
+          {entries.map((entry, index) => (
+            <div key={index} className="grid grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_32px] gap-2">
+              <Input
+                value={entry.key}
+                onChange={(event) =>
+                  onChange(
+                    entries.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, key: event.target.value } : item,
+                    ),
+                  )
+                }
+                placeholder="name"
+                className="font-mono text-xs"
+              />
+              <Input
+                value={entry.value}
+                onChange={(event) =>
+                  onChange(
+                    entries.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, value: event.target.value } : item,
+                    ),
+                  )
+                }
+                placeholder="value"
+                className="font-mono text-xs"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Remove tag"
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => onChange(entries.filter((_, itemIndex) => itemIndex !== index))}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Splits pasted text into candidate credential blobs: one JSON object stays
+// a single entry (a credential's own JSON can obviously contain newlines),
+// while non-JSON input is split one entry per line so several bare tokens
+// can be pasted and added at once. Blank lines and dupes are dropped.
+function splitCredentials(raw: string): string[] {
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  try {
+    JSON.parse(trimmed);
+    return [trimmed];
+  } catch {
+    // not a single JSON blob - fall through to per-line splitting
+  }
+  return [...new Set(trimmed.split(/\r?\n/).map((line) => line.trim()).filter(Boolean))];
+}
+
+// Add one or more accounts to an existing provider. A single JSON blob (or a
+// single bare token) behaves like the old one-shot import; several bare
+// tokens - one per line - are imported and added one at a time, with a
+// per-line result so a bad token in the middle of a big paste doesn't hide
+// which ones actually failed.
+function BulkImportFlow({
+  providerId,
+  tpl,
+  onDone,
+  onCancel,
+}: {
+  providerId: string;
+  tpl: ProviderTemplate;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+
+  const entries = useMemo(() => splitCredentials(value), [value]);
+
+  const run = async () => {
+    if (!entries.length || running) return;
+    setRunning(true);
+    setProgress({ done: 0, total: entries.length });
+    let added = 0;
+    const failures: string[] = [];
+    for (const entry of entries) {
+      try {
+        const importedSession = await api.importProviderAuth(tpl.id, entry);
+        await api.addProviderAuth(providerId, importedSession.id);
+        added++;
+      } catch (error) {
+        failures.push((error as Error).message);
+      }
+      setProgress((current) => ({ done: (current?.done ?? 0) + 1, total: entries.length }));
+    }
+    setRunning(false);
+    if (added) toast.success(`Added ${added} account${added === 1 ? "" : "s"}`);
+    if (failures.length)
+      toast.error(
+        entries.length === 1
+          ? failures[0]
+          : `${failures.length} of ${entries.length} failed: ${failures[0]}`,
+      );
+    if (added) {
+      setValue("");
+      onDone();
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <Textarea
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        rows={8}
+        spellCheck={false}
+        autoComplete="off"
+        autoFocus
+        placeholder={
+          tpl.id === "openai-codex"
+            ? '{ "tokens": { "access_token": "…" } }\n\nor one or more bare personal access tokens, one per line'
+            : '{ "claudeAiOauth": { "accessToken": "…" } }\n\nor one or more bare sk-ant-oat01-… tokens, one per line'
+        }
+        className="font-mono text-xs"
+        disabled={running}
+      />
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>
+          {entries.length === 0
+            ? "Nothing to add yet"
+            : entries.length === 1
+              ? "1 credential ready"
+              : `${entries.length} bare tokens ready - will be added as ${entries.length} separate accounts`}
+        </span>
+        {progress && (
+          <span>
+            {progress.done}/{progress.total} processed
+          </span>
+        )}
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onCancel} disabled={running}>
+          Cancel
+        </Button>
+        <Button size="sm" onClick={() => void run()} disabled={!entries.length || running}>
+          {running && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {entries.length > 1 ? `Add ${entries.length} accounts` : "Add account"}
+        </Button>
+      </div>
+    </div>
   );
 }

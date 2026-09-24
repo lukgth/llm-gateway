@@ -104,7 +104,20 @@ export function WsProvider({ children }: { children: ReactNode }) {
 
   const connect = useCallback(() => {
     const token = localStorage.getItem("gw_admin_token");
-    if (!token) return;
+    if (!token) {
+      // WsProvider mounts once at the app root, before login - the FIRST
+      // connect() attempt routinely finds no token yet (the login page
+      // hasn't called setToken() yet). Unlike a closed socket (handled by
+      // onclose's own backoff loop below), no socket was ever opened here,
+      // so nothing would otherwise retry: without this, an admin who logs
+      // in in the same tab stays stuck on "disconnected" showing no live
+      // data until they manually reload the page. Keep polling at a fixed,
+      // short interval (login is a one-time few-second wait, not a
+      // long-running failure needing backoff) until a token shows up.
+      if (mountedRef.current)
+        reconnectTimer.current = setTimeout(connect, 500);
+      return;
+    }
 
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const url = `${protocol}//${location.host}/ws?token=${token}`;

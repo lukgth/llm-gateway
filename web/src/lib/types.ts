@@ -64,6 +64,10 @@ export interface ProviderAuthAccount {
   subscriptionType?: string;
   /** Upstream rate-limit tier, when reported. */
   rateLimitTier?: string;
+  /** Free-form operator tags, same shape/purpose as a plain provider key's
+   *  `metadata` - only ever set by the admin through the accounts table's
+   *  tag editor, never by the integration itself. */
+  tags?: Record<string, string>;
 }
 
 export interface ProviderOAuthView {

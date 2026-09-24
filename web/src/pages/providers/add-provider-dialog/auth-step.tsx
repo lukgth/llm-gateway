@@ -186,9 +186,10 @@ const IMPORT_COPY: Record<
     description: (
       <>
         Paste the contents of <code>~/.codex/auth.json</code> (the file Codex
-        CLI writes after <code>codex login</code>) from a machine where you
-        are signed in to Codex. It contains a refresh token, so the gateway
-        keeps it renewed automatically.
+        CLI writes after <code>codex login</code>), or a bare personal access
+        token. A refreshable credential is kept renewed automatically; a
+        personal access token never expires and needs no refresh. Paste
+        several bare tokens (one per line) to add multiple accounts at once.
       </>
     ),
     placeholder: '{ "tokens": { "access_token": "…", "refresh_token": "…" } }',
@@ -198,10 +199,10 @@ const IMPORT_COPY: Record<
     description: (
       <>
         Paste Claude Code's credential JSON (the <code>claudeAiOauth</code>{" "}
-        object), or a bare secret - a long-lived <code>sk-ant-oat01-…</code>{" "}
-        token or a <code>sk-ant-api03-…</code> Console API key. A refreshable
-        credential is kept renewed automatically; a long-lived one never
-        needs it.
+        object), or a bare long-lived <code>sk-ant-oat01-…</code> OAuth
+        token. A refreshable credential is kept renewed automatically; a
+        long-lived one never needs it. Paste several bare tokens (one per
+        line) to add multiple accounts at once.
       </>
     ),
     placeholder: '{ "claudeAiOauth": { "accessToken": "…", "refreshToken": "…" } }',

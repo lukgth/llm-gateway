@@ -8,6 +8,7 @@ import {
   batchProviderOAuth,
   deleteProviderOAuth,
   setProviderOAuthEnabled,
+  updateProviderOAuthMetadata,
   type BatchOAuthOps,
 } from "../../repo/provider-oauth";
 import { str } from "./parsers";
@@ -219,14 +220,36 @@ export function registerProviderAuthRoutes(ctx: RouteCtx): void {
       const current = oauthProvider(String(req.params.id), res);
       if (!current)
         return res.status(404).json({ error: { message: "not found" } });
-      const enabled = (req.body as Record<string, unknown>)?.enabled;
-      if (typeof enabled !== "boolean") throw new Error("enabled is required");
-      const view = setProviderOAuthEnabled(
-        ctx.db,
-        current.id,
-        String(req.params.accountId),
-        enabled,
-      );
+      const body = (req.body as Record<string, unknown>) ?? {};
+      const accountId = String(req.params.accountId);
+      let view: ReturnType<typeof setProviderOAuthEnabled> = null;
+      if (typeof body.enabled === "boolean")
+        view = setProviderOAuthEnabled(ctx.db, current.id, accountId, body.enabled);
+      if (body.label !== undefined || body.tags !== undefined) {
+        const label =
+          body.label === undefined
+            ? undefined
+            : body.label === null
+              ? null
+              : str(body.label);
+        let tags: Record<string, string> | undefined;
+        if (body.tags !== undefined) {
+          if (
+            !body.tags ||
+            typeof body.tags !== "object" ||
+            Array.isArray(body.tags) ||
+            Object.values(body.tags).some((v) => typeof v !== "string")
+          )
+            throw new Error("tags must be an object of string values");
+          tags = body.tags as Record<string, string>;
+        }
+        view = updateProviderOAuthMetadata(ctx.db, current.id, accountId, {
+          ...(label !== undefined ? { label } : {}),
+          ...(tags !== undefined ? { tags } : {}),
+        });
+      }
+      if (view === null && typeof body.enabled !== "boolean" && body.label === undefined && body.tags === undefined)
+        throw new Error("enabled, label, or tags is required");
       if (!view)
         return res.status(404).json({ error: { message: "not found" } });
       reload();
