@@ -167,8 +167,7 @@ export function codexRetryDelayMs(body: string): number | undefined {
   }
   const error = (parsed as { error?: unknown } | null)?.error;
   if (!error || typeof error !== "object") return undefined;
-  const resetsInSeconds = (error as Record<string, unknown>)
-    .resets_in_seconds;
+  const resetsInSeconds = (error as Record<string, unknown>).resets_in_seconds;
   if (typeof resetsInSeconds !== "number" || !Number.isFinite(resetsInSeconds))
     return undefined;
   if (resetsInSeconds <= 0) return undefined;

@@ -109,13 +109,14 @@ test("Codex usage-limit helpers detect the body and parse resets_in_seconds", ()
 });
 
 test("Codex usage-limit helpers ignore unrelated or malformed bodies", () => {
-  assert.equal(isCodexUsageLimitError("{\"error\":{\"type\":\"rate_limited\"}}"), false);
+  assert.equal(
+    isCodexUsageLimitError('{"error":{"type":"rate_limited"}}'),
+    false,
+  );
   assert.equal(codexRetryDelayMs("not json"), undefined);
   assert.equal(codexRetryDelayMs(JSON.stringify({ error: {} })), undefined);
   assert.equal(
-    codexRetryDelayMs(
-      JSON.stringify({ error: { resets_in_seconds: -5 } }),
-    ),
+    codexRetryDelayMs(JSON.stringify({ error: { resets_in_seconds: -5 } })),
     undefined,
   );
   assert.equal(
