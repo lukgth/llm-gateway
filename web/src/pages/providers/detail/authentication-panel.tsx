@@ -51,7 +51,7 @@ import { AuthStep } from "../add-provider-dialog/auth-step";
 const ROW_HEIGHT = 56;
 const HEADER_HEIGHT = 33;
 const GRID =
-  "grid gap-3 grid-cols-[2.75rem_minmax(140px,1fr)_9rem_3rem_9rem] md:grid-cols-[2.75rem_13rem_minmax(7rem,0.7fr)_minmax(6rem,0.8fr)_8rem_11rem_3rem_3.5rem_3.5rem_9rem]";
+  "grid gap-3 grid-cols-[2.75rem_minmax(140px,1fr)_9rem_3rem_9rem] md:grid-cols-[2.75rem_13rem_minmax(7rem,0.7fr)_minmax(5rem,0.5fr)_8rem_11rem_3rem_3.5rem_3.5rem_11rem]";
 
 function mask(token: string): string {
   if (token.length <= 10) return `${token.slice(0, 2)}…`;
