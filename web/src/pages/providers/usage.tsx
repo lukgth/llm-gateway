@@ -448,7 +448,10 @@ export function KeyUsageBlock({
         </span>
         <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
           {rateLimited && !health?.dead && (
-            <Badge variant="warning">
+            <Badge
+              variant="warning"
+              title={new Date(health!.rateLimitedUntil!).toLocaleString()}
+            >
               Resets {relativeTime(health!.rateLimitedUntil!)}
             </Badge>
           )}
@@ -606,7 +609,10 @@ function UsageBar({ window: w }: { window: ProviderKeyUsageWindow }) {
         {/* A one-shot balance (e.g. a prepaid credit grant) has no rolling
             reset - omit the line rather than showing a broken "resets -". */}
         {w.resetsAt && (
-          <span className="shrink-0 whitespace-nowrap">
+          <span
+            className="shrink-0 whitespace-nowrap"
+            title={new Date(w.resetsAt).toLocaleString()}
+          >
             {resetLabel(w.resetsAt)}
           </span>
         )}

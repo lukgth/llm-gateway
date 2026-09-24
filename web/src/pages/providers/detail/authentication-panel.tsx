@@ -45,6 +45,29 @@ function mask(token: string): string {
   return `${token.slice(0, 6)}…${token.slice(-4)}`;
 }
 
+function relativeTime(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (!Number.isFinite(ms)) return "-";
+  const past = ms <= 0;
+  const abs = Math.abs(ms);
+  const min = Math.round(abs / 60000);
+  if (min < 1) return "now";
+  const unit =
+    min < 60
+      ? `${min}m`
+      : min < 24 * 60
+        ? `${Math.floor(min / 60)}h ${min % 60}m`
+        : `${Math.round(min / 60 / 24)}d`;
+  return past ? `${unit} ago` : `in ${unit}`;
+}
+
+function resetLabel(iso: string): string {
+  const rt = relativeTime(iso);
+  if (rt === "-") return "reset -";
+  if (rt === "now") return "resets now";
+  return rt.endsWith("ago") ? `reset ${rt}` : `resets ${rt}`;
+}
+
 export function AuthenticationPanel({
   provider,
   template,
@@ -412,20 +435,38 @@ function AccountRow({
   onRemove: () => void;
 }) {
   const dead = account.status === "reauth_required" || !!account.health?.dead;
-  const rateLimited = !!account.health?.rateLimitedUntil && new Date(account.health.rateLimitedUntil).getTime() > Date.now();
+  const rateLimitedUntil = account.health?.rateLimitedUntil;
+  const rateLimited = !!rateLimitedUntil && new Date(rateLimitedUntil).getTime() > Date.now();
+  const healthDetail = [
+    account.health?.lastErrorStatus ? `Status ${account.health.lastErrorStatus}` : null,
+    account.health?.lastError,
+    account.health?.lastErrorAt
+      ? `Observed ${new Date(account.health.lastErrorAt).toLocaleString()}`
+      : null,
+    rateLimited && !dead ? `Resets ${new Date(rateLimitedUntil!).toLocaleString()}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const status = testing
-    ? { dot: "bg-muted-foreground animate-pulse", tone: "text-muted-foreground", label: "Testing…" }
+    ? { dot: "bg-muted-foreground animate-pulse", tone: "text-muted-foreground", label: "Testing…", title: "Running a live credential test" }
     : dead
-      ? { dot: "bg-destructive", tone: "text-destructive", label: "Reconnect required" }
+      ? {
+          dot: "bg-destructive",
+          tone: "text-destructive",
+          label: account.health?.lastErrorStatus
+            ? `Reconnect required (${account.health.lastErrorStatus})`
+            : "Reconnect required",
+          title: healthDetail || "Credential rejected by the provider",
+        }
       : rateLimited
-        ? { dot: "bg-amber-500", tone: "text-amber-700 dark:text-amber-300", label: "Rate limited" }
+        ? { dot: "bg-amber-500", tone: "text-amber-700 dark:text-amber-300", label: `Rate limited · ${resetLabel(rateLimitedUntil!)}`, title: healthDetail || "Rate limited by the provider" }
         : result
           ? result.ok
-            ? { dot: "bg-success", tone: "text-success", label: `${result.ms} ms` }
-            : { dot: "bg-destructive", tone: "text-destructive", label: result.status ? `Failed (${result.status})` : "Test failed" }
+            ? { dot: "bg-success", tone: "text-success", label: `${result.ms} ms`, title: "Credential is reachable" }
+            : { dot: "bg-destructive", tone: "text-destructive", label: result.status ? `Failed (${result.status})` : "Test failed", title: result.error || undefined }
           : account.status === "disabled"
-            ? { dot: "bg-muted-foreground/50", tone: "text-muted-foreground", label: "Disabled" }
-            : { dot: "bg-success", tone: "text-success", label: "Connected" };
+            ? { dot: "bg-muted-foreground/50", tone: "text-muted-foreground", label: "Disabled", title: undefined }
+            : { dot: "bg-success", tone: "text-success", label: "Connected", title: undefined };
   return (
     <div role="row" className={cn(GRID, "h-14 items-center border-b border-border/70 px-4 text-sm transition-colors hover:bg-muted/30", selected && "bg-primary/5", dead && "bg-destructive/5", account.status === "disabled" && "text-muted-foreground")}>
       <div role="cell" className="flex justify-start pr-2"><Checkbox checked={selected} onCheckedChange={onSelect} aria-label={`Select ${account.account.email || mask(account.accessToken)}`} /></div>
@@ -436,21 +477,16 @@ function AccountRow({
       <div role="cell" className="hidden min-w-0 truncate md:block">{account.account.email || "-"}</div>
       <div role="cell" className="hidden min-w-0 flex-col justify-center gap-0.5 md:flex">
         <span className="truncate">{account.account.label || "-"}</span>
-        {(account.account.tokenKind === "long_lived" || account.account.subscriptionType) && (
+        {account.account.subscriptionType && (
           <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-            {account.account.tokenKind === "long_lived" && (
-              <Badge variant="secondary" className="px-1 py-0 text-[10px] leading-4">Long-lived</Badge>
-            )}
-            {account.account.subscriptionType && (
-              <span className="truncate capitalize">{account.account.subscriptionType}</span>
-            )}
+            <span className="truncate capitalize">{account.account.subscriptionType}</span>
           </span>
         )}
       </div>
       <div role="cell" className="hidden min-w-0 truncate text-xs md:block" title={account.account.tokenKind === "long_lived" ? "This credential does not expire" : new Date(account.expiresAt).toLocaleString()}>
         {account.account.tokenKind === "long_lived" ? "Never" : new Date(account.expiresAt).toLocaleDateString()}
       </div>
-      <div role="cell" className="min-w-0"><span className={cn("flex min-w-0 items-center gap-1.5 text-xs", status.tone)}><span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", status.dot)} /><span className="truncate whitespace-nowrap">{status.label}</span></span></div>
+      <div role="cell" className="min-w-0" title={status.title}><span className={cn("flex min-w-0 items-center gap-1.5 text-xs", status.tone)}><span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", status.dot)} /><span className="truncate whitespace-nowrap">{status.label}</span></span></div>
       <div role="cell" className="flex items-center"><Switch checked={account.status === "active"} disabled={toggling || account.status === "reauth_required"} onCheckedChange={onToggle} aria-label={`${account.status === "active" ? "Disable" : "Enable"} account`} /></div>
       <div role="cell" className="hidden text-right font-mono text-success md:block">{account.stats.success}</div>
       <div role="cell" className={cn("hidden text-right font-mono md:block", account.stats.errors > 0 ? "text-destructive" : "text-muted-foreground")}>{account.stats.errors}</div>
