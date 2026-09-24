@@ -645,8 +645,7 @@ function AccountRow({
               : undefined
           }
         >
-          {account.account.label ||
-            (isUnidentified(account) ? "No description - click edit to add one" : "-")}
+          {account.account.label || <span className="opacity-50">-</span>}
         </span>
         {(account.account.subscriptionType || tagCount > 0) && (
           <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
