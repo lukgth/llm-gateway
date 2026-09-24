@@ -109,11 +109,16 @@ function mapKey(r: ProviderKeyRow): ProviderKey {
 // ---------------------------------------------------------------------------
 // CRUD
 // ---------------------------------------------------------------------------
+// Every "oldest first" ordering below tie-breaks on rowid, NOT on id: genId()
+// is random, so `ORDER BY created_at, id` puts rows inserted within the same
+// millisecond (created_at is ms-resolution) in random order - which would make
+// the key pool's rotation order nondeterministic for a freshly-created
+// provider. rowid is SQLite's insertion counter, so the order is exact.
 
 export function listProviderKeys(db: DB, providerId: string): ProviderKey[] {
   const rows = db
     .prepare(
-      "SELECT * FROM provider_keys WHERE provider_id = ? ORDER BY created_at",
+      "SELECT * FROM provider_keys WHERE provider_id = ? ORDER BY created_at, rowid",
     )
     .all(providerId) as ProviderKeyRow[];
   return rows.map(mapKey);
@@ -122,7 +127,7 @@ export function listProviderKeys(db: DB, providerId: string): ProviderKey[] {
 export function listEnabledCredentials(db: DB, providerId: string): string[] {
   const rows = db
     .prepare(
-      "SELECT credential FROM provider_keys WHERE provider_id = ? AND enabled = 1 ORDER BY created_at",
+      "SELECT credential FROM provider_keys WHERE provider_id = ? AND enabled = 1 ORDER BY created_at, rowid",
     )
     .all(providerId) as Array<{ credential: string }>;
   return rows.map((r) => r.credential);

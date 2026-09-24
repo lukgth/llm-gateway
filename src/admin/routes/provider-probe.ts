@@ -14,6 +14,7 @@ import type { Database as DB } from "better-sqlite3";
 import type { Provider, ModelTransformConfig } from "../../types";
 import {
   adapterForProvider,
+  getProviderTemplate,
   fetchModelList,
   normalizeModels,
   applyAuthHeaders,
@@ -717,6 +718,15 @@ export async function fetchUpstreamModels(
   } catch {
     return tryFormat("openai");
   }
+}
+
+// Managed-auth providers cannot be probed safely before their credentials are
+// imported. Their real protocol and credential path live on the saved-provider
+// route, so the wizard must direct operators there instead of issuing a bare,
+// protocol-wrong ad-hoc request.
+export function catalogUsesManagedAuthentication(catalogId: unknown): boolean {
+  if (typeof catalogId !== "string" || !catalogId) return false;
+  return getProviderTemplate(catalogId)?.authentication?.kind === "oauth";
 }
 
 // `keyUsed` is the RAW key this attempt sends (defaults to apiKeys[0] when the

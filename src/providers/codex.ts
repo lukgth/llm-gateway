@@ -60,24 +60,50 @@ export function isCloudflareCookieName(name: string): boolean {
   return CLOUDFLARE_COOKIE_NAMES.includes(name) || name.startsWith("cf_chl_");
 }
 
-// Pinned to the currently published @openai/codex npm version. Used for the
-// version header, the user-agent, and the models client_version query. If the
-// backend starts rejecting the pinned identity, bump this ONE constant.
+// Pinned to the currently published @openai/codex npm version. This is the
+// single bump point for the three CLI-version consumers: the version header,
+// the user-agent version segment, and the models client_version query. The
+// reqwest suffix is a SECOND, independent pin derived from codex-rs' Cargo.lock;
+// recheck it separately whenever the upstream release changes.
 export const CODEX_CLIENT_VERSION = "0.156.1";
 // reqwest version pinned by codex-rs' Cargo.lock; the trailing segment of the
 // CLI's User-Agent string.
-const CODEX_REQWEST_VERSION = "0.12.28";
+export const CODEX_REQWEST_VERSION = "0.12.28";
 
-function codexOsSegment(): string {
-  // get_codex_user_agent(): "({os_type} {os_version}; {arch})".
-  const osType =
-    process.platform === "darwin"
-      ? "Mac OS"
-      : process.platform === "win32"
-        ? "Windows"
-        : "Linux";
-  const arch = os.arch() === "arm64" ? "arm64" : "x86_64";
-  return `${osType} ${os.release()}; ${arch}`;
+// get_codex_user_agent(): "({os_type} {os_version}; {arch})". Preserve
+// unmapped Node platform/architecture values instead of claiming Linux/x86_64.
+export function codexOsSegment(
+  platform: string = process.platform,
+  release = os.release(),
+  arch = os.arch(),
+): string {
+  const osTypes: Readonly<Record<string, string>> = {
+    darwin: "Mac OS",
+    win32: "Windows",
+    linux: "Linux",
+    freebsd: "FreeBSD",
+    openbsd: "OpenBSD",
+    sunos: "SunOS",
+    aix: "AIX",
+    android: "Android",
+  };
+  const architectures: Readonly<Record<string, string>> = {
+    arm64: "arm64",
+    x64: "x86_64",
+    arm: "arm",
+    ia32: "i686",
+    ppc64: "powerpc64",
+    s390x: "s390x",
+    riscv64: "riscv64",
+    loong64: "loongarch64",
+  };
+  const osType = Object.prototype.hasOwnProperty.call(osTypes, platform)
+    ? osTypes[platform]
+    : platform;
+  const archName = Object.prototype.hasOwnProperty.call(architectures, arch)
+    ? architectures[arch]
+    : arch;
+  return `${osType} ${release}; ${archName}`;
 }
 
 // codex-rs get_codex_user_agent():

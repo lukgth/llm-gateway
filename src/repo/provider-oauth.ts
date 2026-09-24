@@ -97,6 +97,13 @@ function mapView(row: OAuthViewRow): ProviderOAuthView {
   };
 }
 
+// Every "oldest first" ordering below tie-breaks on rowid, NOT on id: the id is
+// random (see createProviderOAuth), so `ORDER BY created_at, id` orders rows
+// inserted within the same millisecond (created_at is ms-resolution) randomly.
+// That is not merely a display nuisance - firstRow() picks the account a live
+// request runs as when no account is pinned, so a random tie-break made that
+// pick nondeterministic for a freshly-imported provider. rowid is SQLite's
+// insertion counter, so "oldest first" is exact.
 function rowById(db: DB, providerId: string, id: string): OAuthRow | null {
   return (
     (db
@@ -111,7 +118,7 @@ function firstRow(db: DB, providerId: string): OAuthRow | null {
   return (
     (db
       .prepare(
-        "SELECT * FROM provider_oauth_credentials WHERE provider_id = ? ORDER BY created_at, id LIMIT 1",
+        "SELECT * FROM provider_oauth_credentials WHERE provider_id = ? ORDER BY created_at, rowid LIMIT 1",
       )
       .get(providerId) as OAuthRow | undefined) ?? null
   );
@@ -145,7 +152,7 @@ export function listProviderOAuthViews(
   const rows = db
     .prepare(
       `SELECT ${VIEW_COLUMNS} FROM provider_oauth_credentials
-       WHERE provider_id = ? ORDER BY created_at, id`,
+       WHERE provider_id = ? ORDER BY created_at, rowid`,
     )
     .all(providerId) as OAuthViewRow[];
   return rows.map(mapView);
@@ -156,7 +163,7 @@ export function listAllProviderOAuthViews(
 ): Map<string, ProviderOAuthView[]> {
   const rows = db
     .prepare(
-      `SELECT ${VIEW_COLUMNS} FROM provider_oauth_credentials ORDER BY created_at, id`,
+      `SELECT ${VIEW_COLUMNS} FROM provider_oauth_credentials ORDER BY created_at, rowid`,
     )
     .all() as OAuthViewRow[];
   const result = new Map<string, ProviderOAuthView[]>();
@@ -175,7 +182,7 @@ export function listActiveProviderOAuthHealthKeys(
   const rows = db
     .prepare(
       `SELECT id FROM provider_oauth_credentials
-       WHERE provider_id = ? AND status = 'active' ORDER BY created_at, id`,
+       WHERE provider_id = ? AND status = 'active' ORDER BY created_at, rowid`,
     )
     .all(providerId) as Array<{ id: string }>;
   return rows.map((row) => oauthHealthKey(row.id));
@@ -196,7 +203,7 @@ export function getProviderOAuthView(
     : (db
         .prepare(
           `SELECT ${VIEW_COLUMNS} FROM provider_oauth_credentials
-           WHERE provider_id = ? ORDER BY created_at, id LIMIT 1`,
+           WHERE provider_id = ? ORDER BY created_at, rowid LIMIT 1`,
         )
         .get(providerId) as OAuthViewRow | undefined);
   return row ? mapView(row) : null;
@@ -219,7 +226,7 @@ export function listProviderOAuthAdminViews(
 ): ProviderOAuthAdminView[] {
   const rows = db
     .prepare(
-      "SELECT * FROM provider_oauth_credentials WHERE provider_id = ? ORDER BY created_at, id",
+      "SELECT * FROM provider_oauth_credentials WHERE provider_id = ? ORDER BY created_at, rowid",
     )
     .all(providerId) as OAuthRow[];
   return rows.map((row) => {

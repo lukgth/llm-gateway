@@ -1,6 +1,5 @@
 // Exposed-model (fallback chain) CRUD, plus the transform library route.
 
-import type { Database as DB } from "better-sqlite3";
 import {
   batchModelLinks,
   createModel,
@@ -40,9 +39,10 @@ import { bad } from "./respond";
 // fetch fails or the id isn't found upstream (e.g. hand-typed). Never blocks
 // the save. Existing rows are left untouched (idempotent identity upsert).
 async function autoCreateImportedModels(
-  db: DB,
+  ctx: Pick<RouteCtx, "db" | "logger" | "providerCredentials">,
   input: ModelInput,
 ): Promise<void> {
+  const { db, logger, providerCredentials } = ctx;
   const links = (input.providers ?? []).filter(
     (l) => l.providerId && l.upstreamModel,
   );
@@ -58,7 +58,14 @@ async function autoCreateImportedModels(
     const provider = getProvider(db, providerId);
     if (!provider) continue;
     try {
-      const models = await fetchProviderModels(provider, db);
+      const managed = await providerCredentials.resolveManaged(provider.id);
+      const models = await fetchProviderModels(
+        provider,
+        db,
+        logger,
+        managed?.value,
+        managed?.metadata,
+      );
       upstreamByProvider.set(providerId, new Map(models.map((m) => [m.id, m])));
     } catch {
       // Best-effort - fall back to bare identity for this provider's links.
@@ -89,7 +96,7 @@ export function registerModelRoutes(ctx: RouteCtx): void {
   r.post("/models", requireAdmin, async (req, res) => {
     try {
       const input = parseModelInput(req.body, true);
-      await autoCreateImportedModels(db, input);
+      await autoCreateImportedModels(ctx, input);
       const m = createModel(db, input);
       router.reload();
       broadcast(["models", "overview"], "model:create");
@@ -116,7 +123,7 @@ export function registerModelRoutes(ctx: RouteCtx): void {
   r.put("/models/:id", requireAdmin, async (req, res) => {
     try {
       const input = parseModelInput(req.body);
-      await autoCreateImportedModels(db, input);
+      await autoCreateImportedModels(ctx, input);
       const m = updateModel(db, String(req.params.id), input);
       if (!m) return res.status(404).json({ error: { message: "not found" } });
       router.reload();
@@ -212,7 +219,7 @@ export function registerModelRoutes(ctx: RouteCtx): void {
       if (ops.create) {
         for (const input of ops.create) {
           try {
-            await autoCreateImportedModels(db, input);
+            await autoCreateImportedModels(ctx, input);
           } catch {
             /* best effort */
           }
@@ -221,7 +228,7 @@ export function registerModelRoutes(ctx: RouteCtx): void {
       if (ops.update) {
         for (const { id, ...input } of ops.update) {
           try {
-            await autoCreateImportedModels(db, input as ModelInput);
+            await autoCreateImportedModels(ctx, input as ModelInput);
           } catch {
             /* best effort */
           }
@@ -287,7 +294,7 @@ export function registerModelRoutes(ctx: RouteCtx): void {
         return res.status(404).json({ error: { message: "not found" } });
       const ops = parseBatchModelLinkOps(req.body);
       if (ops.add?.length) {
-        await autoCreateImportedModels(db, {
+        await autoCreateImportedModels(ctx, {
           alias: "",
           providers: ops.add,
         });

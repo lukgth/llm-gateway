@@ -19,7 +19,7 @@ const PROVIDER = {
   baseUrl: "https://chatgpt.com",
   basePath: "/backend-api/codex",
   modelsPath: "/models",
-  endpoints: [WireKind.Responses, WireKind.Chat] as WireKind[],
+  endpoints: [WireKind.Responses] as WireKind[],
   authScheme: "bearer" as const,
   format: null,
   host: "chatgpt.com",
@@ -65,7 +65,7 @@ test("openai-codex template pins the Codex backend and import authentication", (
   assert.equal(tpl.defaults.baseUrl, "https://chatgpt.com");
   assert.equal(tpl.defaults.basePath, "/backend-api/codex");
   assert.equal(tpl.defaults.modelsPath, "/models");
-  assert.deepEqual(tpl.defaults.endpoints, [WireKind.Responses, WireKind.Chat]);
+  assert.deepEqual(tpl.defaults.endpoints, [WireKind.Responses]);
   assert.equal(tpl.defaults.authScheme, "bearer");
   assert.equal(tpl.defaults.nativeConversion, false);
   assert.equal(tpl.supportsOAuth, true);
@@ -82,9 +82,11 @@ test("openai-codex template pins the Codex backend and import authentication", (
   assert.ok(base);
   assert.equal(base.editable, false);
 });
-
-
-test("preferredEndpoint always prefers Responses (route-level guard filters unaccepted kinds)", () => {
+test("Codex advertises and prefers only Responses", () => {
+  const tpl = openaiCodex.toTemplate();
+  assert.equal(tpl.defaults.endpoints?.includes(WireKind.Chat), false);
+  assert.deepEqual(tpl.defaults.endpoints, [WireKind.Responses]);
+  assert.equal(openaiCodex.formats.includes(WireKind.Chat), false);
   assert.equal(
     openaiCodex.preferredEndpoint("gpt-5-codex", [
       WireKind.Responses,
@@ -92,29 +94,8 @@ test("preferredEndpoint always prefers Responses (route-level guard filters unac
     ]),
     WireKind.Responses,
   );
-  // Unconditional preference - resolveKind only honors it when the provider
-  // actually accepts responses.
-  assert.equal(
-    openaiCodex.preferredEndpoint("anything", [WireKind.Chat]),
-    WireKind.Responses,
-  );
-  // A per-link pin still wins through routeFor.
-  const pinned = openaiCodex.routeFor(
-    WireKind.Chat,
-    PROVIDER as never,
-    "chat",
-    "gpt-5-codex",
-  );
-  assert.equal(pinned.endpointKind, WireKind.Chat);
-  // No pin -> Responses wins over the chat-native fallback ordering.
-  const unpinned = openaiCodex.routeFor(
-    WireKind.Responses,
-    PROVIDER as never,
-    null,
-    "gpt-5-codex",
-  );
-  assert.equal(unpinned.endpointKind, WireKind.Responses);
 });
+
 test("responses build forces stream/store, normalizes instructions, and sets identity headers", () => {
   const ctx = buildCtx({
     body: {
@@ -165,11 +146,11 @@ test("responses build wraps bare-string input in a Responses message list", () =
   assert.equal(built.body["instructions"], "");
 });
 
-test("chat build preserves an existing string instructions value", () => {
+test("direct Chat build preserves Responses body invariants", () => {
   const ctx = buildCtx({
     body: {
       model: "m",
-      instructions: "be brief",
+      input: "Reply with exactly: hi",
       store: true,
       max_output_tokens: 100,
       max_tokens: 101,
@@ -181,13 +162,20 @@ test("chat build preserves an existing string instructions value", () => {
     url: `${PROVIDER.baseUrl}${PROVIDER.basePath}/chat/completions`,
   });
   const built = openaiCodex.chatCompletions(ctx);
-  assert.equal(built.body["instructions"], "be brief");
+  assert.equal(built.body["store"], false);
+  assert.equal(built.body["instructions"], "");
+  assert.deepEqual(built.body["input"], [
+    {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "Reply with exactly: hi" }],
+    },
+  ]);
   assert.equal("max_output_tokens" in built.body, false);
   assert.equal("max_tokens" in built.body, false);
   assert.equal("max_completion_tokens" in built.body, false);
   assert.equal(built.headers["chatgpt-account-id"], "acct-123");
 });
-
 test("conflicting case variants of owned headers are replaced by canonical values", () => {
   const ctx = buildCtx({
     headers: {
@@ -258,11 +246,14 @@ test("fetchModels requests the versioned models path with identity headers and f
     transport,
   };
   const models = await openaiCodex.fetchModels(ctx);
-  assert.match(
-    calls[0].url,
-    new RegExp(`^${PROVIDER.baseUrl.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}/backend-api/codex/models\\?client_version=${CODEX_CLIENT_VERSION}$`),
-  );
+  assert.equal(calls.length, 1);
+  const url = new URL(calls[0].url);
+  assert.equal(url.protocol, "https:");
+  assert.equal(url.host, "chatgpt.com");
+  assert.equal(url.pathname, "/backend-api/codex/models");
+  assert.equal(url.searchParams.get("client_version"), CODEX_CLIENT_VERSION);
   assert.equal(calls[0].init.headers["originator"], CODEX_ORIGINATOR);
+  assert.equal(calls[0].init.headers["version"], CODEX_CLIENT_VERSION);
   assert.equal(calls[0].init.headers["user-agent"], codexUserAgent());
   assert.equal(calls[0].init.headers["authorization"], "Bearer codex-access-token");
   assert.equal(calls[0].init.headers["chatgpt-account-id"], "acct-123");

@@ -30,19 +30,21 @@ import { ForwardingEngine } from "./gateway/engine";
 import { ThinkingConverter } from "./formats/thinking";
 import { Logger } from "./logger";
 import { WireKind } from "./types";
+import { CODEX_CLIENT_VERSION, CODEX_ORIGINATOR, codexUserAgent } from "./providers/codex";
 
 function b64url(payload: object): string {
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
 }
 
 const EXP = Math.floor(Date.now() / 1000) + 3_600;
+const ACCESS_TOKEN = `h.${b64url({
+  email: "e2e@example.com",
+  exp: EXP,
+  "https://api.openai.com/auth": { chatgpt_account_id: "acct-e2e-full" },
+})}.s`;
 const AUTH_JSON = JSON.stringify({
   tokens: {
-    access_token: `h.${b64url({
-      email: "e2e@example.com",
-      exp: EXP,
-      "https://api.openai.com/auth": { chatgpt_account_id: "acct-e2e-full" },
-    })}.s`,
+    access_token: ACCESS_TOKEN,
     refresh_token: "e2e-refresh",
   },
 });
@@ -234,11 +236,11 @@ test("E2E: a non-stream Responses request uses Codex streaming upstream and retu
     // 4. Assertions: exact wire shape and buffered client response.
     assert.equal(captured.path, "/backend-api/codex/responses");
     const headers = captured.headers as Record<string, string | undefined>;
-    assert.match(String(headers.authorization), /^Bearer /);
+    assert.equal(headers.authorization, `Bearer ${ACCESS_TOKEN}`);
     assert.equal(headers["chatgpt-account-id"], "acct-e2e-full");
-    assert.equal(headers.originator, "codex_cli_rs");
-    assert.equal(headers.version, "0.149.0");
-    assert.match(headers["user-agent"] ?? "", /^codex_cli_rs\/0\.149\.0 \(.+\) reqwest\//);
+    assert.equal(headers.originator, CODEX_ORIGINATOR);
+    assert.equal(headers.version, CODEX_CLIENT_VERSION);
+    assert.equal(headers["user-agent"], codexUserAgent());
     const body = captured.body as Record<string, unknown>;
     assert.equal(body.stream, true);
     assert.equal("max_output_tokens" in body, false);
