@@ -63,7 +63,7 @@ export function isCloudflareCookieName(name: string): boolean {
 // Pinned to the currently published @openai/codex npm version. Used for the
 // version header, the user-agent, and the models client_version query. If the
 // backend starts rejecting the pinned identity, bump this ONE constant.
-export const CODEX_CLIENT_VERSION = "0.149.0";
+export const CODEX_CLIENT_VERSION = "0.156.1";
 // reqwest version pinned by codex-rs' Cargo.lock; the trailing segment of the
 // CLI's User-Agent string.
 const CODEX_REQWEST_VERSION = "0.12.28";
