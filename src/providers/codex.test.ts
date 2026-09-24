@@ -7,7 +7,9 @@ import {
   CODEX_REQWEST_VERSION,
   codexIdentityHeaders,
   codexOsSegment,
+  codexRetryDelayMs,
   codexUserAgent,
+  isCodexUsageLimitError,
   parseCodexModels,
 } from "./codex";
 
@@ -89,4 +91,35 @@ test("Codex model parsing keeps only visible API models and skips malformed entr
 test("Codex model parsing tolerates a non-array models field", () => {
   assert.deepEqual(parseCodexModels({ models: "not-an-array" }), []);
   assert.deepEqual(parseCodexModels(null), []);
+});
+
+test("Codex usage-limit helpers detect the body and parse resets_in_seconds", () => {
+  const body = JSON.stringify({
+    error: {
+      type: "usage_limit_reached",
+      message: "The usage limit has been reached",
+      plan_type: "plus",
+      resets_at: 1790503180,
+      eligible_promo: null,
+      resets_in_seconds: 213420,
+    },
+  });
+  assert.equal(isCodexUsageLimitError(body), true);
+  assert.equal(codexRetryDelayMs(body), 213_420_000);
+});
+
+test("Codex usage-limit helpers ignore unrelated or malformed bodies", () => {
+  assert.equal(isCodexUsageLimitError("{\"error\":{\"type\":\"rate_limited\"}}"), false);
+  assert.equal(codexRetryDelayMs("not json"), undefined);
+  assert.equal(codexRetryDelayMs(JSON.stringify({ error: {} })), undefined);
+  assert.equal(
+    codexRetryDelayMs(
+      JSON.stringify({ error: { resets_in_seconds: -5 } }),
+    ),
+    undefined,
+  );
+  assert.equal(
+    codexRetryDelayMs(JSON.stringify({ error: { resets_in_seconds: "x" } })),
+    undefined,
+  );
 });

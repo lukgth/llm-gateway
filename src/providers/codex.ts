@@ -145,6 +145,36 @@ export function codexRequestHeaders(
   };
 }
 
+// Detect the ChatGPT-subscription usage-limit 429 body:
+// { "error": { "type": "usage_limit_reached", "resets_in_seconds": N, ... } }
+// Distinct from a normal rate limit - this is the account's 5h/weekly/monthly
+// quota, so the cooldown must come from resets_in_seconds (no Retry-After or
+// other rate-limit header rides along on this response at all).
+export function isCodexUsageLimitError(body: string): boolean {
+  return body.includes("usage_limit_reached");
+}
+
+// Extract the account-quota reset delay straight from the JSON body -
+// resets_in_seconds is the only reliable signal on this response (see
+// isCodexUsageLimitError above). Returns undefined for anything unparsable so
+// the caller can fall back to a generic default instead of a bogus cooldown.
+export function codexRetryDelayMs(body: string): number | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  const error = (parsed as { error?: unknown } | null)?.error;
+  if (!error || typeof error !== "object") return undefined;
+  const resetsInSeconds = (error as Record<string, unknown>)
+    .resets_in_seconds;
+  if (typeof resetsInSeconds !== "number" || !Number.isFinite(resetsInSeconds))
+    return undefined;
+  if (resetsInSeconds <= 0) return undefined;
+  return Math.round(resetsInSeconds * 1000);
+}
+
 // Parse + filter the Codex model catalog ({ models: [ModelInfo] }) down to
 // PUBLIC API-usable entries: a non-empty slug, not opted out of the API
 // (supported_in_api !== false), and visible (visibility absent or "list").

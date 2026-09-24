@@ -104,6 +104,7 @@ import {
   clineRetryDelayMs,
   isClineFreeLimitError,
 } from "../providers/clinefree";
+import { codexRetryDelayMs, isCodexUsageLimitError } from "../providers/codex";
 import { isOpencodeFreeTierRefusal } from "../providers/opencode";
 import {
   contextWindowLimit,
@@ -1470,6 +1471,31 @@ export class ForwardingEngine {
           rateLimitResetAt: Date.now() + delay,
           rateLimitSource: "clinefree-model-limit",
           rateLimitReason: "Cline reported a limit for this exact free model",
+        };
+      }
+
+      // ChatGPT-subscription usage-limit 429 (openai-codex): the account's
+      // 5h/weekly/monthly quota, not a per-request rate limit, so no
+      // Retry-After or other rate-limit header rides along - the ONLY reset
+      // signal is resets_in_seconds in the JSON body. Without this branch the
+      // generic header parser falls through to its 60s default, which massively
+      // undercounts a quota reset that's often hours away (see the response's
+      // own resets_in_seconds), causing the key to be retried far too soon.
+      if (
+        provider.catalogId === "openai-codex" &&
+        status === 429 &&
+        isCodexUsageLimitError(errBody)
+      ) {
+        const delay = codexRetryDelayMs(errBody) ?? 60_000;
+        return {
+          committed: false,
+          status,
+          reason: `OpenAI Codex usage limit reached: ${errBody.slice(0, 200)}`,
+          rateLimitScope: "global",
+          rateLimitMs: delay,
+          rateLimitResetAt: Date.now() + delay,
+          rateLimitSource: "codex-usage-limit",
+          rateLimitReason: "ChatGPT subscription usage limit reached",
         };
       }
 
