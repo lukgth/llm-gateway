@@ -35,11 +35,14 @@ test("Cline Free remains chat-native and exposes compatibility stages", () => {
   assert.deepEqual(template.defaults.endpoints, [WireKind.Chat]);
   assert.equal(template.defaults.nativeConversion, false);
   const stages = clinefree.responseTransforms(provider);
-  assert.deepEqual(stages.map((stage) => stage.name), [
-    "clinefree:unwrap-response",
-    "clinefree:dsml-tool-calls",
-  ]);
-  assert.equal(stages[1].label, "Temporary Cline DSML compatibility workaround");
+  assert.deepEqual(
+    stages.map((stage) => stage.name),
+    ["clinefree:unwrap-response", "clinefree:dsml-tool-calls"],
+  );
+  assert.equal(
+    stages[1].label,
+    "Temporary Cline DSML compatibility workaround",
+  );
 });
 
 test("buffered Cline envelope unwraps and heals DSML tool calls", () => {
@@ -65,8 +68,14 @@ test("buffered Cline envelope unwraps and heals DSML tool calls", () => {
   const call = (message.tool_calls as Array<Record<string, unknown>>)[0];
   assert.equal(message.content, "before  after");
   assert.equal(choice.finish_reason, "tool_calls");
-  assert.equal((call.function as Record<string, unknown>).name, "mcp__ao_mcp_search_works");
-  assert.deepEqual(JSON.parse((call.function as Record<string, unknown>).arguments as string), { rating: ["Mature"] });
+  assert.equal(
+    (call.function as Record<string, unknown>).name,
+    "mcp__ao_mcp_search_works",
+  );
+  assert.deepEqual(
+    JSON.parse((call.function as Record<string, unknown>).arguments as string),
+    { rating: ["Mature"] },
+  );
 });
 
 test("buffered healing repairs degenerate native arguments without duplicating call", () => {
@@ -74,19 +83,34 @@ test("buffered healing repairs degenerate native arguments without duplicating c
   const body = applyBodyTransforms(
     stages as never,
     {
-      choices: [{
-        message: {
-          role: "assistant",
-          content: invoke(),
-          tool_calls: [{ id: "native", type: "function", function: { name: "mcp__ao_mcp_search_works", arguments: "{}" } }],
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: invoke(),
+            tool_calls: [
+              {
+                id: "native",
+                type: "function",
+                function: { name: "mcp__ao_mcp_search_works", arguments: "{}" },
+              },
+            ],
+          },
         },
-      }],
+      ],
     },
     context,
   ) as Record<string, unknown>;
-  const message = (body.choices as Array<Record<string, unknown>>)[0].message as Record<string, unknown>;
+  const message = (body.choices as Array<Record<string, unknown>>)[0]
+    .message as Record<string, unknown>;
   assert.equal((message.tool_calls as unknown[]).length, 1);
-  assert.notEqual(((message.tool_calls as Array<Record<string, unknown>>)[0].function as Record<string, unknown>).arguments, "{}");
+  assert.notEqual(
+    (
+      (message.tool_calls as Array<Record<string, unknown>>)[0]
+        .function as Record<string, unknown>
+    ).arguments,
+    "{}",
+  );
 });
 
 function applyRequest(body: Record<string, unknown>): Record<string, unknown> {

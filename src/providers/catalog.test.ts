@@ -45,7 +45,10 @@ test("Cline Free uses managed device authentication", () => {
       "Sign in through Cline's secure device flow to use the currently available free models.",
     actionLabel: "Connect Cline account",
   });
-  assert.equal(free.fields.some((field) => field.key === "apiKeys"), false);
+  assert.equal(
+    free.fields.some((field) => field.key === "apiKeys"),
+    false,
+  );
   assert.equal(pass.authentication, undefined);
 });
 
@@ -53,7 +56,10 @@ test("OpenAI Codex uses managed import authentication without API keys", () => {
   const codex = getProviderTemplate("openai-codex")!;
   assert.equal(codex.authentication?.kind, "oauth");
   assert.equal(codex.authentication?.flow, "import");
-  assert.equal(codex.fields.some((field) => field.key === "apiKeys"), false);
+  assert.equal(
+    codex.fields.some((field) => field.key === "apiKeys"),
+    false,
+  );
   // The stock OpenAI template remains API-key-only.
   const openai = getProviderTemplate("openai")!;
   assert.equal(openai.authentication, undefined);

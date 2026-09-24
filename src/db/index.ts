@@ -536,12 +536,7 @@ function migrate(db: DB): void {
     cache_write_per_1m REAL,
     updated_at TEXT NOT NULL
   );`);
-  addColumnIfMissing(
-    db,
-    "model_pricing",
-    "cache_write_per_1m",
-    "REAL",
-  );
+  addColumnIfMissing(db, "model_pricing", "cache_write_per_1m", "REAL");
   migrateProviderKeysToTable(db);
   migrateApiKeysDropFull(db);
 }
@@ -643,7 +638,9 @@ function migrateProviderOAuthAccounts(db: DB): void {
     "provider_oauth_credentials",
     "account_identity",
   );
-  const providerIsUnique = /provider_id\s+TEXT\s+NOT\s+NULL\s+UNIQUE/i.test(sql);
+  const providerIsUnique = /provider_id\s+TEXT\s+NOT\s+NULL\s+UNIQUE/i.test(
+    sql,
+  );
 
   if (providerIsUnique || !hasIdentity) {
     db.exec("PRAGMA foreign_keys=OFF;");

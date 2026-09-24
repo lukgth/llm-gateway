@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Check, Copy, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -33,7 +39,12 @@ export function AuthStep({
 
   useEffect(() => {
     // Import flow handles its own polling (browser sign-in).
-    if (!session || session.state !== "pending" || tpl.authentication?.flow === "import") return;
+    if (
+      !session ||
+      session.state !== "pending" ||
+      tpl.authentication?.flow === "import"
+    )
+      return;
     const next = session.nextPollAt
       ? Math.max(250, Date.parse(session.nextPollAt) - Date.now())
       : 1_000;
@@ -63,7 +74,9 @@ export function AuthStep({
         <ProviderIcon brand={tpl.brand} name={tpl.label} className="size-5" />
         <div>
           <div className="text-sm font-medium">{auth.title}</div>
-          <div className="text-xs text-muted-foreground">{auth.description}</div>
+          <div className="text-xs text-muted-foreground">
+            {auth.description}
+          </div>
         </div>
       </div>
 
@@ -74,8 +87,8 @@ export function AuthStep({
           {!session && (
             <div className="space-y-3 rounded-lg border border-border p-5 text-center">
               <p className="text-sm text-muted-foreground">
-                This provider uses a device code, so no provider token is exposed to
-                this browser.
+                This provider uses a device code, so no provider token is
+                exposed to this browser.
               </p>
               <Button onClick={() => void start()} disabled={starting}>
                 {starting ? (
@@ -92,13 +105,17 @@ export function AuthStep({
             <div className="space-y-4 rounded-lg border border-border p-4">
               <div className="flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                <span className="text-sm font-medium">Waiting for approval</span>
+                <span className="text-sm font-medium">
+                  Waiting for approval
+                </span>
                 <Badge variant="secondary" className="ml-auto">
                   Device code
                 </Badge>
               </div>
               <div>
-                <div className="text-xs text-muted-foreground">Verification code</div>
+                <div className="text-xs text-muted-foreground">
+                  Verification code
+                </div>
                 <div className="mt-1 flex items-center gap-2">
                   <code className="flex-1 rounded-md bg-muted px-3 py-2 text-center text-lg font-semibold tracking-widest">
                     {verification.userCode}
@@ -130,14 +147,17 @@ export function AuthStep({
                 Open sign-in
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                Complete sign-in in the new tab. This screen updates automatically.
+                Complete sign-in in the new tab. This screen updates
+                automatically.
               </p>
             </div>
           )}
 
           {terminal && (
             <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
-              <div className="text-sm font-medium">Authentication did not complete</div>
+              <div className="text-sm font-medium">
+                Authentication did not complete
+              </div>
               <p className="text-xs text-muted-foreground">
                 {session.error?.message ?? "Start a new device authorization."}
               </p>
@@ -160,7 +180,9 @@ export function AuthStep({
             <Check className="h-4 w-4" />
             <span className="text-sm font-medium">Account connected</span>
           </div>
-          {(session.account?.email || session.account?.label || session.account?.accountId) && (
+          {(session.account?.email ||
+            session.account?.label ||
+            session.account?.accountId) && (
             <p className="mt-1 pl-6 text-xs text-muted-foreground">
               {session.account.email ??
                 session.account.label ??
@@ -188,8 +210,8 @@ const IMPORT_COPY: Record<
         Paste the contents of <code>~/.codex/auth.json</code> (the file Codex
         CLI writes after <code>codex login</code>), or a bare personal access
         token. A refreshable credential is kept renewed automatically; a
-        personal access token never expires and needs no refresh. Paste
-        several bare tokens (one per line) to add multiple accounts at once.
+        personal access token never expires and needs no refresh. Paste several
+        bare tokens (one per line) to add multiple accounts at once.
       </>
     ),
     placeholder: '{ "tokens": { "access_token": "…", "refresh_token": "…" } }',
@@ -199,13 +221,14 @@ const IMPORT_COPY: Record<
     description: (
       <>
         Paste Claude Code's credential JSON (the <code>claudeAiOauth</code>{" "}
-        object), or a bare long-lived <code>sk-ant-oat01-…</code> OAuth
-        token. A refreshable credential is kept renewed automatically; a
-        long-lived one never needs it. Paste several bare tokens (one per
-        line) to add multiple accounts at once.
+        object), or a bare long-lived <code>sk-ant-oat01-…</code> OAuth token. A
+        refreshable credential is kept renewed automatically; a long-lived one
+        never needs it. Paste several bare tokens (one per line) to add multiple
+        accounts at once.
       </>
     ),
-    placeholder: '{ "claudeAiOauth": { "accessToken": "…", "refreshToken": "…" } }',
+    placeholder:
+      '{ "claudeAiOauth": { "accessToken": "…", "refreshToken": "…" } }',
     ariaLabel: "Claude Code credential contents",
   },
 };
@@ -272,9 +295,13 @@ function ImportFlow({
 
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground">
-              Credentials are encrypted server-side; this page never stores them.
+              Credentials are encrypted server-side; this page never stores
+              them.
             </p>
-            <Button onClick={() => void import_()} disabled={!value.trim() || importing}>
+            <Button
+              onClick={() => void import_()}
+              disabled={!value.trim() || importing}
+            >
               {importing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (

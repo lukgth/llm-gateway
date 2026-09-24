@@ -16,7 +16,11 @@ const PROVIDER = {
   baseUrl: "https://hyper.charm.land",
   basePath: "/v1",
   modelsPath: "/models",
-  endpoints: [WireKind.Chat, WireKind.Messages, WireKind.Responses] as WireKind[],
+  endpoints: [
+    WireKind.Chat,
+    WireKind.Messages,
+    WireKind.Responses,
+  ] as WireKind[],
   authScheme: "both" as const,
   format: null,
   host: "hyper.charm.land",

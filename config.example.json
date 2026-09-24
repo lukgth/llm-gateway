@@ -26,9 +26,7 @@
   "upstreamApiKey": "sk-...",
   "upstreamTlsVerify": true,
 
-  "gatewayApiKeys": [
-    "sk-example-client-key"
-  ],
+  "gatewayApiKeys": ["sk-example-client-key"],
 
   "_disabledApiKeyMessage_comment": "Anthropic-compatible authentication_error message returned when a known gateway API key exists but is disabled/revoked.",
   "disabledApiKeyMessage": "Your API key was revoked. Please contact your gateway's administrator for help.",

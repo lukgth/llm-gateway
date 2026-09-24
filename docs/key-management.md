@@ -13,17 +13,17 @@ table. Keys are **never** stored on the `providers` table directly (the legacy
 
 ### `ProviderKey` fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `string` | 8-char hex random identifier |
-| `providerId` | `string` | FK → `providers.id` (CASCADE delete) |
-| `credential` | `string` | The raw API key (e.g. `sk-abc123…`) |
-| `credHash` | `string` | SHA-256 hex prefix (32 chars) of `credential` - same algorithm used by KeyHealthStore for health tracking and affinity |
-| `enabled` | `boolean` | Whether the key participates in round-robin rotation |
-| `metadata` | `Record<string, string>` | Arbitrary key-value pairs (uuid, email, tier, etc.) |
-| `label` | `string \| null` | Optional human-readable name |
-| `createdAt` | `string` | ISO-8601 timestamp |
-| `updatedAt` | `string` | ISO-8601 timestamp |
+| Field        | Type                     | Description                                                                                                            |
+| ------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `id`         | `string`                 | 8-char hex random identifier                                                                                           |
+| `providerId` | `string`                 | FK → `providers.id` (CASCADE delete)                                                                                   |
+| `credential` | `string`                 | The raw API key (e.g. `sk-abc123…`)                                                                                    |
+| `credHash`   | `string`                 | SHA-256 hex prefix (32 chars) of `credential` - same algorithm used by KeyHealthStore for health tracking and affinity |
+| `enabled`    | `boolean`                | Whether the key participates in round-robin rotation                                                                   |
+| `metadata`   | `Record<string, string>` | Arbitrary key-value pairs (uuid, email, tier, etc.)                                                                    |
+| `label`      | `string \| null`         | Optional human-readable name                                                                                           |
+| `createdAt`  | `string`                 | ISO-8601 timestamp                                                                                                     |
+| `updatedAt`  | `string`                 | ISO-8601 timestamp                                                                                                     |
 
 Uniqueness is enforced by `(provider_id, cred_hash)` - adding a duplicate
 credential to the same provider is a no-op.
@@ -53,12 +53,12 @@ WebSocket.
 
 ### Single-Key CRUD
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/providers/:id/keys` | List all keys (paginated via `?offset=&limit=`) |
-| `POST` | `/api/providers/:id/keys` | Create a single key |
-| `PUT` | `/api/providers/:id/keys/:keyId` | Update key (metadata, label, enabled) |
-| `DELETE` | `/api/providers/:id/keys/:keyId` | Delete a single key |
+| Method   | Path                             | Description                                     |
+| -------- | -------------------------------- | ----------------------------------------------- |
+| `GET`    | `/api/providers/:id/keys`        | List all keys (paginated via `?offset=&limit=`) |
+| `POST`   | `/api/providers/:id/keys`        | Create a single key                             |
+| `PUT`    | `/api/providers/:id/keys/:keyId` | Update key (metadata, label, enabled)           |
+| `DELETE` | `/api/providers/:id/keys/:keyId` | Delete a single key                             |
 
 #### Create request body
 
@@ -124,7 +124,7 @@ All arrays are optional. Duplicates in `add` are silently skipped.
   "disabled": 2,
   "duplicatesSkipped": 0,
   "errors": [],
-  "keys": [ /* full updated key list */ ]
+  "keys": [/* full updated key list */]
 }
 ```
 
@@ -142,12 +142,12 @@ for the full message protocol.
 
 The same atomic-transaction pattern applies to these entities:
 
-| Endpoint | Operations |
-|----------|-----------|
-| `POST /api/api-keys/batch` | `create`, `update`, `delete`, `enable`, `disable` |
-| `POST /api/models/batch` | `create`, `update`, `delete`, `enable`, `disable` |
+| Endpoint                               | Operations                                                |
+| -------------------------------------- | --------------------------------------------------------- |
+| `POST /api/api-keys/batch`             | `create`, `update`, `delete`, `enable`, `disable`         |
+| `POST /api/models/batch`               | `create`, `update`, `delete`, `enable`, `disable`         |
 | `POST /api/models/:id/providers/batch` | `add`, `remove`, `update`, `reorder` fallback-chain links |
-| `POST /api/providers/batch` | `update`, `delete`, `enable`, `disable` |
+| `POST /api/providers/batch`            | `update`, `delete`, `enable`, `disable`                   |
 
 For fallback-chain `reorder`, send an ordered array of
 `{ "providerId": "…", "upstreamModel": "…" }` identities. Listed links move
@@ -178,16 +178,16 @@ Fetches keys from an external URL and inserts them via the batch mechanism.
 
 Only `url` is required. `mode` defaults to `"append"`.
 
-| Mode | Behavior |
-|------|----------|
-| `append` | Add new keys, skip duplicates. Existing keys are untouched. |
+| Mode      | Behavior                                                                                                                           |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `append`  | Add new keys, skip duplicates. Existing keys are untouched.                                                                        |
 | `replace` | Add new keys. **Disable** (not delete) keys not in the response. Re-enable keys that reappear. Preserves health data and affinity. |
 
 ### Response
 
 ```json
 {
-  "batch": { /* BatchKeyResult */ },
+  "batch": {/* BatchKeyResult */},
   "fetched": 42,
   "mode": "replace"
 }
@@ -241,13 +241,13 @@ Full control over per-key metadata, labels, and enabled state.
 
 #### Object fields
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `credential` | `string` | **yes** | The raw API key |
-| `key` | `string` | alt | Alias for `credential` (either works) |
-| `metadata` | `Record<string, string>` | no | Arbitrary key-value pairs - merged with `defaultMetadata` (per-key values win) |
-| `label` | `string` | no | Human-readable identifier |
-| `enabled` | `boolean` | no | Defaults to `true` if omitted |
+| Field        | Type                     | Required | Description                                                                    |
+| ------------ | ------------------------ | -------- | ------------------------------------------------------------------------------ |
+| `credential` | `string`                 | **yes**  | The raw API key                                                                |
+| `key`        | `string`                 | alt      | Alias for `credential` (either works)                                          |
+| `metadata`   | `Record<string, string>` | no       | Arbitrary key-value pairs - merged with `defaultMetadata` (per-key values win) |
+| `label`      | `string`                 | no       | Human-readable identifier                                                      |
+| `enabled`    | `boolean`                | no       | Defaults to `true` if omitted                                                  |
 
 Each poll is a structured upsert. For an existing credential, supplied
 `metadata`, `label`, and `enabled` values replace those fields locally; omitted
@@ -343,12 +343,12 @@ it.
 
 ### Sync Config API
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/providers/:id/keys/sync` | Read sync config (or `null`) |
-| `PUT` | `/api/providers/:id/keys/sync` | Create or update sync config |
-| `DELETE` | `/api/providers/:id/keys/sync` | Remove sync config and stop polling |
-| `POST` | `/api/providers/:id/keys/sync/trigger` | Manual poll now (uses configured URL) |
+| Method   | Path                                   | Description                           |
+| -------- | -------------------------------------- | ------------------------------------- |
+| `GET`    | `/api/providers/:id/keys/sync`         | Read sync config (or `null`)          |
+| `PUT`    | `/api/providers/:id/keys/sync`         | Create or update sync config          |
+| `DELETE` | `/api/providers/:id/keys/sync`         | Remove sync config and stop polling   |
+| `POST`   | `/api/providers/:id/keys/sync/trigger` | Manual poll now (uses configured URL) |
 
 ### Sync Config Fields
 
@@ -361,18 +361,18 @@ it.
 }
 ```
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `pollUrl` | `string` | - | **Required.** URL to fetch keys from |
-| `pollHeaders` | `Record<string, string>` | `{}` | Headers attached to every poll request (e.g. auth tokens) |
-| `pollIntervalSec` | `number` | `300` | Minimum 30 seconds |
-| `enabled` | `boolean` | `true` | Pause/resume without deleting config |
+| Field             | Type                     | Default | Description                                               |
+| ----------------- | ------------------------ | ------- | --------------------------------------------------------- |
+| `pollUrl`         | `string`                 | -       | **Required.** URL to fetch keys from                      |
+| `pollHeaders`     | `Record<string, string>` | `{}`    | Headers attached to every poll request (e.g. auth tokens) |
+| `pollIntervalSec` | `number`                 | `300`   | Minimum 30 seconds                                        |
+| `enabled`         | `boolean`                | `true`  | Pause/resume without deleting config                      |
 
 ### Read-only status fields (returned in GET)
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `lastSyncedAt` | `string \| null` | ISO-8601 timestamp of last poll attempt |
+| Field           | Type             | Description                                              |
+| --------------- | ---------------- | -------------------------------------------------------- |
+| `lastSyncedAt`  | `string \| null` | ISO-8601 timestamp of last poll attempt                  |
 | `lastSyncError` | `string \| null` | Error message from last failed poll (cleared on success) |
 
 ### Error handling
@@ -418,14 +418,14 @@ your organization.
 
 ### Recommended patterns
 
-| Key | Example | Use case |
-|-----|---------|----------|
-| `uuid` | `550e8400-…` | Correlate with external billing/identity systems |
-| `email` | `ops@example.com` | Track which team/person owns a key |
-| `tier` | `enterprise` | Tag keys by subscription level |
-| `region` | `us-east-1` | Geographic affinity tagging |
-| `source` | `auto-import` | Track how the key was added |
-| `expires` | `2025-12-31` | Soft expiration hint (gateway doesn't auto-disable - your poll source should handle expiry) |
+| Key       | Example           | Use case                                                                                    |
+| --------- | ----------------- | ------------------------------------------------------------------------------------------- |
+| `uuid`    | `550e8400-…`      | Correlate with external billing/identity systems                                            |
+| `email`   | `ops@example.com` | Track which team/person owns a key                                                          |
+| `tier`    | `enterprise`      | Tag keys by subscription level                                                              |
+| `region`  | `us-east-1`       | Geographic affinity tagging                                                                 |
+| `source`  | `auto-import`     | Track how the key was added                                                                 |
+| `expires` | `2025-12-31`      | Soft expiration hint (gateway doesn't auto-disable - your poll source should handle expiry) |
 
 Metadata is stored as JSON in the `provider_keys` table and is returned on all
 key list/detail endpoints. The gateway resolves metadata for the exact key

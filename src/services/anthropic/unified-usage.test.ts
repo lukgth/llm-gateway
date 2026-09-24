@@ -170,7 +170,10 @@ test("parseStandardRateLimitHeaders parses all four buckets", () => {
   const byBucket = Object.fromEntries(windows.map((w) => [w.bucket, w]));
   assert.equal(byBucket.requests.limit, 1000);
   assert.equal(byBucket.requests.remaining, 999);
-  assert.equal(byBucket.requests.resetsAt, new Date("2026-07-21T02:00:00Z").toISOString());
+  assert.equal(
+    byBucket.requests.resetsAt,
+    new Date("2026-07-21T02:00:00Z").toISOString(),
+  );
   assert.equal(byBucket.tokens.limit, 100000);
   assert.equal(byBucket["input-tokens"].limit, 80000);
   assert.equal(byBucket["output-tokens"].limit, 20000);

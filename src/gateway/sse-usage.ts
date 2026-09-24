@@ -205,11 +205,16 @@ export class SseUsageObserver extends Transform {
     ) {
       const item = (obj.item ?? {}) as Record<string, unknown>;
       if (item.type === "function_call") {
-        const key = this.responseToolKey(obj.output_index, item.id, item.call_id);
+        const key = this.responseToolKey(
+          obj.output_index,
+          item.id,
+          item.call_id,
+        );
         addArg(
           key,
           item.name,
-          type === "response.output_item.done" && !this.tools.get(key)?.sawArguments
+          type === "response.output_item.done" &&
+            !this.tools.get(key)?.sawArguments
             ? item.arguments
             : undefined,
         );
@@ -219,7 +224,11 @@ export class SseUsageObserver extends Transform {
       type === "response.function_call_arguments.delta" ||
       type === "response.function_call_arguments.done"
     ) {
-      const key = this.responseToolKey(obj.output_index, obj.item_id, obj.call_id);
+      const key = this.responseToolKey(
+        obj.output_index,
+        obj.item_id,
+        obj.call_id,
+      );
       if (type === "response.function_call_arguments.delta")
         addArg(key, undefined, obj.delta);
       else if (!this.tools.get(key)?.sawArguments)
@@ -258,7 +267,11 @@ export class SseUsageObserver extends Transform {
 
   // Bind both stable IDs and output positions: completed arrays can include
   // reasoning/message items, and compact providers can omit output_index.
-  private responseToolKey(index: unknown, id: unknown, callId: unknown): string {
+  private responseToolKey(
+    index: unknown,
+    id: unknown,
+    callId: unknown,
+  ): string {
     const itemKey = typeof id === "string" && id ? `item:${id}` : undefined;
     const callKey =
       typeof callId === "string" && callId ? `call:${callId}` : undefined;
@@ -270,7 +283,10 @@ export class SseUsageObserver extends Transform {
       (itemKey && this.responseToolKeys.get(itemKey)) ||
       (callKey && this.responseToolKeys.get(callKey)) ||
       (indexKey && this.responseToolKeys.get(indexKey)) ||
-      itemKey || callKey || indexKey || "index:0";
+      itemKey ||
+      callKey ||
+      indexKey ||
+      "index:0";
     if (itemKey) this.responseToolKeys.set(itemKey, key);
     if (callKey) this.responseToolKeys.set(callKey, key);
     if (indexKey) this.responseToolKeys.set(indexKey, key);

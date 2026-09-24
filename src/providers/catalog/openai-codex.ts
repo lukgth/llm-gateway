@@ -28,7 +28,11 @@ import {
 import { WireKind, type ProviderKeyUsageWindow } from "../../types";
 import type { UpstreamModel } from "../../formats/wire/models";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
-import { CODEX_CLIENT_VERSION, codexIdentityHeaders, parseCodexModels } from "../codex";
+import {
+  CODEX_CLIENT_VERSION,
+  codexIdentityHeaders,
+  parseCodexModels,
+} from "../codex";
 
 // Sibling path of the Codex base path — NOT under /backend-api/codex but
 // at /backend-api/wham/usage (sibling of the codex api family).
@@ -51,9 +55,7 @@ function windowIdentity(
   fallbackLabel: string,
 ): { id: string; label: string } {
   if (typeof limitWindowSeconds === "number" && limitWindowSeconds > 0) {
-    const known = WINDOW_LENGTHS.find(
-      (w) => w.seconds === limitWindowSeconds,
-    );
+    const known = WINDOW_LENGTHS.find((w) => w.seconds === limitWindowSeconds);
     if (known) return { id: known.id, label: known.label };
   }
   return { id: fallbackId, label: fallbackLabel };
@@ -100,8 +102,7 @@ class OpenAICodexAdapter extends OpenAICompatibleAdapter {
     delete ctx.body["max_completion_tokens"];
     this.stripConflicting(ctx.headers);
     Object.assign(ctx.headers, codexIdentityHeaders());
-    if (ctx.apiKey)
-      ctx.headers["authorization"] = `Bearer ${ctx.apiKey}`;
+    if (ctx.apiKey) ctx.headers["authorization"] = `Bearer ${ctx.apiKey}`;
     const accountId = ctx.keyMetadata?.accountId;
     if (accountId) ctx.headers["chatgpt-account-id"] = accountId;
     return { url: ctx.url, headers: ctx.headers, body: ctx.body };
@@ -284,8 +285,16 @@ class OpenAICodexAdapter extends OpenAICompatibleAdapter {
       fallbackId: string;
       fallbackLabel: string;
     }> = [
-      { key: "primary_window", fallbackId: "session", fallbackLabel: "Session" },
-      { key: "secondary_window", fallbackId: "weekly", fallbackLabel: "Weekly" },
+      {
+        key: "primary_window",
+        fallbackId: "session",
+        fallbackLabel: "Session",
+      },
+      {
+        key: "secondary_window",
+        fallbackId: "weekly",
+        fallbackLabel: "Weekly",
+      },
     ];
 
     for (const def of windowDefs) {

@@ -74,7 +74,10 @@ function oauthHealthKey(id: string): string {
 }
 
 function oauthCredHash(id: string): string {
-  return createHash("sha256").update(oauthHealthKey(id)).digest("hex").slice(0, 32);
+  return createHash("sha256")
+    .update(oauthHealthKey(id))
+    .digest("hex")
+    .slice(0, 32);
 }
 
 function accountIdentity(
@@ -240,7 +243,10 @@ export function listProviderOAuthAdminViews(
     .all(providerId) as OAuthRow[];
   return rows.map((row) => {
     const stored = storedFromRow(crypto, row);
-    return { ...mapView(row), accessToken: stored.credential.secrets.accessToken };
+    return {
+      ...mapView(row),
+      accessToken: stored.credential.secrets.accessToken,
+    };
   });
 }
 
@@ -258,8 +264,7 @@ export function createProviderOAuth(
            WHERE provider_id = ? AND integration_id = ? AND account_identity = ?`,
         )
         .get(providerId, credential.integrationId, identity) as
-        | { id: string }
-        | undefined)
+        { id: string } | undefined)
     : undefined;
   if (existing)
     return replaceProviderOAuth(
@@ -461,20 +466,30 @@ export function batchProviderOAuth(
       try {
         const before = getProviderOAuthView(db, providerId, id);
         const after = setProviderOAuthEnabled(db, providerId, id, true);
-        if (!after) result.errors.push({ op: "enable", id, detail: "not found" });
+        if (!after)
+          result.errors.push({ op: "enable", id, detail: "not found" });
         else if (before?.status !== "active") result.enabled++;
       } catch (error) {
-        result.errors.push({ op: "enable", id, detail: (error as Error).message });
+        result.errors.push({
+          op: "enable",
+          id,
+          detail: (error as Error).message,
+        });
       }
     }
     for (const id of ops.disable ?? []) {
       try {
         const before = getProviderOAuthView(db, providerId, id);
         const after = setProviderOAuthEnabled(db, providerId, id, false);
-        if (!after) result.errors.push({ op: "disable", id, detail: "not found" });
+        if (!after)
+          result.errors.push({ op: "disable", id, detail: "not found" });
         else if (before?.status !== "disabled") result.disabled++;
       } catch (error) {
-        result.errors.push({ op: "disable", id, detail: (error as Error).message });
+        result.errors.push({
+          op: "disable",
+          id,
+          detail: (error as Error).message,
+        });
       }
     }
     for (const id of ops.remove ?? []) {

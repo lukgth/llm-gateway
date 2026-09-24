@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+web/node_modules/
+package-lock.json
+web/package-lock.json
+
+# Builds
+dist/
+web/dist/
+*.zip
+*.tsbuildinfo
+
+# Local configuration (contains secrets - copy from config.example.json)
+config.json
+.env
+.env.*
+
+# SQLite + runtime data
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Logs / scratch
+*.log
+usage.json
+hard.txt
+claude.example.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*/.obsidian/

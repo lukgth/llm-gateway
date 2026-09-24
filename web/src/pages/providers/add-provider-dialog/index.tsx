@@ -78,7 +78,9 @@ export function AddProviderDialog({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [modelFilter, setModelFilter] = useState("");
   const [finishing, setFinishing] = useState(false);
-  const [authSession, setAuthSession] = useState<ProviderAuthSession | null>(null);
+  const [authSession, setAuthSession] = useState<ProviderAuthSession | null>(
+    null,
+  );
 
   useEffect(() => {
     api.listProviderCatalog().then(setTemplates).catch(toast.error);

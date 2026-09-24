@@ -38,7 +38,10 @@ import type {
 } from "../types";
 import { NEVER_EXPIRES, ProviderReauthRequiredError } from "../types";
 import type { ProviderTestProbe } from "../../../types/provider-auth";
-import type { AnthropicModelList, UpstreamModel } from "../../../formats/wire/models";
+import type {
+  AnthropicModelList,
+  UpstreamModel,
+} from "../../../formats/wire/models";
 import { normalizeAnthropicModels } from "../../../providers/base/models";
 import {
   ANTHROPIC_API_KEY_PREFIX,
@@ -75,7 +78,9 @@ function stringOrUndefined(value: unknown): string | undefined {
 
 function stringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  const out = value.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  const out = value.filter(
+    (v): v is string => typeof v === "string" && v.trim().length > 0,
+  );
   return out.length ? out : undefined;
 }
 
@@ -100,7 +105,9 @@ async function boundedFetch(
   });
 }
 
-async function readJsonLimited(res: Response): Promise<Record<string, unknown>> {
+async function readJsonLimited(
+  res: Response,
+): Promise<Record<string, unknown>> {
   const declared = Number(res.headers.get("content-length") ?? 0);
   if (declared > MAX_BODY_BYTES)
     throw new Error("Authentication response too large");
@@ -149,7 +156,9 @@ function normalizeNetworkError(error: unknown, context: string): Error {
 
 // OAuth token endpoint error shape (same convention as Codex's):
 // {"error": "invalid_grant", "error_description": "..."}.
-function refreshErrorCode(payload: Record<string, unknown>): string | undefined {
+function refreshErrorCode(
+  payload: Record<string, unknown>,
+): string | undefined {
   return stringOrUndefined(payload.error)?.toLowerCase();
 }
 
@@ -243,7 +252,8 @@ async function probeModels(
       ok: false,
       status: null,
       models: [],
-      error: normalizeNetworkError(error, "Claude Code credential check failed").message,
+      error: normalizeNetworkError(error, "Claude Code credential check failed")
+        .message,
     };
   }
   if (!res.ok) {
@@ -285,22 +295,30 @@ interface ParsedOAuthBlob {
 // Unwraps the pasted JSON into a flat token blob, accepting both the
 // wrapped `{"claudeAiOauth": {...}}` shape Claude Code's secure storage
 // actually writes, and the bare inner object.
-function parseOAuthBlob(root: Record<string, unknown>): ParsedOAuthBlob | undefined {
+function parseOAuthBlob(
+  root: Record<string, unknown>,
+): ParsedOAuthBlob | undefined {
   const wrapped = record(root.claudeAiOauth);
   const flat = Object.keys(wrapped).length > 0 ? wrapped : root;
-  const accessToken = stringOrUndefined(flat.accessToken) ?? stringOrUndefined(flat.access_token);
+  const accessToken =
+    stringOrUndefined(flat.accessToken) ?? stringOrUndefined(flat.access_token);
   if (!accessToken) return undefined;
   return {
     accessToken,
-    refreshToken: stringOrUndefined(flat.refreshToken) ?? stringOrUndefined(flat.refresh_token),
-    expiresAt: numberOrUndefined(flat.expiresAt) ?? numberOrUndefined(flat.expires_at),
+    refreshToken:
+      stringOrUndefined(flat.refreshToken) ??
+      stringOrUndefined(flat.refresh_token),
+    expiresAt:
+      numberOrUndefined(flat.expiresAt) ?? numberOrUndefined(flat.expires_at),
     refreshTokenExpiresAt:
       numberOrUndefined(flat.refreshTokenExpiresAt) ??
       numberOrUndefined(flat.refresh_token_expires_at),
     scopes: stringArray(flat.scopes),
-    subscriptionType: stringOrUndefined(flat.subscriptionType) ??
+    subscriptionType:
+      stringOrUndefined(flat.subscriptionType) ??
       stringOrUndefined(flat.subscription_type),
-    rateLimitTier: stringOrUndefined(flat.rateLimitTier) ??
+    rateLimitTier:
+      stringOrUndefined(flat.rateLimitTier) ??
       stringOrUndefined(flat.rate_limit_tier),
   };
 }
@@ -310,7 +328,8 @@ async function credentialFromOAuthBlob(
   blob: ParsedOAuthBlob,
 ): Promise<ProviderAuthCredential> {
   const isRefreshable = !!blob.refreshToken && !!blob.expiresAt;
-  const scopes = blob.scopes ?? (isRefreshable ? undefined : ["user:inference"]);
+  const scopes =
+    blob.scopes ?? (isRefreshable ? undefined : ["user:inference"]);
 
   // Validate the pasted credential with a real upstream call before ever
   // storing it - never assume it's good just because it parsed. A
@@ -476,12 +495,16 @@ class ClaudeCodeAuthIntegration implements ProviderAuthIntegration {
 
     const accessToken = stringOrUndefined(payload.access_token);
     if (!accessToken)
-      throw new Error("Claude Code refresh response did not return an access token");
+      throw new Error(
+        "Claude Code refresh response did not return an access token",
+      );
     const expiresIn = numberOrUndefined(payload.expires_in);
     if (!expiresIn)
       throw new Error("Claude Code refresh response did not return expires_in");
-    const newRefreshToken = stringOrUndefined(payload.refresh_token) ?? refreshToken;
-    const grantedScopes = stringArray((stringOrUndefined(payload.scope) ?? "").split(" ")) ??
+    const newRefreshToken =
+      stringOrUndefined(payload.refresh_token) ?? refreshToken;
+    const grantedScopes =
+      stringArray((stringOrUndefined(payload.scope) ?? "").split(" ")) ??
       scopes;
 
     // The refresh grant's response carries no account/org fields the way
@@ -491,8 +514,11 @@ class ClaudeCodeAuthIntegration implements ProviderAuthIntegration {
     // extra round-trip on every routine refresh - Claude Code's own client
     // does the same "skip re-fetch when already known" optimization for
     // exactly this reason (see refreshOAuthToken's haveProfileAlready guard).
-    const needsProfile = hasProfileScope(grantedScopes) && !credential.account.accountId;
-    const profile = needsProfile ? await fetchProfile(this.fetchImpl, accessToken) : undefined;
+    const needsProfile =
+      hasProfileScope(grantedScopes) && !credential.account.accountId;
+    const profile = needsProfile
+      ? await fetchProfile(this.fetchImpl, accessToken)
+      : undefined;
 
     return {
       integrationId: "claude-code",
@@ -552,7 +578,12 @@ class ClaudeCodeAuthIntegration implements ProviderAuthIntegration {
           models: [],
         };
       }
-      return { ok: true, status: res.status, ms: Date.now() - started, models: [] };
+      return {
+        ok: true,
+        status: res.status,
+        ms: Date.now() - started,
+        models: [],
+      };
     } catch (error) {
       return {
         ok: false,

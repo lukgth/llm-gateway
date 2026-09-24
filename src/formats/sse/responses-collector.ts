@@ -50,7 +50,8 @@ export function collectResponsesSse(text: string): ResponsesResponse {
         throw new Error("upstream Responses stream failed (status: failed)");
       terminal = {
         ...response,
-        status: response.status ??
+        status:
+          response.status ??
           (type === "response.incomplete" ? "incomplete" : "completed"),
       };
       continue;
@@ -60,7 +61,9 @@ export function collectResponsesSse(text: string): ResponsesResponse {
   }
 
   if (terminal === null)
-    throw new Error("upstream Responses stream ended before a terminal response event");
+    throw new Error(
+      "upstream Responses stream ended before a terminal response event",
+    );
 
   const response = { ...assembler.metadata(), ...terminal };
   const bufferedOutput = assembler.build();
@@ -115,7 +118,10 @@ function mergeItem(
     if (Array.isArray(oldContent)) merged.content = oldContent;
   } else {
     merged.content = newContent.map((part, index) =>
-      mergePart(Array.isArray(oldContent) ? oldContent[index] : undefined, part),
+      mergePart(
+        Array.isArray(oldContent) ? oldContent[index] : undefined,
+        part,
+      ),
     );
   }
 
@@ -125,7 +131,10 @@ function mergeItem(
     if (Array.isArray(oldSummary)) merged.summary = oldSummary;
   } else {
     merged.summary = newSummary.map((part, index) =>
-      mergePart(Array.isArray(oldSummary) ? oldSummary[index] : undefined, part),
+      mergePart(
+        Array.isArray(oldSummary) ? oldSummary[index] : undefined,
+        part,
+      ),
     ) as Array<{ type: string; text: string }>;
   }
 
@@ -141,7 +150,8 @@ function mergeItem(
 function hasResponseOutputContent(output: unknown): boolean {
   if (!Array.isArray(output)) return false;
   return output.some((value) => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      return false;
     const item = value as ResponseOutputItem;
     if (item.type === "message") {
       return (

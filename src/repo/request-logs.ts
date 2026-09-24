@@ -415,7 +415,7 @@ export function dashboardStats(db: DB): DashboardStats {
          COALESCE(SUM(CASE WHEN status >= 500 AND NOT ${throttle} THEN 1 ELSE 0 END), 0) AS serverErr
        FROM request_logs WHERE date(ts) = @today`,
     )
-  .get({ today }) as {
+    .get({ today }) as {
     requests: number;
     errors: number;
     throttled: number;

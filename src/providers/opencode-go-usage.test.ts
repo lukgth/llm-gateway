@@ -131,7 +131,9 @@ test("the URL follows the configured base URL, not a hardcoded host", async () =
   // is configured rather than a pinned host.
   const edited = { ...provider, baseUrl: "https://opencode.example.com/zen" };
   const seen: { url?: string } = {};
-  await adapter().keyUsage(usageCtx(ok(), { provider: edited as Provider }, seen));
+  await adapter().keyUsage(
+    usageCtx(ok(), { provider: edited as Provider }, seen),
+  );
   assert.equal(seen.url, "https://opencode.example.com/zen/v1/usage");
 });
 
@@ -140,8 +142,16 @@ test("a non-ok or missing window is omitted", async () => {
     usageCtx({
       json: () => ({
         usage: {
-          rolling: { status: "error", percent: 90, resetsAt: "2026-08-12T00:00:00.000Z" },
-          monthly: { status: "ok", percent: 4, resetsAt: "2026-09-01T09:09:19.451Z" },
+          rolling: {
+            status: "error",
+            percent: 90,
+            resetsAt: "2026-08-12T00:00:00.000Z",
+          },
+          monthly: {
+            status: "ok",
+            percent: 4,
+            resetsAt: "2026-09-01T09:09:19.451Z",
+          },
         },
       }),
     }),
@@ -222,7 +232,11 @@ test("transport and parse failures degrade to unavailable, never throw", async (
       json: () => ({
         usage: {
           rolling: { status: "error" },
-          weekly: { status: "ok", percent: "nope", resetsAt: "2026-08-17T00:00:00.000Z" },
+          weekly: {
+            status: "ok",
+            percent: "nope",
+            resetsAt: "2026-08-17T00:00:00.000Z",
+          },
         },
       }),
     }),

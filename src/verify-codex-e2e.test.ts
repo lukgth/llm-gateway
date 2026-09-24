@@ -23,14 +23,16 @@ import { listProviderOAuthViews } from "./repo/provider-oauth";
 import { ProviderAuthCrypto } from "./services/provider-auth/crypto";
 import { ProviderAuthService } from "./services/provider-auth/service";
 import { codexAuth } from "./services/provider-auth/integrations/codex";
-import {
-  ProviderCredentialService as RealProviderCredentialService,
-} from "./services/provider-credentials";
+import { ProviderCredentialService as RealProviderCredentialService } from "./services/provider-credentials";
 import { ForwardingEngine } from "./gateway/engine";
 import { ThinkingConverter } from "./formats/thinking";
 import { Logger } from "./logger";
 import { WireKind } from "./types";
-import { CODEX_CLIENT_VERSION, CODEX_ORIGINATOR, codexUserAgent } from "./providers/codex";
+import {
+  CODEX_CLIENT_VERSION,
+  CODEX_ORIGINATOR,
+  codexUserAgent,
+} from "./providers/codex";
 
 function b64url(payload: object): string {
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
@@ -48,7 +50,6 @@ const AUTH_JSON = JSON.stringify({
     refresh_token: "e2e-refresh",
   },
 });
-
 
 test("E2E: a non-stream Responses request uses Codex streaming upstream and returns buffered JSON", async () => {
   const captured: Record<string, unknown> = {};
@@ -84,7 +85,11 @@ test("E2E: a non-stream Responses request uses Codex streaming upstream and retu
           {
             type: "response.created",
             sequence_number: 0,
-            response: { ...completedResponse, status: "in_progress", usage: null },
+            response: {
+              ...completedResponse,
+              status: "in_progress",
+              usage: null,
+            },
           },
           {
             type: "response.output_item.added",
@@ -120,7 +125,10 @@ test("E2E: a non-stream Responses request uses Codex streaming upstream and retu
             response: completedResponse,
           },
         ]
-          .map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
+          .map(
+            (event) =>
+              `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
+          )
           .join(""),
       );
     });
@@ -160,7 +168,12 @@ test("E2E: a non-stream Responses request uses Codex streaming upstream and retu
       "owner-e2e",
     );
     void authDir;
-    authService.adoptForNewProvider(view.id, "owner-e2e", provider.id, "openai-codex");
+    authService.adoptForNewProvider(
+      view.id,
+      "owner-e2e",
+      provider.id,
+      "openai-codex",
+    );
     const rows = listProviderOAuthViews(db, provider.id);
     assert.equal(rows.length, 1);
 
@@ -196,10 +209,11 @@ test("E2E: a non-stream Responses request uses Codex streaming upstream and retu
         cb();
       },
     }) as never;
-    (res as { writeHead: (code: number, headers?: http.OutgoingHttpHeaders) => void }).writeHead = (
-      code: number,
-      headers = {},
-    ) => {
+    (
+      res as {
+        writeHead: (code: number, headers?: http.OutgoingHttpHeaders) => void;
+      }
+    ).writeHead = (code: number, headers = {}) => {
       statusCode = code;
       responseHeaders = headers;
     };
@@ -212,26 +226,22 @@ test("E2E: a non-stream Responses request uses Codex streaming upstream and retu
       configurable: true,
     });
 
-    await engine.forward(
-      { method: "POST", headers: {} } as never,
-      res,
-      {
-        clientPath: "/v1/responses",
-        requestBody: {
-          model: "e2e-codex-model",
-          input: "hi",
-          max_output_tokens: 321,
-        },
-        resolvedModel: modelRow,
-        alias: modelRow.alias,
-        apiKey: null,
-        inputTokens: 0,
-        reservedTokens: 0,
-        isStream: false,
-        client: null,
-        debug: false,
-      } as never,
-    );
+    await engine.forward({ method: "POST", headers: {} } as never, res, {
+      clientPath: "/v1/responses",
+      requestBody: {
+        model: "e2e-codex-model",
+        input: "hi",
+        max_output_tokens: 321,
+      },
+      resolvedModel: modelRow,
+      alias: modelRow.alias,
+      apiKey: null,
+      inputTokens: 0,
+      reservedTokens: 0,
+      isStream: false,
+      client: null,
+      debug: false,
+    } as never);
 
     // 4. Assertions: exact wire shape and buffered client response.
     assert.equal(captured.path, "/backend-api/codex/responses");
@@ -255,7 +265,10 @@ test("E2E: a non-stream Responses request uses Codex streaming upstream and retu
     ]);
 
     assert.equal(statusCode, 200);
-    assert.match(String(responseHeaders["content-type"]), /^application\/json\b/);
+    assert.match(
+      String(responseHeaders["content-type"]),
+      /^application\/json\b/,
+    );
     const clientBody = JSON.parse(bodyText) as {
       id: string;
       status: string;
@@ -272,5 +285,3 @@ test("E2E: a non-stream Responses request uses Codex streaming upstream and retu
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
-
-

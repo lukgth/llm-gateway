@@ -114,8 +114,7 @@ export function WsProvider({ children }: { children: ReactNode }) {
       // data until they manually reload the page. Keep polling at a fixed,
       // short interval (login is a one-time few-second wait, not a
       // long-running failure needing backoff) until a token shows up.
-      if (mountedRef.current)
-        reconnectTimer.current = setTimeout(connect, 500);
+      if (mountedRef.current) reconnectTimer.current = setTimeout(connect, 500);
       return;
     }
 

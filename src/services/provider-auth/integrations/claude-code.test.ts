@@ -13,9 +13,10 @@ import {
   CLAUDE_OAUTH_TOKEN_URL,
 } from "../../../providers/claude-code-oauth";
 
-function fakeFetch(
-  handler: (url: string, init: RequestInit) => Response,
-): { fetchImpl: typeof fetch; calls: Array<{ url: string; init: RequestInit }> } {
+function fakeFetch(handler: (url: string, init: RequestInit) => Response): {
+  fetchImpl: typeof fetch;
+  calls: Array<{ url: string; init: RequestInit }>;
+} {
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const fn = (async (url: string | URL, init: RequestInit = {}) => {
     const urlStr = String(url);
@@ -72,7 +73,14 @@ function profileResponse(): Response {
 
 function modelsResponse(): Response {
   return jsonRes(200, {
-    data: [{ id: "claude-opus-4-6", type: "model", display_name: "Claude Opus 4.6", created_at: "2025-01-01T00:00:00Z" }],
+    data: [
+      {
+        id: "claude-opus-4-6",
+        type: "model",
+        display_name: "Claude Opus 4.6",
+        created_at: "2025-01-01T00:00:00Z",
+      },
+    ],
   });
 }
 
@@ -81,7 +89,10 @@ function modelsResponse(): Response {
 // profile-scoped one via /api/oauth/profile, everything else via
 // GET /v1/models. Tests that don't care about validation route both
 // endpoints to a success response.
-function fakeFetchAlwaysOk(): { fetchImpl: typeof fetch; calls: Array<{ url: string; init: RequestInit }> } {
+function fakeFetchAlwaysOk(): {
+  fetchImpl: typeof fetch;
+  calls: Array<{ url: string; init: RequestInit }>;
+} {
   return fakeFetch((url) =>
     url === CLAUDE_MODELS_URL ? modelsResponse() : profileResponse(),
   );
@@ -179,7 +190,10 @@ test("claude-code import treats a bare sk-ant-oat01- token as long-lived OAuth, 
     kind: "auth_json",
     value: "sk-ant-oat01-bare-long-lived-token",
   });
-  assert.equal(credential.secrets.accessToken, "sk-ant-oat01-bare-long-lived-token");
+  assert.equal(
+    credential.secrets.accessToken,
+    "sk-ant-oat01-bare-long-lived-token",
+  );
   assert.equal(credential.secrets.refreshToken, undefined);
   assert.equal(credential.account.tokenKind, "long_lived");
   assert.equal(credential.account.authKind, "oauth_token");
@@ -188,15 +202,26 @@ test("claude-code import treats a bare sk-ant-oat01- token as long-lived OAuth, 
   assert.equal(calls.length, 1);
   // Bearer + oauth beta header, not x-api-key.
   const headers = calls[0].init.headers as Record<string, string>;
-  assert.equal(headers.authorization, "Bearer sk-ant-oat01-bare-long-lived-token");
+  assert.equal(
+    headers.authorization,
+    "Bearer sk-ant-oat01-bare-long-lived-token",
+  );
   assert.equal(headers["anthropic-beta"], "oauth-2025-04-20");
 });
 
 test("claude-code import rejects an invalid bare sk-ant-oat01- token (failed /v1/models probe)", async () => {
-  const { fetchImpl } = fakeFetch(() => jsonRes(401, { error: { type: "authentication_error", message: "invalid" } }));
+  const { fetchImpl } = fakeFetch(() =>
+    jsonRes(401, {
+      error: { type: "authentication_error", message: "invalid" },
+    }),
+  );
   const claudeCode = createClaudeCodeAuth(fetchImpl);
   await assert.rejects(
-    () => claudeCode.import!({ kind: "auth_json", value: "sk-ant-oat01-dead-token" }),
+    () =>
+      claudeCode.import!({
+        kind: "auth_json",
+        value: "sk-ant-oat01-dead-token",
+      }),
     /401/,
   );
 });
@@ -204,14 +229,20 @@ test("claude-code import rejects an invalid bare sk-ant-oat01- token (failed /v1
 test("claude-code import REJECTS a bare sk-ant-api03- key - that's the Anthropic provider's credential, not Claude Code's", async () => {
   const claudeCode = createClaudeCodeAuth();
   await assert.rejects(
-    () => claudeCode.import!({ kind: "auth_json", value: "sk-ant-api03-plain-console-key" }),
+    () =>
+      claudeCode.import!({
+        kind: "auth_json",
+        value: "sk-ant-api03-plain-console-key",
+      }),
     /Anthropic Console API key/,
   );
 });
 
 test("claude-code import rejects an empty paste", async () => {
   const claudeCode = createClaudeCodeAuth();
-  await assert.rejects(() => claudeCode.import!({ kind: "auth_json", value: "   " }));
+  await assert.rejects(() =>
+    claudeCode.import!({ kind: "auth_json", value: "   " }),
+  );
 });
 
 // --- refresh -----------------------------------------------------------------
@@ -228,11 +259,17 @@ test("claude-code refresh posts the exact OAuth body and rotates tokens", async 
     return profileResponse();
   });
   const claudeCode = createClaudeCodeAuth(fetchImpl);
-  const original = await claudeCode.import!({ kind: "auth_json", value: FULL_OAUTH_JSON });
+  const original = await claudeCode.import!({
+    kind: "auth_json",
+    value: FULL_OAUTH_JSON,
+  });
   const refreshed = await claudeCode.refresh(original);
 
   const tokenCall = calls.find((c) => c.url === CLAUDE_OAUTH_TOKEN_URL)!;
-  const body = JSON.parse(String(tokenCall.init.body)) as Record<string, unknown>;
+  const body = JSON.parse(String(tokenCall.init.body)) as Record<
+    string,
+    unknown
+  >;
   assert.deepEqual(body, {
     grant_type: "refresh_token",
     refresh_token: "sk-ant-ort01-refresh-value",
@@ -257,7 +294,9 @@ test("claude-code refresh classifies invalid_grant/401 as permanent, everything 
   const importFetch = () => modelsResponse();
 
   const permanent = createClaudeCodeAuth(((url: string) =>
-    url === CLAUDE_OAUTH_TOKEN_URL ? jsonRes(400, { error: "invalid_grant" }) : importFetch()) as unknown as typeof fetch);
+    url === CLAUDE_OAUTH_TOKEN_URL
+      ? jsonRes(400, { error: "invalid_grant" })
+      : importFetch()) as unknown as typeof fetch);
   const permanentCred = await permanent.import!({
     kind: "auth_json",
     value: FULL_OAUTH_JSON.replace(/"user:profile",?/, ""), // skip profile fetch on import
@@ -268,7 +307,9 @@ test("claude-code refresh classifies invalid_grant/401 as permanent, everything 
   );
 
   const transient = createClaudeCodeAuth(((url: string) =>
-    url === CLAUDE_OAUTH_TOKEN_URL ? jsonRes(503, { error: "server_error" }) : importFetch()) as unknown as typeof fetch);
+    url === CLAUDE_OAUTH_TOKEN_URL
+      ? jsonRes(503, { error: "server_error" })
+      : importFetch()) as unknown as typeof fetch);
   const transientCred = await transient.import!({
     kind: "auth_json",
     value: FULL_OAUTH_JSON.replace(/"user:profile",?/, ""),
@@ -286,8 +327,13 @@ test("claude-code refresh classifies invalid_grant/401 as permanent, everything 
 test("claude-code refresh rejects with no secrets leaked on failure", async () => {
   const { fetchImpl: importFetch } = fakeFetchAlwaysOk();
   const claudeCode = createClaudeCodeAuth(((url: string, init: RequestInit) =>
-    url === CLAUDE_OAUTH_TOKEN_URL ? jsonRes(401, {}) : importFetch(url, init)) as unknown as typeof fetch);
-  const credential = await claudeCode.import!({ kind: "auth_json", value: FULL_OAUTH_JSON });
+    url === CLAUDE_OAUTH_TOKEN_URL
+      ? jsonRes(401, {})
+      : importFetch(url, init)) as unknown as typeof fetch);
+  const credential = await claudeCode.import!({
+    kind: "auth_json",
+    value: FULL_OAUTH_JSON,
+  });
   try {
     await claudeCode.refresh(credential);
     assert.fail("should reject");
@@ -329,13 +375,19 @@ test("claude-code runtimeCredential is the bare access token", async () => {
     kind: "auth_json",
     value: "sk-ant-oat01-bare-token",
   });
-  assert.equal(claudeCode.runtimeCredential(credential), credential.secrets.accessToken);
+  assert.equal(
+    claudeCode.runtimeCredential(credential),
+    credential.secrets.accessToken,
+  );
 });
 
 test("claude-code test probes the profile endpoint only for profile-scoped credentials", async () => {
   const { fetchImpl, calls } = fakeFetch(() => profileResponse());
   const claudeCode = createClaudeCodeAuth(fetchImpl);
-  const credential = await claudeCode.import!({ kind: "auth_json", value: FULL_OAUTH_JSON });
+  const credential = await claudeCode.import!({
+    kind: "auth_json",
+    value: FULL_OAUTH_JSON,
+  });
   calls.length = 0; // reset after import's own profile call
   const probe = await claudeCode.test(credential);
   assert.equal(probe.ok, true);
@@ -346,7 +398,10 @@ test("claude-code test probes the profile endpoint only for profile-scoped crede
 test("claude-code test probes /v1/models (a real check, not a hand-waved 'ok') for inference-only credentials", async () => {
   const { fetchImpl, calls } = fakeFetchAlwaysOk();
   const claudeCode = createClaudeCodeAuth(fetchImpl);
-  const credential = await claudeCode.import!({ kind: "auth_json", value: "sk-ant-oat01-bare-token" });
+  const credential = await claudeCode.import!({
+    kind: "auth_json",
+    value: "sk-ant-oat01-bare-token",
+  });
   calls.length = 0; // reset after import's own validation call
   const probe = await claudeCode.test(credential);
   assert.equal(probe.ok, true);
@@ -357,9 +412,14 @@ test("claude-code test probes /v1/models (a real check, not a hand-waved 'ok') f
 
 test("claude-code test surfaces a real failure for a since-revoked inference-only credential", async () => {
   const claudeCode = createClaudeCodeAuth(fakeFetchAlwaysOk().fetchImpl);
-  const credential = await claudeCode.import!({ kind: "auth_json", value: "sk-ant-oat01-bare-token" });
+  const credential = await claudeCode.import!({
+    kind: "auth_json",
+    value: "sk-ant-oat01-bare-token",
+  });
   // Swap in a fetch that now rejects, simulating revocation after import.
-  const dead = createClaudeCodeAuth(fakeFetch(() => jsonRes(401, {})).fetchImpl);
+  const dead = createClaudeCodeAuth(
+    fakeFetch(() => jsonRes(401, {})).fetchImpl,
+  );
   const probe = await dead.test(credential);
   assert.equal(probe.ok, false);
   assert.equal(probe.status, 401);

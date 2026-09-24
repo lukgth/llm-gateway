@@ -46,7 +46,8 @@ import { buildUsageReport, buildUsageReports } from "./usage-report";
 import { bad } from "./respond";
 
 function requireAdminSessionBinding(req: AdminRequest): string {
-  if (!req.__adminSessionBinding) throw new Error("Admin session binding missing");
+  if (!req.__adminSessionBinding)
+    throw new Error("Admin session binding missing");
   return req.__adminSessionBinding;
 }
 
@@ -61,7 +62,8 @@ function providerDto(
     ? V
     : never,
 ) {
-  const supportsOAuth = !!provider.catalogId &&
+  const supportsOAuth =
+    !!provider.catalogId &&
     getProviderTemplate(provider.catalogId)?.supportsOAuth === true;
   const { keyCount, ...base } = provider;
   return supportsOAuth
@@ -302,9 +304,7 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
     const provider = getProvider(db, String(req.params.id));
     if (!provider)
       return res.status(404).json({ error: { message: "not found" } });
-    res.json(
-      await buildUsageReport(provider, db, ctx.providerCredentials),
-    );
+    res.json(await buildUsageReport(provider, db, ctx.providerCredentials));
   });
 
   // Probe upstream models via the adapter's fetchModels() seam (honors any

@@ -5,7 +5,7 @@ provider and every custom provider is built from. It covers the two-phase
 route/build model, the five context shapes (`BuildCtx`/`UsageCtx`/
 `TestModelCtx`/`TestProviderCtx`/`ModelsCtx`), the transform hooks, and how
 to add a new provider. See [`docs/format-conversion.md`](./format-conversion.md)
-for the wire-format conversion rules that run *around* an adapter,
+for the wire-format conversion rules that run _around_ an adapter,
 [`docs/transforms-api.md`](./transforms-api.md) for how to author a transform
 stage and how a provider family's `quirks.defaultTransforms` composes into
 the default provider transform stack,
@@ -66,10 +66,14 @@ Two base classes cover the two native wire dialects:
 
 ```ts
 class OpenAICompatibleAdapter extends ProviderAdapter {
-  protected get nativeFmt(): WireFmt { return WireKind.Chat; }
+  protected get nativeFmt(): WireFmt {
+    return WireKind.Chat;
+  }
 }
 class AnthropicCompatibleAdapter extends ProviderAdapter {
-  protected get nativeFmt(): WireFmt { return WireKind.Messages; }
+  protected get nativeFmt(): WireFmt {
+    return WireKind.Messages;
+  }
 }
 ```
 
@@ -133,16 +137,16 @@ build-method overrides.
 A build method receives everything it needs on `ctx` - **never** call
 `new URL()`:
 
-| Field | What it is |
-|---|---|
-| `ctx.model` | Upstream model id for this hop |
-| `ctx.body` | Request body, already converted to the provider's wire format - mutable |
-| `ctx.apiKey` | The key the proxy's key-health logic picked (`null` if none) |
-| `ctx.baseUrl` / `ctx.basePath` | Provider origin / path prefix |
-| `ctx.endpointKind` / `ctx.providerFmt` / `ctx.clientFmt` | The wire kinds in play for this hop |
-| `ctx.resolve()` | Compose a URL: `resolve()` = this hop, `resolve("responses")` = a specific kind's path, `resolve("/x")` = a literal path - all origin+basePath aware |
-| `ctx.url` | The default composed URL (`= resolve()`) - a verbatim provider just returns this |
-| `ctx.headers` | Default headers: client passthrough + auth (from `apiKey` + `authScheme`) + `extraHeaders`, plus anything a request transform already edited via `TransformCtx.headers` (see [transforms-api.md](./transforms-api.md#authoring-a-transform-onrequest--onresponse--onstreamevent)) - this IS that same table, handed to the build phase last |
+| Field                                                    | What it is                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ctx.model`                                              | Upstream model id for this hop                                                                                                                                                                                                                                                                                                              |
+| `ctx.body`                                               | Request body, already converted to the provider's wire format - mutable                                                                                                                                                                                                                                                                     |
+| `ctx.apiKey`                                             | The key the proxy's key-health logic picked (`null` if none)                                                                                                                                                                                                                                                                                |
+| `ctx.baseUrl` / `ctx.basePath`                           | Provider origin / path prefix                                                                                                                                                                                                                                                                                                               |
+| `ctx.endpointKind` / `ctx.providerFmt` / `ctx.clientFmt` | The wire kinds in play for this hop                                                                                                                                                                                                                                                                                                         |
+| `ctx.resolve()`                                          | Compose a URL: `resolve()` = this hop, `resolve("responses")` = a specific kind's path, `resolve("/x")` = a literal path - all origin+basePath aware                                                                                                                                                                                        |
+| `ctx.url`                                                | The default composed URL (`= resolve()`) - a verbatim provider just returns this                                                                                                                                                                                                                                                            |
+| `ctx.headers`                                            | Default headers: client passthrough + auth (from `apiKey` + `authScheme`) + `extraHeaders`, plus anything a request transform already edited via `TransformCtx.headers` (see [transforms-api.md](./transforms-api.md#authoring-a-transform-onrequest--onresponse--onstreamevent)) - this IS that same table, handed to the build phase last |
 
 Return `{ url, headers, body }` - any subset may be rewritten. Common
 overrides:
@@ -164,7 +168,7 @@ on that provider forwards untouched.
 
 ## Transform hooks (edit the BODY as part of the pipeline)
 
-Build methods own URL/headers/final-body assembly *after* conversion. To
+Build methods own URL/headers/final-body assembly _after_ conversion. To
 participate in the conversion pipeline itself - editing the body at a
 specific point relative to the client↔provider format conversion, or
 touching the streaming SSE - override the transform hooks instead:
@@ -186,7 +190,7 @@ too late after `writeHead`; a bespoke stream factory may edit synchronously in
 
 The short version: a request transform tagged `"messages"` runs wherever the
 body is in Messages shape on this hop (pre-conversion for a Messages client,
-post-conversion for a hop converting *into* Messages), so the same transform
+post-conversion for a hop converting _into_ Messages), so the same transform
 fires correctly regardless of which format the client used. Each factory
 also takes an optional 4th `{ label, blurb, group }` argument (see
 [transforms-api.md § Optional display
@@ -211,7 +215,7 @@ hand.
 
 ### `BuildCtx` - phase 2 (see table above)
 
-The only *synchronous* seam (build methods are not async - they only shape
+The only _synchronous_ seam (build methods are not async - they only shape
 a request; the engine sends it). `ctx.apiKey` is the raw credential selected
 by health-aware rotation; `ctx.keyMetadata` is its structured
 `Record<string,string>` metadata (uuid, email, tier, etc.). Request transforms
@@ -223,13 +227,13 @@ Never log either wholesale.
 Reports upstream key-usage windows (token **and** request quotas, over any
 time window) for the dashboard.
 
-| Field | What it is |
-|---|---|
-| `ctx.apiKey` | Raw key for this row - query the provider's usage endpoint with it |
-| `ctx.keyMetadata` | Structured metadata attached to this exact key - use uuid/email/tier when the provider's stats API requires them |
-| `ctx.mask` | Masked form (head…tail) - safe for logs/labels; never surface the raw key |
-| `ctx.enabled` | Whether this key is operator-enabled (still reported when disabled) |
-| `ctx.seed` | Stable per-key seed for deterministic placeholder windows |
+| Field                         | What it is                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `ctx.apiKey`                  | Raw key for this row - query the provider's usage endpoint with it                                                  |
+| `ctx.keyMetadata`             | Structured metadata attached to this exact key - use uuid/email/tier when the provider's stats API requires them    |
+| `ctx.mask`                    | Masked form (head…tail) - safe for logs/labels; never surface the raw key                                           |
+| `ctx.enabled`                 | Whether this key is operator-enabled (still reported when disabled)                                                 |
+| `ctx.seed`                    | Stable per-key seed for deterministic placeholder windows                                                           |
 | `ctx.resolve` / `ctx.request` | URL composer + proxy/TLS-aware HTTP primitive (arbitrary JSON, no wire schema - a usage endpoint has its own shape) |
 
 Two things gate visibility:
@@ -251,9 +255,9 @@ real 5-hour/weekly percentage windows for tried keys. No raw credential or
 unrelated response header is persisted.
 
 - `keyUsage()` itself - default reports `{ windows: [], unavailable: true,
-  message: "..." }`. An adapter with a real endpoint returns real windows; one
+message: "..." }`. An adapter with a real endpoint returns real windows; one
   that only wants demo bars can return `{ windows: dummyUsageWindows(ctx.seed),
-  dummy: true }` (see `dummyUsageWindows` in `base/adapter.ts`).
+dummy: true }` (see `dummyUsageWindows` in `base/adapter.ts`).
 
 ### `ModelsCtx` - `fetchModels(ctx): Promise<UpstreamModel[]>`
 
@@ -377,9 +381,10 @@ async testProvider(ctx: TestProviderCtx): Promise<TestProviderResult> {
 
 `ctx.url` defaults to the provider's model-list endpoint
 (`baseUrl+basePath+modelsPath`, same target `fetchModels()`'s default probes)
+
 - `ctx.resolve()` with no argument returns this; `ctx.resolve(WireKind.Chat)`
-(etc.) resolves a specific wire kind's path instead, same disambiguation as
-`TestModelCtx.resolve`.
+  (etc.) resolves a specific wire kind's path instead, same disambiguation as
+  `TestModelCtx.resolve`.
 
 **Override this only when "reachable" means something other than "the
 model-list endpoint answers"** - a dedicated health endpoint, a signed
@@ -411,12 +416,12 @@ the one it's handed. **Never echo any part of `ctx.apiKey`** in the result
 in `provider-probe.ts`'s `testSavedProvider`, from the same raw key; a
 `testProvider()` override leaking it a second time defeats that guarantee.
 
-| Field | What it is |
-|---|---|
+| Field                     | What it is                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------- |
 | `ctx.url` / `ctx.resolve` | Default target = the model-list endpoint; `resolve(kind)` for a specific wire kind's path instead |
-| `ctx.apiKey` | The raw key this attempt sends - resolved by the caller, not this method |
-| `ctx.headers` | Default headers (auth for `ctx.apiKey` + `extraHeaders`) already applied |
-| `ctx.request` | Proxy/TLS-aware transport - same shape as `TestModelCtx.request` |
+| `ctx.apiKey`              | The raw key this attempt sends - resolved by the caller, not this method                          |
+| `ctx.headers`             | Default headers (auth for `ctx.apiKey` + `extraHeaders`) already applied                          |
+| `ctx.request`             | Proxy/TLS-aware transport - same shape as `TestModelCtx.request`                                  |
 
 `TestProviderResult` mirrors `TestModelResult`'s philosophy (surface the
 REAL outcome) with two provider-level additions: `sample` (a short response
@@ -431,15 +436,15 @@ Everything a bespoke adapter can override, all demonstrated together in
 [`catalog/example-custom.ts`](../src/providers/catalog/example-custom.ts) (a
 teaching example, not registered in `registry.ts`):
 
-| Seam | Method | Sync/async | Purpose |
-|---|---|---|---|
-| route | `routeFor` (or the lighter `preferredEndpoint`) | sync | Which wire kind a hop uses |
-| build | `chatCompletions` / `messages` / `responses` | sync | Final `{url, headers, body}` per format |
-| transform | `requestTransforms` / `responseTransforms` / `streamTransforms` | sync (returns declarative stages) | Edit the body as a pipeline stage |
-| usage | `supportsKeyUsage` (sync) + `keyUsage` (async) | mixed | Dashboard quota windows |
-| models | `fetchModels` | async | Provider's model catalog |
-| test model | `testModel` (or `probeEndpoint` inside it) | async | Per-model reachability probe |
-| test provider | `testProvider` | async | Provider/key-pair connectivity check ("Test connection" + per-key Test) |
+| Seam          | Method                                                          | Sync/async                        | Purpose                                                                 |
+| ------------- | --------------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------- |
+| route         | `routeFor` (or the lighter `preferredEndpoint`)                 | sync                              | Which wire kind a hop uses                                              |
+| build         | `chatCompletions` / `messages` / `responses`                    | sync                              | Final `{url, headers, body}` per format                                 |
+| transform     | `requestTransforms` / `responseTransforms` / `streamTransforms` | sync (returns declarative stages) | Edit the body as a pipeline stage                                       |
+| usage         | `supportsKeyUsage` (sync) + `keyUsage` (async)                  | mixed                             | Dashboard quota windows                                                 |
+| models        | `fetchModels`                                                   | async                             | Provider's model catalog                                                |
+| test model    | `testModel` (or `probeEndpoint` inside it)                      | async                             | Per-model reachability probe                                            |
+| test provider | `testProvider`                                                  | async                             | Provider/key-pair connectivity check ("Test connection" + per-key Test) |
 
 A minimal real provider only ever touches **route** (via `preferredEndpoint`)
 and/or **build**. Usage/models/test-model/test-provider overrides are opt-in
@@ -469,9 +474,19 @@ universally sane connectivity check for anything in this catalog.
        nativeConversion: false,
      },
      fields: [
-       { key: "name", label: "Name", placeholder: "my-provider", required: true },
-       { key: "apiKeys", label: "API key", placeholder: "sk-…", required: true,
-         hint: "One per line - rotated round-robin." },
+       {
+         key: "name",
+         label: "Name",
+         placeholder: "my-provider",
+         required: true,
+       },
+       {
+         key: "apiKeys",
+         label: "API key",
+         placeholder: "sk-…",
+         required: true,
+         hint: "One per line - rotated round-robin.",
+       },
      ],
    });
    ```
@@ -494,26 +509,26 @@ engine only ever calls through the `ProviderAdapter` interface
 
 ### `ProviderTemplate` field reference
 
-| Field | Purpose |
-|---|---|
-| `id` | Stable catalog id - stored on a `Provider` row as `catalogId`, used to resolve the adapter on every request |
-| `label` / `blurb` / `brand` | Wizard display |
-| `defaults` | `ProviderDefaults` - pre-fills the wizard form (baseUrl, endpoints, authScheme, extraHeaders, retry/timeout knobs, …) |
-| `fields` | Which form fields the wizard renders (`name`/`apiKeys`/`baseUrl`), with labels/placeholders/hints |
-| `quirks?` | `ProviderQuirks` - see below |
-| `docsUrl?` | Link shown in the wizard |
+| Field                       | Purpose                                                                                                               |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `id`                        | Stable catalog id - stored on a `Provider` row as `catalogId`, used to resolve the adapter on every request           |
+| `label` / `blurb` / `brand` | Wizard display                                                                                                        |
+| `defaults`                  | `ProviderDefaults` - pre-fills the wizard form (baseUrl, endpoints, authScheme, extraHeaders, retry/timeout knobs, …) |
+| `fields`                    | Which form fields the wizard renders (`name`/`apiKeys`/`baseUrl`), with labels/placeholders/hints                     |
+| `quirks?`                   | `ProviderQuirks` - see below                                                                                          |
+| `docsUrl?`                  | Link shown in the wizard                                                                                              |
 
 `ProviderQuirks` are declarative. Three of the four fields apply **only** at
 provider-create and model-import time (never on the request hot path, so
 they can't regress streaming or conversion - see `src/providers/quirks.ts`);
 `defaultTransforms` is the exception - see its own row:
 
-| Field | Effect |
-|---|---|
-| `requiredHeaders` | Merged into the provider's `extraHeaders` on create (e.g. `anthropic-version`) |
-| `thinking` | Seeds a newly-imported model's thinking capability (`defaultType`, `supportsEffort`) |
-| `defaultCapabilities` | Merged onto `DEFAULT_CAPABILITIES` for imported models |
-| `defaultTransforms` | Family-default per-model transforms (see [transforms-api.md § The default provider transform stack](./transforms-api.md#the-default-provider-transform-stack)). **Not** seeded into a model's stored config at import - applied fresh as an always-on base layer on **every request** (`familyDefaultTransforms` / `dropOverriddenDefaults`, called from `engine.ts`'s `buildChain`), so a change here reaches every existing provider/model immediately, no re-import needed. Runs **before** the adapter's own `requestTransforms()`/etc. stack (see below), so e.g. prompt-caching breakpoints are in place before an adapter-specific stage inspects the body. `ANTHROPIC_DEFAULT_TRANSFORMS` (`catalog/anthropic-compatible.ts`) is the one declared today, shared by `anthropic`/`anthropic-compatible`/`claude-code` via a single array reference. |
+| Field                 | Effect                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `requiredHeaders`     | Merged into the provider's `extraHeaders` on create (e.g. `anthropic-version`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `thinking`            | Seeds a newly-imported model's thinking capability (`defaultType`, `supportsEffort`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `defaultCapabilities` | Merged onto `DEFAULT_CAPABILITIES` for imported models                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `defaultTransforms`   | Family-default per-model transforms (see [transforms-api.md § The default provider transform stack](./transforms-api.md#the-default-provider-transform-stack)). **Not** seeded into a model's stored config at import - applied fresh as an always-on base layer on **every request** (`familyDefaultTransforms` / `dropOverriddenDefaults`, called from `engine.ts`'s `buildChain`), so a change here reaches every existing provider/model immediately, no re-import needed. Runs **before** the adapter's own `requestTransforms()`/etc. stack (see below), so e.g. prompt-caching breakpoints are in place before an adapter-specific stage inspects the body. `ANTHROPIC_DEFAULT_TRANSFORMS` (`catalog/anthropic-compatible.ts`) is the one declared today, shared by `anthropic`/`anthropic-compatible`/`claude-code` via a single array reference. |
 
 ---
 
@@ -547,20 +562,21 @@ selected key, `extraHeaders` - layered on top and winning; a client's own
 apply instead - `authScheme: "passthrough"`, or no key configured - see
 [transforms-api.md](./transforms-api.md#authoring-a-transform-onrequest--onresponse--onstreamevent))
 as `TransformCtx.headers`, and stamp that same key onto `TransformCtx.apiKey`
+
 - both BEFORE running anything, so a request transform sees the exact auth
-header/key a live request would use. Then run the request through
-`route.request` (`applyBodyTransforms`) - a request transform has **full
-control**: it may edit any header in `ctx.headers` (including replacing
-`authorization`/`x-api-key` with a custom scheme, reading the raw key from
-`ctx.apiKey`) and/or set `ctx.urlOverride` - stamp the upstream model, and
-call `route.adapter.buildFor(route.providerFmt, ctx)` with the (possibly
-transform-edited) URL/headers as defaults - the adapter's build method runs
-**last**, so it wins over anything a request transform edited.
+  header/key a live request would use. Then run the request through
+  `route.request` (`applyBodyTransforms`) - a request transform has **full
+  control**: it may edit any header in `ctx.headers` (including replacing
+  `authorization`/`x-api-key` with a custom scheme, reading the raw key from
+  `ctx.apiKey`) and/or set `ctx.urlOverride` - stamp the upstream model, and
+  call `route.adapter.buildFor(route.providerFmt, ctx)` with the (possibly
+  transform-edited) URL/headers as defaults - the adapter's build method runs
+  **last**, so it wins over anything a request transform edited.
 
 This two-phase split - transforms edit the body as a declared pipeline stage,
 the build method assembles the final request afterward - is what lets a
-transform be *provider-agnostic* (it only ever sees a typed wire body) while
-a build method stays *fully bespoke* (it sees the real key, the real URL
+transform be _provider-agnostic_ (it only ever sees a typed wire body) while
+a build method stays _fully bespoke_ (it sees the real key, the real URL
 parts, and returns whatever the upstream actually needs).
 
 Both `buildChain` and `buildRoute` run **fresh on every request** - nothing

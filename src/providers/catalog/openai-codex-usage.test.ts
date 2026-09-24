@@ -16,10 +16,7 @@ import {
   CODEX_ORIGINATOR,
   codexUserAgent,
 } from "../codex";
-import type {
-  AdapterHttpResponse,
-  UsageCtx,
-} from "../base";
+import type { AdapterHttpResponse, UsageCtx } from "../base";
 import { WireKind } from "../../types";
 
 const PROVIDER = {
@@ -195,7 +192,10 @@ test("the request hits /backend-api/wham/usage with Codex identity headers", asy
   // The signal is forwarded.
   assert.equal(seen.signal, signal);
   // No codex path prefix in the URL.
-  assert.equal(seen.url!.includes("/backend-api/codex/backend-api/wham"), false);
+  assert.equal(
+    seen.url!.includes("/backend-api/codex/backend-api/wham"),
+    false,
+  );
 });
 
 test("a disabled key returns unavailable without making a request", async () => {
@@ -406,8 +406,6 @@ test("conflicting case variants of owned headers are replaced by canonical value
 
 test("missing account metadata omits chatgpt-account-id", async () => {
   const seen: { headers?: Record<string, string> } = {};
-  await openaiCodex.keyUsage(
-    usageCtx(okUsage(), { keyMetadata: {} }, seen),
-  );
+  await openaiCodex.keyUsage(usageCtx(okUsage(), { keyMetadata: {} }, seen));
   assert.equal(seen.headers!["chatgpt-account-id"], undefined);
 });

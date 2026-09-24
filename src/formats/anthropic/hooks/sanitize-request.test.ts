@@ -205,9 +205,7 @@ test("sanitize: preserves safeguards (auto-mode classifier field)", () => {
     },
     NEW_MODEL,
   );
-  assert.deepEqual(body.safeguards, [
-    { type: "shell_command", command: "ls" },
-  ]);
+  assert.deepEqual(body.safeguards, [{ type: "shell_command", command: "ls" }]);
 });
 
 test("sanitize: no-op on a clean body (no extra keys)", () => {

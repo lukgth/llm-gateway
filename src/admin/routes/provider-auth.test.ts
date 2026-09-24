@@ -11,7 +11,10 @@ import os from "os";
 import path from "path";
 import type { Request, Response } from "express";
 import { openDatabase, closeDatabase } from "../../db";
-import { getProviderOAuth, listProviderOAuthViews } from "../../repo/provider-oauth";
+import {
+  getProviderOAuth,
+  listProviderOAuthViews,
+} from "../../repo/provider-oauth";
 import { createProvider } from "../../repo/providers";
 import { ProviderAuthCrypto } from "../../services/provider-auth/crypto";
 import { ProviderAuthService } from "../../services/provider-auth/service";
@@ -82,9 +85,7 @@ function makeCtx() {
   registerProviderAuthRoutes(ctx);
 
   const callImport = async (body: unknown): Promise<RecordedResponse> => {
-    const handler = handlers.get(
-      "POST /provider-auth/sessions/import",
-    )![0];
+    const handler = handlers.get("POST /provider-auth/sessions/import")![0];
 
     let captured: RecordedResponse | undefined;
     const res = {
@@ -97,10 +98,7 @@ function makeCtx() {
       },
     } as unknown as Response;
 
-    await handler(
-      ownerBinding({ body } as unknown as Request),
-      res,
-    );
+    await handler(ownerBinding({ body } as unknown as Request), res);
     assert.ok(captured, "handler must respond");
     return captured!;
   };
@@ -136,11 +134,14 @@ test("import route returns a ready token-free view and persists nothing until ad
     const view = result.body as Record<string, unknown>;
     assert.equal(view.state, "ready");
     assert.equal(view.flow, "import");
-    assert.equal((view.catalogId as string), "openai-codex");
+    assert.equal(view.catalogId as string, "openai-codex");
     const serialized = JSON.stringify(view);
     assert.equal(serialized.includes(ACCESS_SECRET), false);
     assert.equal(serialized.includes("route-refresh-secret"), false);
-    assert.deepEqual((view.account as Record<string, unknown>).accountId, "acct-route");
+    assert.deepEqual(
+      (view.account as Record<string, unknown>).accountId,
+      "acct-route",
+    );
   } finally {
     harness.close();
   }
@@ -159,8 +160,12 @@ test("import route rejects malformed input with the standard error shape and no 
       const result = await harness.callImport(body);
       assert.equal(result.status, 400);
       assert.match(
-        ((result.body as Record<string, unknown>).error as Record<string, unknown>)
-          .message as string,
+        (
+          (result.body as Record<string, unknown>).error as Record<
+            string,
+            unknown
+          >
+        ).message as string,
         /.+/,
       );
       assert.equal(JSON.stringify(result.body).includes(ACCESS_SECRET), false);
@@ -215,7 +220,12 @@ test("provider creation consumes the imported session into one encrypted OAuth r
     assert.ok(stored.credential.secrets.refreshToken);
     // Session consumed exactly once.
     assert.throws(() =>
-      harness.providerAuth.adoptForNewProvider(view.id, "owner-route", provider.id, "openai-codex"),
+      harness.providerAuth.adoptForNewProvider(
+        view.id,
+        "owner-route",
+        provider.id,
+        "openai-codex",
+      ),
     );
   } finally {
     harness.close();

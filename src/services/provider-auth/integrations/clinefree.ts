@@ -17,7 +17,8 @@ import type {
 import { ProviderReauthRequiredError } from "../types";
 
 const WORKOS_CLIENT_ID = "client_01K3A541FN8TA3EPPHTD2325AR";
-const WORKOS_DEVICE_URL = "https://api.workos.com/user_management/authorize/device";
+const WORKOS_DEVICE_URL =
+  "https://api.workos.com/user_management/authorize/device";
 const WORKOS_AUTH_URL = "https://api.workos.com/user_management/authenticate";
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_BODY_BYTES = 1_000_000;
@@ -79,7 +80,8 @@ function clineCredential(
   const expiresAt = Date.parse(
     requiredString(data.expiresAt, "expiresAt", "Cline"),
   );
-  if (!Number.isFinite(expiresAt)) throw new Error("Invalid Cline token expiry");
+  if (!Number.isFinite(expiresAt))
+    throw new Error("Invalid Cline token expiry");
   return {
     integrationId: "clinefree",
     secrets: {
@@ -256,7 +258,13 @@ export const clinefreeAuth: ProviderAuthIntegration = {
     const models = await discoverModels();
     const model = models[0]?.id;
     if (!model)
-      return { ok: false, status: null, ms: 0, error: "No free models found", models };
+      return {
+        ok: false,
+        status: null,
+        ms: 0,
+        error: "No free models found",
+        models,
+      };
     const started = Date.now();
     try {
       const res = await fixedFetch(CLINE_CHAT_URL, {

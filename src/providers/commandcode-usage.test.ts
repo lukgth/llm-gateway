@@ -206,10 +206,11 @@ test("a personal key (whoami org: null) queries the same endpoints without orgId
 
 test("without a currentPeriodEnd the reset falls back to start + 1 month", async () => {
   const responses = { ...happy };
-  responses["https://api.commandcode.ai/alpha/billing/subscriptions?orgId=org-123"] =
-    json({
-      data: { currentPeriodStart: "2026-08-01T00:00:00.000Z", planId: "pro" },
-    });
+  responses[
+    "https://api.commandcode.ai/alpha/billing/subscriptions?orgId=org-123"
+  ] = json({
+    data: { currentPeriodStart: "2026-08-01T00:00:00.000Z", planId: "pro" },
+  });
   const res = await adapter().keyUsage(usageCtx(responses));
   assert.equal(res.windows[0].resetsAt, "2026-09-01T00:00:00.000Z");
 });
@@ -217,7 +218,9 @@ test("without a currentPeriodEnd the reset falls back to start + 1 month", async
 test("a subscriptions 500 surfaces HTTP 500", async () => {
   const res = await adapter().keyUsage(
     usageCtx({
-      "https://api.commandcode.ai/alpha/whoami": json({ org: { id: "org-123" } }),
+      "https://api.commandcode.ai/alpha/whoami": json({
+        org: { id: "org-123" },
+      }),
       "https://api.commandcode.ai/alpha/billing/subscriptions?orgId=org-123": {
         status: 500,
         ok: false,
@@ -231,7 +234,9 @@ test("a subscriptions 500 surfaces HTTP 500", async () => {
 test("no credit data and no spend means no balance to draw", async () => {
   const res = await adapter().keyUsage(
     usageCtx({
-      "https://api.commandcode.ai/alpha/whoami": json({ org: { id: "org-123" } }),
+      "https://api.commandcode.ai/alpha/whoami": json({
+        org: { id: "org-123" },
+      }),
       "https://api.commandcode.ai/alpha/billing/subscriptions?orgId=org-123":
         json({}),
       "https://api.commandcode.ai/alpha/billing/credits?orgId=org-123": json({

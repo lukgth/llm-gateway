@@ -205,10 +205,9 @@ class OllamaCloudAdapter extends OpenAICompatibleAdapter {
       activity.period?.type === "last_4_weeks";
     if (hasCost) {
       const cost = Number(activity.cost);
-      result.message =
-        Number.isFinite(cost)
-          ? `Last 4 weeks cost: $${cost.toFixed(2)}`
-          : `Last 4 weeks cost: $${activity.cost}`;
+      result.message = Number.isFinite(cost)
+        ? `Last 4 weeks cost: $${cost.toFixed(2)}`
+        : `Last 4 weeks cost: $${activity.cost}`;
     }
 
     return result;

@@ -168,7 +168,13 @@ if (process.argv[1]?.endsWith("pricing.ts")) {
   // Write fallback: cacheWritePer1m null → billed at cached rate 0.075
   // inputBillable = 1000 - 200 - 100 = 700
   // cost = (700 * 0.15 + 200 * 0.075 + 100 * 0.075 + 500 * 0.6) / 1e6 = 0.0004275
-  const c6 = computeCostUsd({ ...full, cacheWritePer1m: null }, 1000, 500, 200, 100);
+  const c6 = computeCostUsd(
+    { ...full, cacheWritePer1m: null },
+    1000,
+    500,
+    200,
+    100,
+  );
   assert(
     c6 !== null && Math.abs(c6 - 0.0004275) < 1e-9,
     `write fallback: got ${c6}`,
@@ -176,7 +182,13 @@ if (process.argv[1]?.endsWith("pricing.ts")) {
 
   // Distinct write rate: cacheWritePer1m 0.5
   // cost = (700 * 0.15 + 200 * 0.075 + 100 * 0.5 + 500 * 0.6) / 1e6 = 0.00047
-  const c7 = computeCostUsd({ ...full, cacheWritePer1m: 0.5 }, 1000, 500, 200, 100);
+  const c7 = computeCostUsd(
+    { ...full, cacheWritePer1m: 0.5 },
+    1000,
+    500,
+    200,
+    100,
+  );
   assert(
     c7 !== null && Math.abs(c7 - 0.00047) < 1e-9,
     `distinct write rate: got ${c7}`,

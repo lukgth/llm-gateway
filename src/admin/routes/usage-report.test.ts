@@ -37,19 +37,31 @@ test("Claude Code report hides untried and disabled accounts", async () => {
       integrationId: "claude-code",
       secrets: { accessToken: "sk-ant-tried" },
       expiresAt: Date.now() + 60 * 60_000,
-      account: { accountId: "acct-tried", tokenKind: "long_lived", authKind: "api_key" },
+      account: {
+        accountId: "acct-tried",
+        tokenKind: "long_lived",
+        authKind: "api_key",
+      },
     });
     createProviderOAuth(db, crypto, "cc", {
       integrationId: "claude-code",
       secrets: { accessToken: "sk-ant-untried" },
       expiresAt: Date.now() + 60 * 60_000,
-      account: { accountId: "acct-untried", tokenKind: "long_lived", authKind: "api_key" },
+      account: {
+        accountId: "acct-untried",
+        tokenKind: "long_lived",
+        authKind: "api_key",
+      },
     });
     const disabled = createProviderOAuth(db, crypto, "cc", {
       integrationId: "claude-code",
       secrets: { accessToken: "sk-ant-disabled" },
       expiresAt: Date.now() + 60 * 60_000,
-      account: { accountId: "acct-disabled", tokenKind: "long_lived", authKind: "api_key" },
+      account: {
+        accountId: "acct-disabled",
+        tokenKind: "long_lived",
+        authKind: "api_key",
+      },
     });
     setProviderOAuthEnabled(db, "cc", disabled.id, false);
 
@@ -196,7 +208,11 @@ test("openai-codex report lists OAuth accounts and queries real windows", async 
     assert.equal(report.keys.length, 1);
     const key = report.keys[0];
     assert.equal(key.enabled, true);
-    assert.equal(key.keyMask, "e2e@example.com");
+    // The mask is the real resolved access token, truncated the same way a
+    // plain provider key's mask is - unified across every credential kind
+    // (managed OAuth, Codex PAT, plain key) instead of an identity-based
+    // stand-in, and definitely never the internal `oauth:<id>` health key.
+    assert.equal(key.keyMask, "codex-…oken");
     assert.equal(key.windows.length, 2);
     assert.equal(key.windows[0].used, 42.5);
     assert.equal(key.windows[0].label, "Session");

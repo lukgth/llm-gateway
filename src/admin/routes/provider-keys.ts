@@ -72,7 +72,9 @@ export function registerProviderKeyRoutes(ctx: RouteCtx): void {
       getProviderTemplate(p.catalogId)?.supportsOAuth === true
     ) {
       res.status(400).json({
-        error: { message: "OAuth providers do not have an API-key subresource" },
+        error: {
+          message: "OAuth providers do not have an API-key subresource",
+        },
       });
       return null;
     }

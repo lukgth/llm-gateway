@@ -156,7 +156,11 @@ test("Codex testProvider GETs the versioned models endpoint with full identity",
     endpoints: ["responses"],
   } as unknown as Provider;
   const resolve = (target?: string) =>
-    composeUrl(codexProvider.baseUrl, codexProvider.basePath ?? "", target ?? "/models");
+    composeUrl(
+      codexProvider.baseUrl,
+      codexProvider.basePath ?? "",
+      target ?? "/models",
+    );
   const ctx: TestProviderCtx = {
     provider: codexProvider,
     baseUrl: codexProvider.baseUrl,

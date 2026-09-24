@@ -179,7 +179,10 @@ test("debug request snapshot uses the upstream model when no usable key exists",
     const m = createModel(db, {
       alias: "anthropic/test",
       providers: [
-        { providerId: "dead-up", upstreamModel: "muse-spark-1.3-contributor-free" },
+        {
+          providerId: "dead-up",
+          upstreamModel: "muse-spark-1.3-contributor-free",
+        },
       ],
     });
     const model = getModel(db, m.id)!;

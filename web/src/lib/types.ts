@@ -722,7 +722,13 @@ export interface UsageRow {
 }
 
 export interface UsageResponse {
-  today: { total: number; input: number; cached: number; cacheWrite?: number; keys: UsageRow[] };
+  today: {
+    total: number;
+    input: number;
+    cached: number;
+    cacheWrite?: number;
+    keys: UsageRow[];
+  };
   history: Array<{ day: string; tokens: number }>;
 }
 

@@ -397,10 +397,13 @@ function runStage(
     (s) => s.format === clientFmt,
   );
   assert.ok(stage, `no opencode:session stage tagged ${clientFmt}`);
-  return stage.apply({ ...body }, {
-    ...transformCtx({}, clientFmt),
-    ...ctx,
-  }) as Record<string, unknown>;
+  return stage.apply(
+    { ...body },
+    {
+      ...transformCtx({}, clientFmt),
+      ...ctx,
+    },
+  ) as Record<string, unknown>;
 }
 
 function chatToolNames(body: Record<string, unknown>): string[] {
@@ -418,8 +421,7 @@ type CliToolDefinition = {
 // module injects from, so the tests never restate the captured text.
 function cliToolDefinition(name: string): CliToolDefinition {
   const definition = OPENCODE_FREE_TIER_TOOL_DEFINITIONS[name] as
-    | CliToolDefinition
-    | undefined;
+    CliToolDefinition | undefined;
   assert.ok(definition, `no exported CLI tool definition for ${name}`);
   return definition;
 }
@@ -459,7 +461,8 @@ test("anonymous free-tier chat body gains stream + the CLI's required tools", ()
     "bash must carry the CLI's own `command` property",
   );
   assert.ok(
-    Array.isArray(bashSchema.required) && bashSchema.required.includes("command"),
+    Array.isArray(bashSchema.required) &&
+      bashSchema.required.includes("command"),
     "bash must require `command`",
   );
   // The CLI asks for usage on the stream it forces.
@@ -533,10 +536,14 @@ test("caller tools are kept verbatim and only the missing names are merged in", 
 });
 
 test("anonymous free-tier responses body gains flat placeholder tools", () => {
-  const out = runStage({ model: "muse-spark-1.3-contributor-free" }, WireKind.Responses, {
-    apiKey: "public",
-    upstreamModel: "muse-spark-1.3-contributor-free",
-  });
+  const out = runStage(
+    { model: "muse-spark-1.3-contributor-free" },
+    WireKind.Responses,
+    {
+      apiKey: "public",
+      upstreamModel: "muse-spark-1.3-contributor-free",
+    },
+  );
   assert.equal(out.stream, true);
   const tools = out.tools as Record<string, unknown>[];
   assert.deepEqual(
@@ -587,7 +594,10 @@ test("a paid model or a real key is left verbatim", () => {
 
 test("free-tier model detection covers the suffix and the unsuffixed roster", () => {
   assert.equal(isOpencodeFreeTierModel("mimo-v2.5-free"), true);
-  assert.equal(isOpencodeFreeTierModel("muse-spark-1.3-contributor-free"), true);
+  assert.equal(
+    isOpencodeFreeTierModel("muse-spark-1.3-contributor-free"),
+    true,
+  );
   assert.equal(isOpencodeFreeTierModel("big-pickle"), true);
   assert.equal(isOpencodeFreeTierModel("gpt-5.6-luna"), false);
   assert.equal(isOpencodeFreeTierModel(""), false);
@@ -668,7 +678,8 @@ test("placeholder names are operator-overridable, invalid entries dropped", () =
     );
     assert.deepEqual(fn.parameters, { type: "object", properties: {} });
   } finally {
-    if (previous === undefined) delete process.env[OPENCODE_PLACEHOLDER_TOOLS_ENV];
+    if (previous === undefined)
+      delete process.env[OPENCODE_PLACEHOLDER_TOOLS_ENV];
     else process.env[OPENCODE_PLACEHOLDER_TOOLS_ENV] = previous;
   }
 });
@@ -734,7 +745,10 @@ test("anonymous build claims the free-tier identity; a real key is untouched", (
       },
     }),
   );
-  assert.equal(leaked.headers.authorization, `Bearer ${OPENCODE_ANONYMOUS_KEY}`);
+  assert.equal(
+    leaked.headers.authorization,
+    `Bearer ${OPENCODE_ANONYMOUS_KEY}`,
+  );
   assert.equal(leaked.headers["x-custom"], "keep-me");
 
   const real = opencode.chatCompletions(buildCtx({ apiKey: "zen-key" }));
@@ -807,7 +821,9 @@ function clientTool(
 const CLIENT_READ = clientTool(
   "Read",
   "Reads a file from the local filesystem.",
-  { file_path: { type: "string", description: "The absolute path to the file" } },
+  {
+    file_path: { type: "string", description: "The absolute path to the file" },
+  },
   ["file_path"],
 );
 const CLIENT_BASH = clientTool(
@@ -818,7 +834,9 @@ const CLIENT_BASH = clientTool(
 );
 const CLIENT_TOOLS = [CLIENT_BASH, CLIENT_READ];
 
-function clientFunction(tool: Record<string, unknown>): Record<string, unknown> {
+function clientFunction(
+  tool: Record<string, unknown>,
+): Record<string, unknown> {
   return tool.function as Record<string, unknown>;
 }
 
@@ -846,7 +864,11 @@ function toolPlan(
   return ensureOpenCodeFreeTierBody({ model: FREE_MODEL, tools }, kind);
 }
 
-function chatCall(id: string, name: string, args = "{}"): Record<string, unknown> {
+function chatCall(
+  id: string,
+  name: string,
+  args = "{}",
+): Record<string, unknown> {
   return { id, type: "function", function: { name, arguments: args } };
 }
 
@@ -877,7 +899,9 @@ function chatStreamDelta(
   };
 }
 
-function streamedFunction(event: Record<string, unknown>): Record<string, unknown> {
+function streamedFunction(
+  event: Record<string, unknown>,
+): Record<string, unknown> {
   const delta = firstChoice(event).delta as Record<string, unknown>;
   return (delta.tool_calls as Record<string, unknown>[])[0].function as Record<
     string,
@@ -886,7 +910,10 @@ function streamedFunction(event: Record<string, unknown>): Record<string, unknow
 }
 
 test("an injected name aliases the client's own tool instead of the CLI's", () => {
-  const body: Record<string, unknown> = { model: FREE_MODEL, tools: CLIENT_TOOLS };
+  const body: Record<string, unknown> = {
+    model: FREE_MODEL,
+    tools: CLIENT_TOOLS,
+  };
   const plan = ensureOpenCodeFreeTierBody(body, "chat");
 
   // The caller's entries survive untouched and the gate names are appended.
@@ -917,7 +944,10 @@ test("an injected name aliases the client's own tool instead of the CLI's", () =
 });
 
 test("an injected name with no client counterpart keeps the CLI's captured definition", () => {
-  const body: Record<string, unknown> = { model: FREE_MODEL, tools: [CLIENT_READ] };
+  const body: Record<string, unknown> = {
+    model: FREE_MODEL,
+    tools: [CLIENT_READ],
+  };
   const plan = ensureOpenCodeFreeTierBody(body, "chat");
 
   // `read` is an alias; the three names this client never declared are not, so
@@ -954,18 +984,25 @@ test("two case-insensitively equal client tools leave the alias ambiguous, never
   });
   assertInjectedCliDefinition(injectedFunction(body, "read"));
   // Neither of the caller's own entries is touched.
-  assert.deepEqual((body.tools as unknown[]).slice(0, 2), [CLIENT_READ, shouty]);
+  assert.deepEqual((body.tools as unknown[]).slice(0, 2), [
+    CLIENT_READ,
+    shouty,
+  ]);
 });
 
 test("the chat request stage records the injected-tool plan for the response side", () => {
   // The response/stream guards read the plan off the attempt's state bag, which
   // only the request stage (pre-conversion, on the client-shaped body) fills.
   const state: Record<string, unknown> = {};
-  const out = runStage({ model: FREE_MODEL, tools: CLIENT_TOOLS }, WireKind.Chat, {
-    apiKey: "public",
-    upstreamModel: FREE_MODEL,
-    state,
-  });
+  const out = runStage(
+    { model: FREE_MODEL, tools: CLIENT_TOOLS },
+    WireKind.Chat,
+    {
+      apiKey: "public",
+      upstreamModel: FREE_MODEL,
+      state,
+    },
+  );
 
   const plan = opencodeToolPlanFrom(state);
   assert.ok(plan, "the stage must hand the response side what it injected");
@@ -1004,7 +1041,10 @@ test("the buffered chat guard renames an aliased call and drops a foreign one", 
     calls.map((call) => (call.function as Record<string, unknown>).name),
     ["Read", "Bash"],
   );
-  assert.deepEqual(calls.map((call) => call.id), ["a", "b"]);
+  assert.deepEqual(
+    calls.map((call) => call.id),
+    ["a", "b"],
+  );
   assert.equal(
     (calls[0].function as Record<string, unknown>).arguments,
     '{"file_path":"/tmp/x"}',
@@ -1076,7 +1116,9 @@ test("a streamed aliased call is renamed as it is announced, its fragments pass 
   const state: Record<string, unknown> = {};
 
   // The name arrives alone, in the first delta for that call index.
-  const announce = chatStreamDelta({ function: { name: "read", arguments: "" } });
+  const announce = chatStreamDelta({
+    function: { name: "read", arguments: "" },
+  });
   const returned = guardOpenCodeChatStreamEvent(announce, plan, state);
   assert.ok(returned, "an aliased call is deliverable");
   assert.equal(streamedFunction(announce).name, "Read");
@@ -1095,7 +1137,9 @@ test("a streamed foreign call is dropped with every fragment that follows its in
   const plan = toolPlan(CLIENT_TOOLS);
   const state: Record<string, unknown> = {};
 
-  const announce = chatStreamDelta({ function: { name: "glob", arguments: "" } });
+  const announce = chatStreamDelta({
+    function: { name: "glob", arguments: "" },
+  });
   assert.equal(guardOpenCodeChatStreamEvent(announce, plan, state), null);
 
   // The arguments dribble in their own chunks, so the decision has to be
@@ -1196,7 +1240,10 @@ test("the responses stream guard renames an aliased call and drops a foreign one
     output_index: 0,
     item: { type: "function_call", call_id: "c1", name: "read" },
   };
-  assert.equal(guardOpenCodeResponsesStreamEvent(aliased, plan, state), aliased);
+  assert.equal(
+    guardOpenCodeResponsesStreamEvent(aliased, plan, state),
+    aliased,
+  );
   assert.equal((aliased.item as Record<string, unknown>).name, "Read");
   // Its argument deltas already fit the client's schema: forwarded untouched.
   const args = {
@@ -1213,12 +1260,9 @@ test("an empty plan is a pass-through on both sides", () => {
   // OpenCode-shaped client - gets nothing injected, so there is nothing to
   // rename or drop.
   const own = ["bash", "glob", "grep", "read"].map((name) =>
-    clientTool(
-      name,
-      `The client's own ${name}.`,
-      { arg: { type: "string" } },
-      ["arg"],
-    ),
+    clientTool(name, `The client's own ${name}.`, { arg: { type: "string" } }, [
+      "arg",
+    ]),
   );
   const plan = toolPlan(own);
   assert.deepEqual(plan, { injected: [], aliases: {}, foreign: {} });

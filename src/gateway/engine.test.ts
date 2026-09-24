@@ -29,7 +29,11 @@ import type { ProviderCredentialService } from "../services/provider-credentials
 import { ProviderCredentialService as RealProviderCredentialService } from "../services/provider-credentials";
 import { ProviderAuthCrypto } from "../services/provider-auth/crypto";
 import { createProviderOAuth } from "../repo/provider-oauth";
-import { CODEX_CLIENT_VERSION, CODEX_ORIGINATOR, codexUserAgent } from "../providers/codex";
+import {
+  CODEX_CLIENT_VERSION,
+  CODEX_ORIGINATOR,
+  codexUserAgent,
+} from "../providers/codex";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -306,9 +310,7 @@ test("disconnected managed providers skip web-tool turns", async () => {
       db,
       createModel(db, {
         alias: "test-model",
-        providers: [
-          { providerId: "managed", upstreamModel: "managed-model" },
-        ],
+        providers: [{ providerId: "managed", upstreamModel: "managed-model" }],
       }).id,
     )!;
     const providerCredentials = {
@@ -1100,9 +1102,7 @@ function codexEngineForServer(
     db,
     createModel(db, {
       alias: "codex-model",
-      providers: [
-        { providerId: "codex-up", upstreamModel: "gpt-5-codex" },
-      ],
+      providers: [{ providerId: "codex-up", upstreamModel: "gpt-5-codex" }],
     }).id,
   )!;
   const providerCredentials = {
@@ -1235,7 +1235,9 @@ test("Claude Code streaming responses expose only bare SSE headers", async () =>
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as AddressInfo).port;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-cc-stream-headers-"));
+  const dir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "engine-cc-stream-headers-"),
+  );
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
@@ -1246,7 +1248,9 @@ test("Claude Code streaming responses expose only bare SSE headers", async () =>
       authScheme: "bearer",
       retryAttempts: 1,
     });
-    const { crypto } = createClaudeCodeOAuthKeys(db, dir, "cc-stream-headers", ["key"]);
+    const { crypto } = createClaudeCodeOAuthKeys(db, dir, "cc-stream-headers", [
+      "key",
+    ]);
     const created = createModel(db, {
       alias: "claude-stream",
       type: "anthropic",
@@ -1715,7 +1719,9 @@ test("buffered Chat client preserves partial Responses SSE content and reports l
         },
       ];
       res.writeHead(200, { "content-type": "text/event-stream" });
-      res.end(frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""));
+      res.end(
+        frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""),
+      );
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -1756,7 +1762,10 @@ test("buffered Chat client preserves partial Responses SSE content and reports l
 
     assert.equal(result.state.statusCode, 200);
     const body = result.state.body as {
-      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+      choices?: Array<{
+        message?: { content?: string };
+        finish_reason?: string;
+      }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
     assert.equal(body.choices?.[0]?.message?.content, "delta-only chat text");
@@ -1799,7 +1808,9 @@ test("buffered Responses SSE keeps populated terminal output exact", async () =>
         },
       ];
       res.writeHead(200, { "content-type": "text/event-stream" });
-      res.end(frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""));
+      res.end(
+        frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""),
+      );
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -2230,10 +2241,12 @@ test("Claude Code rotates immediately past a key without long-context usage cred
       retryAttempts: 1,
       retryIntervalMs: 5_000,
     });
-    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc-credits", [
-      "key-1",
-      "key-2",
-    ]);
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(
+      db,
+      dir,
+      "cc-credits",
+      ["key-1", "key-2"],
+    );
     const created = createModel(db, {
       alias: "claude-sonnet",
       type: "anthropic",
@@ -2342,10 +2355,12 @@ test("Claude Code rotates past a key without premium-model (Fable) credits, no p
       retryAttempts: 1,
       retryIntervalMs: 5_000,
     });
-    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc-modelcred", [
-      "key-1",
-      "key-2",
-    ]);
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(
+      db,
+      dir,
+      "cc-modelcred",
+      ["key-1", "key-2"],
+    );
     const created = createModel(db, {
       alias: "fable",
       type: "anthropic",
@@ -2450,10 +2465,12 @@ test("Claude Code fails a fully premium-credit-less provider over to the next ho
       retryAttempts: 1,
       retryIntervalMs: 1,
     });
-    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc-prem", [
-      "key-1",
-      "key-2",
-    ]);
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(
+      db,
+      dir,
+      "cc-prem",
+      ["key-1", "key-2"],
+    );
     createProvider(db, {
       id: "fb",
       name: "Anthropic",
@@ -2548,10 +2565,12 @@ test("Claude Code bounds all-keys-without-credits retries without logging or coo
       retryAttempts: 1,
       retryIntervalMs: 5_000,
     });
-    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc-no-credits", [
-      "key-1",
-      "key-2",
-    ]);
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(
+      db,
+      dir,
+      "cc-no-credits",
+      ["key-1", "key-2"],
+    );
     const created = createModel(db, {
       alias: "claude-sonnet",
       type: "anthropic",
@@ -2806,11 +2825,7 @@ test("all-keys-credit-less fails over to the next provider with no key issues", 
     assert.ok(Date.now() - started < 1_000, "must not wait retryIntervalMs");
     // Provider 1's keys stay fully usable - the credits 429 is not a key fault.
     assert.equal(
-      new KeyHealthStore(db).usableCount(
-        "cc",
-        healthKeys,
-        "claude-sonnet-4-6",
-      ),
+      new KeyHealthStore(db).usableCount("cc", healthKeys, "claude-sonnet-4-6"),
       2,
     );
   } finally {
@@ -3086,9 +3101,12 @@ test("Claude Code 7d_oi exhaustion cools a key for Fable without blocking Opus",
       retryAttempts: 1,
       retryIntervalMs: 1,
     });
-    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc-scope", [
-      "key-1",
-    ]);
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(
+      db,
+      dir,
+      "cc-scope",
+      ["key-1"],
+    );
     const fable = createModel(db, {
       alias: "fable-client",
       type: "anthropic",
@@ -3196,9 +3214,12 @@ test("base + Fable both exhausted: base cools on the 5h clock, Fable on 7d_oi", 
       retryAttempts: 1,
       retryIntervalMs: 1,
     });
-    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc-dual", [
-      "key-1",
-    ]);
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(
+      db,
+      dir,
+      "cc-dual",
+      ["key-1"],
+    );
     const opus = createModel(db, {
       alias: "opus-client",
       type: "anthropic",
@@ -3736,7 +3757,9 @@ test("headerless Codex Responses SSE converts to Chat stream and captures usage/
   try {
     const { engine, model } = codexEngineForServer(db, port);
     const { res, state } = streamRes();
-    const finished = new Promise<void>((resolve) => res.once("finish", resolve));
+    const finished = new Promise<void>((resolve) =>
+      res.once("finish", resolve),
+    );
     await engine.forward(
       { method: "POST", headers: {} } as never,
       res as never,

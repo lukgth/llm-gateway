@@ -34,7 +34,9 @@ function loadOrCreateKey(db: DB, filePath: string): Buffer {
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "ENOENT")
-      throw new Error(`Invalid provider OAuth key file: ${(error as Error).message}`);
+      throw new Error(
+        `Invalid provider OAuth key file: ${(error as Error).message}`,
+      );
     if (hasEncryptedRows(db))
       throw new Error(
         "Provider OAuth key file is missing while encrypted credentials exist",
@@ -95,16 +97,15 @@ export class ProviderAuthCrypto {
   private readonly key: Buffer;
 
   constructor(db: DB, dataDir: string) {
-    this.key = loadOrCreateKey(
-      db,
-      path.join(dataDir, "provider-oauth.key"),
-    );
+    this.key = loadOrCreateKey(db, path.join(dataDir, "provider-oauth.key"));
   }
 
   encrypt(recordId: string, integrationId: string, value: unknown): string {
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv("aes-256-gcm", this.key, iv);
-    cipher.setAAD(Buffer.from(`provider-oauth:v1:${recordId}:${integrationId}`));
+    cipher.setAAD(
+      Buffer.from(`provider-oauth:v1:${recordId}:${integrationId}`),
+    );
     const data = Buffer.concat([
       cipher.update(JSON.stringify(value), "utf8"),
       cipher.final(),
@@ -120,13 +121,16 @@ export class ProviderAuthCrypto {
 
   decrypt<T>(recordId: string, integrationId: string, raw: string): T {
     const envelope = JSON.parse(raw) as Envelope;
-    if (envelope.v !== 1) throw new Error("Unsupported provider OAuth envelope");
+    if (envelope.v !== 1)
+      throw new Error("Unsupported provider OAuth envelope");
     const decipher = crypto.createDecipheriv(
       "aes-256-gcm",
       this.key,
       Buffer.from(envelope.iv, "base64"),
     );
-    decipher.setAAD(Buffer.from(`provider-oauth:v1:${recordId}:${integrationId}`));
+    decipher.setAAD(
+      Buffer.from(`provider-oauth:v1:${recordId}:${integrationId}`),
+    );
     decipher.setAuthTag(Buffer.from(envelope.tag, "base64"));
     const data = Buffer.concat([
       decipher.update(Buffer.from(envelope.data, "base64")),

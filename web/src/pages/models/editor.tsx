@@ -263,7 +263,9 @@ export default function ModelEditor() {
       setPromptPer1m(String(def.promptPer1m));
       setCompletionPer1m(String(def.completionPer1m));
       setCachedPer1m(def.cachedPer1m != null ? String(def.cachedPer1m) : "");
-      setCacheWritePer1m(def.cacheWritePer1m != null ? String(def.cacheWritePer1m) : "");
+      setCacheWritePer1m(
+        def.cacheWritePer1m != null ? String(def.cacheWritePer1m) : "",
+      );
       toast.success(`Filled from ${def.label}'s published rates`);
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) {

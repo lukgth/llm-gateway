@@ -34,7 +34,9 @@ const ID_TOKEN = makeJwt({
   "https://api.openai.com/auth": { chatgpt_account_id: "acct-id-token" },
 });
 
-function accessClaims(extra: Record<string, unknown> = {}): Record<string, unknown> {
+function accessClaims(
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     email: "access@example.com",
     exp: FUTURE_EXP,
@@ -55,9 +57,10 @@ const AUTH_JSON = JSON.stringify({
   last_refresh: "2026-01-01T00:00:00Z",
 });
 
-function fakeFetch(
-  handler: (url: string, init: RequestInit) => Response,
-): { fetchImpl: typeof fetch; calls: Array<{ url: string; init: RequestInit }> } {
+function fakeFetch(handler: (url: string, init: RequestInit) => Response): {
+  fetchImpl: typeof fetch;
+  calls: Array<{ url: string; init: RequestInit }>;
+} {
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const fn = (async (url: string | URL, init: RequestInit = {}) => {
     const urlStr = String(url);
@@ -86,7 +89,10 @@ function assertNoSecrets(error: unknown, ...secrets: string[]): void {
 
 test("codex import parses nested auth.json and resolves claims in order", async () => {
   const codex = createCodexAuth();
-  const credential = await codex.import!({ kind: "auth_json", value: AUTH_JSON });
+  const credential = await codex.import!({
+    kind: "auth_json",
+    value: AUTH_JSON,
+  });
   assert.equal(credential.integrationId, "codex");
   assert.equal(credential.account.accountId, "acct-id-token"); // id_token wins
   assert.equal(credential.account.email, "user@example.com");
@@ -269,7 +275,10 @@ test("codex import rejects malformed, tokenless, expired, and identity-less inpu
     );
   }
   try {
-    await codex.import!({ kind: "auth_json", value: AUTH_JSON.replace("}", "{") });
+    await codex.import!({
+      kind: "auth_json",
+      value: AUTH_JSON.replace("}", "{"),
+    });
   } catch (error) {
     assertNoSecrets(error, ACCESS_SECRET, REFRESH_SECRET);
   }
@@ -318,7 +327,10 @@ test("codex import accepts a BARE personal access token (not wrapped in JSON), s
     kind: "auth_json",
     value: "bare-personal-access-token-value",
   });
-  assert.equal(credential.secrets.accessToken, "bare-personal-access-token-value");
+  assert.equal(
+    credential.secrets.accessToken,
+    "bare-personal-access-token-value",
+  );
   assert.equal(credential.account.accountId, "acct-bare-pat");
   assert.equal(credential.account.tokenKind, "long_lived");
   assert.equal(credential.expiresAt, NEVER_EXPIRES);
@@ -326,7 +338,9 @@ test("codex import accepts a BARE personal access token (not wrapped in JSON), s
 });
 
 test("codex import rejects a bare token the whoami endpoint refuses", async () => {
-  const { fetchImpl } = fakeFetch(() => jsonRes(401, { detail: "invalid token" }));
+  const { fetchImpl } = fakeFetch(() =>
+    jsonRes(401, { detail: "invalid token" }),
+  );
   const codex = createCodexAuth(fetchImpl);
   await assert.rejects(
     () => codex.import!({ kind: "auth_json", value: "bare-dead-token" }),
@@ -353,7 +367,9 @@ test("codex import accepts the camelCase personalAccessToken alias", async () =>
 });
 
 test("codex import rejects a PAT the whoami endpoint refuses, without leaking the token", async () => {
-  const { fetchImpl } = fakeFetch(() => jsonRes(401, { detail: "invalid token" }));
+  const { fetchImpl } = fakeFetch(() =>
+    jsonRes(401, { detail: "invalid token" }),
+  );
   const codex = createCodexAuth(fetchImpl);
   try {
     await codex.import!({
@@ -420,7 +436,10 @@ test("codex refresh posts the exact OAuth body and preserves unrotated tokens", 
     (calls[0].init.headers as Record<string, string>)["content-type"],
     "application/json",
   );
-  const body = JSON.parse(String(calls[0].init.body)) as Record<string, unknown>;
+  const body = JSON.parse(String(calls[0].init.body)) as Record<
+    string,
+    unknown
+  >;
   assert.deepEqual(body, {
     grant_type: "refresh_token",
     refresh_token: REFRESH_SECRET,
@@ -432,7 +451,9 @@ test("codex refresh posts the exact OAuth body and preserves unrotated tokens", 
 });
 
 test("codex refresh failure maps to a reconnection error without secrets", async () => {
-  const { fetchImpl } = fakeFetch(() => jsonRes(400, { error: "invalid_grant" }));
+  const { fetchImpl } = fakeFetch(() =>
+    jsonRes(400, { error: "invalid_grant" }),
+  );
   const codex = createCodexAuth(fetchImpl);
   const original: ProviderAuthCredential = await codex.import!({
     kind: "auth_json",
@@ -455,15 +476,26 @@ test("codex refresh failure maps to a reconnection error without secrets", async
 
 test("codex runtimeCredential is the bare access token", async () => {
   const codex = createCodexAuth();
-  const credential = await codex.import!({ kind: "auth_json", value: AUTH_JSON });
-  assert.equal(codex.runtimeCredential(credential), credential.secrets.accessToken);
+  const credential = await codex.import!({
+    kind: "auth_json",
+    value: AUTH_JSON,
+  });
+  assert.equal(
+    codex.runtimeCredential(credential),
+    credential.secrets.accessToken,
+  );
 });
 
 test("codex test probes models with Codex identity headers and filters public entries", async () => {
   const { fetchImpl, calls } = fakeFetch(() =>
     jsonRes(200, {
       models: [
-        { slug: "gpt-5-codex", display_name: "GPT-5 Codex", visibility: "list", supported_in_api: true },
+        {
+          slug: "gpt-5-codex",
+          display_name: "GPT-5 Codex",
+          visibility: "list",
+          supported_in_api: true,
+        },
         { slug: "hidden-model", display_name: "Hidden", visibility: "hide" },
         { slug: "api-off", display_name: "Off", supported_in_api: false },
         { slug: "plain", display_name: "Plain" },
@@ -473,16 +505,25 @@ test("codex test probes models with Codex identity headers and filters public en
     }),
   );
   const codex = createCodexAuth(fetchImpl);
-  const credential = await codex.import!({ kind: "auth_json", value: AUTH_JSON });
+  const credential = await codex.import!({
+    kind: "auth_json",
+    value: AUTH_JSON,
+  });
   const probe = await codex.test(credential);
   assert.equal(probe.ok, true);
-  assert.deepEqual(probe.models.map((m) => m.id), ["gpt-5-codex", "plain"]);
+  assert.deepEqual(
+    probe.models.map((m) => m.id),
+    ["gpt-5-codex", "plain"],
+  );
   assert.equal(calls.length, 1);
   const headers = calls[0].init.headers as Record<string, string>;
   assert.equal(headers.originator, CODEX_ORIGINATOR);
   assert.equal(headers.version, CODEX_CLIENT_VERSION);
   assert.equal(headers["user-agent"], codexUserAgent());
-  assert.equal(headers.authorization, `Bearer ${credential.secrets.accessToken}`);
+  assert.equal(
+    headers.authorization,
+    `Bearer ${credential.secrets.accessToken}`,
+  );
   assert.equal(headers["chatgpt-account-id"], credential.account.accountId);
   const url = new URL(calls[0].url);
   assert.equal(url.protocol, "https:");
@@ -501,9 +542,14 @@ test("codex test fails closed on network errors, non-2xx, malformed, and empty m
   const malformed = createCodexAuth(
     fakeFetch(() => jsonRes(200, { models: "nope" })).fetchImpl,
   );
-  const empty = createCodexAuth(fakeFetch(() => jsonRes(200, { models: [] })).fetchImpl);
+  const empty = createCodexAuth(
+    fakeFetch(() => jsonRes(200, { models: [] })).fetchImpl,
+  );
   const codexRef = createCodexAuth();
-  const credential = await codexRef.import!({ kind: "auth_json", value: AUTH_JSON });
+  const credential = await codexRef.import!({
+    kind: "auth_json",
+    value: AUTH_JSON,
+  });
 
   for (const integration of [networkFail, httpFail, malformed, empty]) {
     const probe = await integration.test(credential);

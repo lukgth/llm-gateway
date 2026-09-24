@@ -40,7 +40,8 @@ export function collectChatSse(text: string): Record<string, unknown> {
     if (id === undefined && typeof chunk.id === "string") id = chunk.id;
     if (created === undefined && typeof chunk.created === "number")
       created = chunk.created;
-    if (model === undefined && typeof chunk.model === "string") model = chunk.model;
+    if (model === undefined && typeof chunk.model === "string")
+      model = chunk.model;
     if ("usage" in chunk && chunk.usage != null) {
       usage = chunk.usage;
       hasUsage = true;
@@ -49,7 +50,8 @@ export function collectChatSse(text: string): Record<string, unknown> {
     const choices = chunk.choices;
     if (!Array.isArray(choices)) continue;
     const choice = choices[0];
-    if (!choice || typeof choice !== "object" || Array.isArray(choice)) continue;
+    if (!choice || typeof choice !== "object" || Array.isArray(choice))
+      continue;
     const c = choice as Record<string, unknown>;
     if ("finish_reason" in c && c.finish_reason != null) {
       finishReason = c.finish_reason;
@@ -68,16 +70,19 @@ export function collectChatSse(text: string): Record<string, unknown> {
     }
     if (!Array.isArray(d.tool_calls)) continue;
     for (const rawCall of d.tool_calls) {
-      if (!rawCall || typeof rawCall !== "object" || Array.isArray(rawCall)) continue;
+      if (!rawCall || typeof rawCall !== "object" || Array.isArray(rawCall))
+        continue;
       const call = rawCall as Record<string, unknown>;
-      const index = typeof call.index === "number" ? call.index : toolOrder.length;
+      const index =
+        typeof call.index === "number" ? call.index : toolOrder.length;
       let target = toolCalls[index];
       if (!target) {
         target = { index, type: "function", function: {} };
         toolCalls[index] = target;
         toolOrder.push(index);
       }
-      if (typeof call.id === "string" && call.id && !target.id) target.id = call.id;
+      if (typeof call.id === "string" && call.id && !target.id)
+        target.id = call.id;
       if (typeof call.type === "string" && call.type) target.type = call.type;
       const fn = call.function;
       if (!fn || typeof fn !== "object" || Array.isArray(fn)) continue;
@@ -93,11 +98,15 @@ export function collectChatSse(text: string): Record<string, unknown> {
   const message: Record<string, unknown> = {};
   if (hasContent) message.content = content;
   if (hasReasoning) message.reasoning_content = reasoningContent;
-  if (toolOrder.length) message.tool_calls = toolOrder.map((index) => toolCalls[index]);
+  if (toolOrder.length)
+    message.tool_calls = toolOrder.map((index) => toolCalls[index]);
 
   const choice: Record<string, unknown> = { index: 0, message };
   if (hasFinishReason) choice.finish_reason = finishReason;
-  const response: Record<string, unknown> = { object: "chat.completion", choices: [choice] };
+  const response: Record<string, unknown> = {
+    object: "chat.completion",
+    choices: [choice],
+  };
   if (id !== undefined) response.id = id;
   if (created !== undefined) response.created = created;
   if (model !== undefined) response.model = model;

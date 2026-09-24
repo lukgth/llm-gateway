@@ -19,7 +19,10 @@ test("provider auth encryption round-trips and authenticates record context", ()
     });
     assert.throws(() => crypto.decrypt("two", "cline-free", a));
     assert.equal(a.includes("secret"), false);
-    assert.equal(fs.statSync(path.join(dir, "provider-oauth.key")).mode & 0o077, 0);
+    assert.equal(
+      fs.statSync(path.join(dir, "provider-oauth.key")).mode & 0o077,
+      0,
+    );
   } finally {
     closeDatabase(db);
     fs.rmSync(dir, { recursive: true, force: true });

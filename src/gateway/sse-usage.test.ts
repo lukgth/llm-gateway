@@ -146,7 +146,10 @@ test("streaming and buffered usage normalize provider fields identically", () =>
       usage: {
         input_tokens: 900,
         output_tokens: 8,
-        input_tokens_details: { cached_tokens: 600, cache_creation_tokens: 200 },
+        input_tokens_details: {
+          cached_tokens: 600,
+          cache_creation_tokens: 200,
+        },
       },
       expected: { input: 900, output: 8, cached: 600, cacheWrite: 200 },
     },
@@ -198,9 +201,16 @@ test("partial and decreasing usage events preserve cumulative normalized totals"
       },
     }),
     sseLine({ type: "message_delta", usage: { output_tokens: 8 } }),
-    sseLine({ usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 1 } }),
+    sseLine({
+      usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 1 },
+    }),
   ]);
-  assert.deepEqual(o.usage(0), { input: 35, output: 8, cached: 20, cacheWrite: 5 });
+  assert.deepEqual(o.usage(0), {
+    input: 35,
+    output: 8,
+    cached: 20,
+    cacheWrite: 5,
+  });
 });
 
 // --- cached tokens -------------------------------------------------------------
@@ -418,14 +428,42 @@ test("responseSummary() captures Anthropic tool_use + thinking text via content_
 
 test("Responses added/delta/done/completed captures one call without repeated arguments", () => {
   const o = new SseUsageObserver({ capture: true });
-  const item = { type: "function_call", id: "fc_1", call_id: "call_1", name: "search", arguments: "{}" };
+  const item = {
+    type: "function_call",
+    id: "fc_1",
+    call_id: "call_1",
+    name: "search",
+    arguments: "{}",
+  };
   feed(o, [
-    sseLine({ type: "response.output_item.added", output_index: 0, item: { ...item, arguments: "" } }),
-    sseLine({ type: "response.function_call_arguments.delta", output_index: 0, item_id: item.id, delta: "{" }),
-    sseLine({ type: "response.function_call_arguments.delta", output_index: 0, item_id: item.id, delta: "}" }),
-    sseLine({ type: "response.function_call_arguments.done", output_index: 0, item_id: item.id, arguments: "{}" }),
+    sseLine({
+      type: "response.output_item.added",
+      output_index: 0,
+      item: { ...item, arguments: "" },
+    }),
+    sseLine({
+      type: "response.function_call_arguments.delta",
+      output_index: 0,
+      item_id: item.id,
+      delta: "{",
+    }),
+    sseLine({
+      type: "response.function_call_arguments.delta",
+      output_index: 0,
+      item_id: item.id,
+      delta: "}",
+    }),
+    sseLine({
+      type: "response.function_call_arguments.done",
+      output_index: 0,
+      item_id: item.id,
+      arguments: "{}",
+    }),
     sseLine({ type: "response.output_item.done", output_index: 0, item }),
-    sseLine({ type: "response.completed", response: { status: "completed", output: [item] } }),
+    sseLine({
+      type: "response.completed",
+      response: { status: "completed", output: [item] },
+    }),
   ]);
   assert.deepEqual(o.responseSummary(), {
     toolCalls: [{ name: "search", arguments: "{}" }],
@@ -436,17 +474,47 @@ test("Responses added/delta/done/completed captures one call without repeated ar
 test("Responses completed output positions include reasoning and messages before tools", () => {
   const o = new SseUsageObserver({ capture: true });
   const first = { type: "function_call", name: "first", arguments: "{}" };
-  const second = { type: "function_call", name: "second", arguments: '{"x":1}' };
+  const second = {
+    type: "function_call",
+    name: "second",
+    arguments: '{"x":1}',
+  };
   feed(o, [
-    sseLine({ type: "response.output_item.added", output_index: 1, item: first }),
-    sseLine({ type: "response.output_item.added", output_index: 3, item: second }),
-    sseLine({ type: "response.function_call_arguments.delta", output_index: 1, delta: first.arguments }),
-    sseLine({ type: "response.function_call_arguments.delta", output_index: 3, delta: second.arguments }),
-    sseLine({ type: "response.output_item.done", output_index: 1, item: first }),
-    sseLine({ type: "response.output_item.done", output_index: 3, item: second }),
+    sseLine({
+      type: "response.output_item.added",
+      output_index: 1,
+      item: first,
+    }),
+    sseLine({
+      type: "response.output_item.added",
+      output_index: 3,
+      item: second,
+    }),
+    sseLine({
+      type: "response.function_call_arguments.delta",
+      output_index: 1,
+      delta: first.arguments,
+    }),
+    sseLine({
+      type: "response.function_call_arguments.delta",
+      output_index: 3,
+      delta: second.arguments,
+    }),
+    sseLine({
+      type: "response.output_item.done",
+      output_index: 1,
+      item: first,
+    }),
+    sseLine({
+      type: "response.output_item.done",
+      output_index: 3,
+      item: second,
+    }),
     sseLine({
       type: "response.completed",
-      response: { output: [{ type: "reasoning" }, first, { type: "message" }, second] },
+      response: {
+        output: [{ type: "reasoning" }, first, { type: "message" }, second],
+      },
     }),
   ]);
   assert.deepEqual(o.responseSummary()?.toolCalls, [
@@ -457,16 +525,47 @@ test("Responses completed output positions include reasoning and messages before
 
 test("Responses stable identities correlate indexless deltas and compact completed output", () => {
   const o = new SseUsageObserver({ capture: true });
-  const first = { type: "function_call", id: "fc_1", call_id: "call_1", name: "first", arguments: "{}" };
-  const second = { type: "function_call", id: "fc_2", call_id: "call_2", name: "second", arguments: '{"x":1}' };
+  const first = {
+    type: "function_call",
+    id: "fc_1",
+    call_id: "call_1",
+    name: "first",
+    arguments: "{}",
+  };
+  const second = {
+    type: "function_call",
+    id: "fc_2",
+    call_id: "call_2",
+    name: "second",
+    arguments: '{"x":1}',
+  };
   feed(o, [
-    sseLine({ type: "response.output_item.added", output_index: 1, item: first }),
-    sseLine({ type: "response.output_item.added", output_index: 2, item: second }),
-    sseLine({ type: "response.function_call_arguments.delta", item_id: first.id, delta: first.arguments }),
-    sseLine({ type: "response.function_call_arguments.done", call_id: second.call_id, arguments: second.arguments }),
+    sseLine({
+      type: "response.output_item.added",
+      output_index: 1,
+      item: first,
+    }),
+    sseLine({
+      type: "response.output_item.added",
+      output_index: 2,
+      item: second,
+    }),
+    sseLine({
+      type: "response.function_call_arguments.delta",
+      item_id: first.id,
+      delta: first.arguments,
+    }),
+    sseLine({
+      type: "response.function_call_arguments.done",
+      call_id: second.call_id,
+      arguments: second.arguments,
+    }),
     sseLine({ type: "response.output_item.done", item: first }),
     sseLine({ type: "response.output_item.done", item: second }),
-    sseLine({ type: "response.completed", response: { output: [second, first] } }),
+    sseLine({
+      type: "response.completed",
+      response: { output: [second, first] },
+    }),
   ]);
   assert.deepEqual(o.responseSummary()?.toolCalls, [
     { name: "first", arguments: "{}" },
@@ -476,11 +575,24 @@ test("Responses stable identities correlate indexless deltas and compact complet
 
 test("Responses done-only snapshots retain arguments without added or delta events", () => {
   const o = new SseUsageObserver({ capture: true });
-  const first = { type: "function_call", call_id: "call_1", name: "first", arguments: "{}" };
-  const second = { type: "function_call", call_id: "call_2", name: "second", arguments: '{"x":1}' };
+  const first = {
+    type: "function_call",
+    call_id: "call_1",
+    name: "first",
+    arguments: "{}",
+  };
+  const second = {
+    type: "function_call",
+    call_id: "call_2",
+    name: "second",
+    arguments: '{"x":1}',
+  };
   feed(o, [
     sseLine({ type: "response.output_item.done", item: first }),
-    sseLine({ type: "response.completed", response: { output: [{ type: "reasoning" }, first, second] } }),
+    sseLine({
+      type: "response.completed",
+      response: { output: [{ type: "reasoning" }, first, second] },
+    }),
   ]);
   assert.deepEqual(o.responseSummary(), {
     toolCalls: [
@@ -496,12 +608,24 @@ test("Responses capture caps oversized deltas and does not append terminal snaps
   const prefix = "a".repeat(3_999);
   feed(o, [
     sseLine({ type: "response.output_text.delta", delta: "x".repeat(4_100) }),
-    sseLine({ type: "response.function_call_arguments.delta", output_index: 0, delta: prefix }),
-    sseLine({ type: "response.function_call_arguments.delta", output_index: 0, delta: "bcdef" }),
+    sseLine({
+      type: "response.function_call_arguments.delta",
+      output_index: 0,
+      delta: prefix,
+    }),
+    sseLine({
+      type: "response.function_call_arguments.delta",
+      output_index: 0,
+      delta: "bcdef",
+    }),
     sseLine({
       type: "response.output_item.done",
       output_index: 0,
-      item: { type: "function_call", name: "large", arguments: prefix + "bcdef" },
+      item: {
+        type: "function_call",
+        name: "large",
+        arguments: prefix + "bcdef",
+      },
     }),
   ]);
   assert.deepEqual(o.responseSummary(), {

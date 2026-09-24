@@ -1,15 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gzipSync, brotliCompressSync, deflateSync, zstdCompressSync } from "zlib";
+import {
+  gzipSync,
+  brotliCompressSync,
+  deflateSync,
+  zstdCompressSync,
+} from "zlib";
 import type { IncomingMessage } from "http";
 import { readErrorBody } from "./utils";
 
 // Minimal async-iterable stand-in for IncomingMessage - readErrorBody only
 // consumes `headers` and iterates the body as chunks.
-function fakeUpstream(
-  body: Buffer,
-  contentEncoding?: string,
-): IncomingMessage {
+function fakeUpstream(body: Buffer, contentEncoding?: string): IncomingMessage {
   return {
     headers: contentEncoding ? { "content-encoding": contentEncoding } : {},
     [Symbol.asyncIterator]: async function* () {

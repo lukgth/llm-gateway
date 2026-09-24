@@ -124,6 +124,19 @@ export function parseUnifiedRateLimitHeaders(
 // Distinct from (and simpler than) the "unified" scheme above, which is
 // specific to Claude Code's subscription billing - a plain pay-as-you-go key
 // never sends anthropic-ratelimit-unified-* at all, only these.
+//
+// IMPORTANT: this is wired ONLY into the claude-code catalog adapter
+// (catalog/claude-code.ts), for the legacy-migrated plain-API-key case (a
+// pre-existing Claude Code credential imported before OAuth detection
+// existed, or a bare sk-ant-api03-... paste) - NOT into the generic
+// AnthropicCompatibleAdapter base class. The official "anthropic" catalog
+// and any Anthropic-compatible custom/generic template get NO key-usage
+// reporting at all: Anthropic's plain pay-as-you-go API never exposes a
+// meaningful usage view worth showing, and surfacing an always-present-but-
+// useless panel there was reverted as a regression. Claude Code is the one
+// case that both wants and can show real per-key rate-limit info passively,
+// for either credential shape it accepts (OAuth token -> unified headers
+// above; legacy plain key -> these standard headers).
 
 const STANDARD_PREFIX = "anthropic-ratelimit-";
 const STANDARD_BUCKETS = [
@@ -181,11 +194,17 @@ export function parseStandardRateLimitHeaders(
   const out: StandardRateLimitWindow[] = [];
   for (const bucket of STANDARD_BUCKETS) {
     const limit = number(normalized[`${STANDARD_PREFIX}${bucket}-limit`]);
-    const remaining = number(normalized[`${STANDARD_PREFIX}${bucket}-remaining`]);
+    const remaining = number(
+      normalized[`${STANDARD_PREFIX}${bucket}-remaining`],
+    );
     const resetsAt = parseIsoOrUndefined(
       normalized[`${STANDARD_PREFIX}${bucket}-reset`],
     );
-    if (limit === undefined && remaining === undefined && resetsAt === undefined)
+    if (
+      limit === undefined &&
+      remaining === undefined &&
+      resetsAt === undefined
+    )
       continue;
     out.push({ bucket, limit, remaining, resetsAt });
   }

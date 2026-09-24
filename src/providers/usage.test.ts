@@ -1057,9 +1057,7 @@ test("glm.keyUsage: malformed JSON -> unavailable, no throw", async () => {
 function ollamaCloudCtx(
   p: Provider,
   request: UsageCtx["request"],
-  fields?: Partial<
-    Pick<UsageCtx, "enabled" | "seed" | "signal" | "basePath">
-  >,
+  fields?: Partial<Pick<UsageCtx, "enabled" | "seed" | "signal" | "basePath">>,
 ): UsageCtx {
   return {
     provider: p,
@@ -1329,26 +1327,44 @@ test("ollamaCloud reset-time calendar: weekly anchors Monday 00:00 UTC, session 
   // 2026-08-17 is a Monday.
   const mondayNoon = Date.parse("2026-08-17T12:00:00Z");
   // Weekly anchor for any time in that week = Monday 00:00 UTC.
-  assert.equal(ollamaWeeklyResetAnchor(mondayNoon), Date.parse("2026-08-17T00:00:00Z"));
+  assert.equal(
+    ollamaWeeklyResetAnchor(mondayNoon),
+    Date.parse("2026-08-17T00:00:00Z"),
+  );
   // Sunday 23:00 is still in the same (Monday-anchored) week.
   assert.equal(
     ollamaWeeklyResetAnchor(Date.parse("2026-08-23T23:00:00Z")),
     Date.parse("2026-08-17T00:00:00Z"),
   );
   // The next weekly reset after any point in the week is the following Monday.
-  assert.equal(ollamaNextWeeklyReset(mondayNoon), Date.parse("2026-08-24T00:00:00Z"));
+  assert.equal(
+    ollamaNextWeeklyReset(mondayNoon),
+    Date.parse("2026-08-24T00:00:00Z"),
+  );
   // Session reset: the next 5h tick strictly after `now` on the grid anchored
   // at the Unix epoch (session buckets reset on the fixed 5h grid measured
   // from epoch, independent of the weekly calendar).
   // 07:00 Monday is exactly on the epoch grid -> next tick at 12:00.
-  assert.equal(ollamaNextSessionReset(Date.parse("2026-08-17T07:00:00Z")), Date.parse("2026-08-17T12:00:00Z"));
+  assert.equal(
+    ollamaNextSessionReset(Date.parse("2026-08-17T07:00:00Z")),
+    Date.parse("2026-08-17T12:00:00Z"),
+  );
   // 03:30 -> next tick 07:00.
-  assert.equal(ollamaNextSessionReset(Date.parse("2026-08-17T03:30:00Z")), Date.parse("2026-08-17T07:00:00Z"));
+  assert.equal(
+    ollamaNextSessionReset(Date.parse("2026-08-17T03:30:00Z")),
+    Date.parse("2026-08-17T07:00:00Z"),
+  );
   // Monday 00:00Z is 3h into an epoch window, so the next tick is 02:00Z -
   // this case proves the weekly and session grids differ.
-  assert.equal(ollamaNextSessionReset(Date.parse("2026-08-17T00:00:00Z")), Date.parse("2026-08-17T02:00:00Z"));
+  assert.equal(
+    ollamaNextSessionReset(Date.parse("2026-08-17T00:00:00Z")),
+    Date.parse("2026-08-17T02:00:00Z"),
+  );
   // Sunday 23:00 is exactly on the epoch grid -> next tick 04:00 Monday.
-  assert.equal(ollamaNextSessionReset(Date.parse("2026-08-23T23:00:00Z")), Date.parse("2026-08-24T04:00:00Z"));
+  assert.equal(
+    ollamaNextSessionReset(Date.parse("2026-08-23T23:00:00Z")),
+    Date.parse("2026-08-24T04:00:00Z"),
+  );
   // Guards: resetsAt is always in the future.
   assert.equal(ollamaNextWeeklyReset(Date.now()) > Date.now(), true);
   assert.equal(ollamaNextSessionReset(Date.now()) > Date.now(), true);
@@ -1356,6 +1372,9 @@ test("ollamaCloud reset-time calendar: weekly anchors Monday 00:00 UTC, session 
   const nextSession = ollamaNextSessionReset(Date.now());
   // Weekly reset is a multiple of 7d from a Monday 00:00 anchor; session reset
   // is always a multiple of 5h since the Unix epoch.
-  assert.equal((nextWeekly - ollamaWeeklyResetAnchor(Date.now())) % (7 * DAY) === 0, true);
+  assert.equal(
+    (nextWeekly - ollamaWeeklyResetAnchor(Date.now())) % (7 * DAY) === 0,
+    true,
+  );
   assert.equal(nextSession % (5 * HOUR) === 0, true);
 });

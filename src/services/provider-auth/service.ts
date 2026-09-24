@@ -292,7 +292,10 @@ export class ProviderAuthService {
       else if (session.state === "pending" && Date.now() >= session.expiresAt) {
         session.state = "expired";
         session.transaction = null;
-        session.error = { code: "expired", message: "The device code expired." };
+        session.error = {
+          code: "expired",
+          message: "The device code expired.",
+        };
       }
     }
   }

@@ -130,8 +130,7 @@ export class StreamingResponsesToChatBridgeTransform extends Transform {
           output_index?: number;
           item?: ResponseOutputItem;
         };
-        if (e.item?.type !== "function_call" || e.output_index == null)
-          break;
+        if (e.item?.type !== "function_call" || e.output_index == null) break;
 
         this.ensureHeader();
         this.sawToolCall = true;

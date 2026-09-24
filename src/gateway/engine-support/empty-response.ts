@@ -71,7 +71,11 @@ function responsesOutputHasContent(item: unknown): boolean {
   return content.some((part) => {
     const p = record(part);
     if (!p) return false;
-    if (p.type === "refusal" && typeof p.refusal === "string" && p.refusal.trim())
+    if (
+      p.type === "refusal" &&
+      typeof p.refusal === "string" &&
+      p.refusal.trim()
+    )
       return true;
     if (
       (p.type === "output_text" || p.type === "text") &&

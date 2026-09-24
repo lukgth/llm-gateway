@@ -54,7 +54,10 @@ test("Codex OS segment maps known platforms and preserves unknown values", () =>
   assert.equal(codexOsSegment("darwin", "24.0", "x64"), "Mac OS 24.0; x86_64");
   assert.equal(codexOsSegment("win32", "10.0", "arm64"), "Windows 10.0; arm64");
   assert.equal(codexOsSegment("linux", "6.8", "s390x"), "Linux 6.8; s390x");
-  assert.equal(codexOsSegment("freebsd", "14.1", "ppc64"), "FreeBSD 14.1; powerpc64");
+  assert.equal(
+    codexOsSegment("freebsd", "14.1", "ppc64"),
+    "FreeBSD 14.1; powerpc64",
+  );
   assert.equal(codexOsSegment("plan9", "4.0", "mips"), "plan9 4.0; mips");
 });
 

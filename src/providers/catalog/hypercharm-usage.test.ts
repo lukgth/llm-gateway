@@ -69,10 +69,20 @@ test("supportsKeyUsage is true", () => {
 
 test("a numeric balance reports remaining Hypercredits with one Bearer GET", async () => {
   const seen = { urls: [] as string[], auth: undefined as string | undefined };
-  const result = await hypercharm.keyUsage(usageCtx(json({ balance: 87 }), {}, seen));
+  const result = await hypercharm.keyUsage(
+    usageCtx(json({ balance: 87 }), {}, seen),
+  );
   assert.equal(result.unavailable, undefined);
   assert.equal(result.message, "87 Hypercredits remaining");
-  assert.deepEqual(result.windows, [{ id: "hypercredits", label: "Balance", used: 0.65, limit: 5, unit: "dollars" }]);
+  assert.deepEqual(result.windows, [
+    {
+      id: "hypercredits",
+      label: "Balance",
+      used: 0.65,
+      limit: 5,
+      unit: "dollars",
+    },
+  ]);
   assert.deepEqual(seen.urls, ["https://hyper.charm.land/v1/credits"]);
   assert.equal(seen.auth, "Bearer sk-hyper-test");
 });
@@ -84,9 +94,19 @@ test("the balance URL follows the configured base URL and basePath", async () =>
     baseUrl: "https://hyper.mirror.example",
     basePath: "/v2",
   } as Provider;
-  const result = await hypercharm.keyUsage(usageCtx(json({ balance: 5 }), { provider: edited }, seen));
+  const result = await hypercharm.keyUsage(
+    usageCtx(json({ balance: 5 }), { provider: edited }, seen),
+  );
   assert.deepEqual(seen.urls, ["https://hyper.mirror.example/v2/credits"]);
-  assert.deepEqual(result.windows, [{ id: "hypercredits", label: "Balance", used: 4.75, limit: 5, unit: "dollars" }]);
+  assert.deepEqual(result.windows, [
+    {
+      id: "hypercredits",
+      label: "Balance",
+      used: 4.75,
+      limit: 5,
+      unit: "dollars",
+    },
+  ]);
 });
 
 test("tier allocation from providerConfig creditsPerPeriod", async () => {
@@ -98,13 +118,29 @@ test("tier allocation from providerConfig creditsPerPeriod", async () => {
     usageCtx(json({ balance: 83.6 }), { provider: withConfig }),
   );
   assert.equal(result.message, "83.60 Hypercredits remaining");
-  assert.deepEqual(result.windows, [{ id: "hypercredits", label: "Balance", used: 8.32, limit: 12.5, unit: "dollars" }]);
+  assert.deepEqual(result.windows, [
+    {
+      id: "hypercredits",
+      label: "Balance",
+      used: 8.32,
+      limit: 12.5,
+      unit: "dollars",
+    },
+  ]);
 });
 
 test("bundle credits above the allocation clamp used to 0 without expanding the bar", async () => {
   const result = await hypercharm.keyUsage(usageCtx(json({ balance: 300 })));
   assert.equal(result.message, "300 Hypercredits remaining");
-  assert.deepEqual(result.windows, [{ id: "hypercredits", label: "Balance", used: 0, limit: 5, unit: "dollars" }]);
+  assert.deepEqual(result.windows, [
+    {
+      id: "hypercredits",
+      label: "Balance",
+      used: 0,
+      limit: 5,
+      unit: "dollars",
+    },
+  ]);
 });
 
 test("a disabled key is reported without querying the upstream", async () => {
@@ -162,7 +198,12 @@ test("a transport failure degrades to unavailable, never throws", async () => {
 });
 
 test("a missing or non-numeric balance is unavailable", async () => {
-  for (const body of [{}, { balance: "100" }, { balance: null }, { balance: Number.NaN }]) {
+  for (const body of [
+    {},
+    { balance: "100" },
+    { balance: null },
+    { balance: Number.NaN },
+  ]) {
     const result = await hypercharm.keyUsage(usageCtx(json(body)));
     assert.equal(result.unavailable, true, JSON.stringify(body));
     assert.equal(result.message, "No credit balance returned.");
@@ -171,7 +212,15 @@ test("a missing or non-numeric balance is unavailable", async () => {
 
 test("a zero balance flags insufficient credits", async () => {
   const result = await hypercharm.keyUsage(usageCtx(json({ balance: 0 })));
-  assert.deepEqual(result.windows, [{ id: "hypercredits", label: "Balance", used: 5, limit: 5, unit: "dollars" }]);
+  assert.deepEqual(result.windows, [
+    {
+      id: "hypercredits",
+      label: "Balance",
+      used: 5,
+      limit: 5,
+      unit: "dollars",
+    },
+  ]);
   assert.equal(
     result.message,
     "0 Hypercredits remaining - insufficient for API calls",

@@ -267,12 +267,18 @@ export function GridRowsSkeleton({
         <div
           key={r}
           role="row"
-          className={cn(gridClassName, "items-center border-b border-border/70 px-4")}
+          className={cn(
+            gridClassName,
+            "items-center border-b border-border/70 px-4",
+          )}
           style={{ height: rowHeight }}
         >
           {Array.from({ length: cols }).map((_, c) => (
             <div key={c} role="cell">
-              <Skeleton className="h-4" style={{ width: widths[c % widths.length] }} />
+              <Skeleton
+                className="h-4"
+                style={{ width: widths[c % widths.length] }}
+              />
             </div>
           ))}
         </div>

@@ -2,7 +2,7 @@
 
 This document is the reference for how the gateway edits request/response
 bodies as part of the forwarding pipeline: the tagged authoring API
-(`onRequest`/`onResponse`/`onStreamEvent`), how a tagged stage gets *placed*
+(`onRequest`/`onResponse`/`onStreamEvent`), how a tagged stage gets _placed_
 relative to wire-format conversion, the all-provider defaults registry, the
 **default provider transform stack** (family-wide defaults like Anthropic
 prompt caching, and how to inspect exactly what a provider does via
@@ -129,7 +129,7 @@ A **tagged** transform declares two things up front:
 - **phase** - `"request"` (client→upstream) or `"response"`
   (upstream→client, buffered or streaming)
 - **format** - which wire format (`chat` | `messages` | `responses`) the
-  handler is *written for* - i.e. the shape the body will actually be in
+  handler is _written for_ - i.e. the shape the body will actually be in
   when this stage runs
 
 ```ts
@@ -157,7 +157,7 @@ onStreamEvent("chat", "my:drop-empty-deltas", (event, ctx) => {
 
 Each factory infers the body/event type from the `format` literal via
 `WireRequest<F>`/`WireResponse<F>`/`WireStreamEvent<F>` (see
-`formats/wire/index.ts`), so a handler edits the *actual* typed shape - a
+`formats/wire/index.ts`), so a handler edits the _actual_ typed shape - a
 `"messages"`-tagged `onRequest` handler sees `AnthropicMessagesRequest`, not
 a generic `Record<string, unknown>`. The runtime `apply`/`create` are
 type-erased to `Json`/`Transform` internally so the engine can treat every
@@ -170,19 +170,19 @@ overrides in `mergeTransforms`.
 
 `TransformCtx` (handed to every `apply`/`create`/`handle`) carries:
 
-| Field | Use |
-|---|---|
-| `provider` | The `Provider` row for this hop |
-| `clientFmt` / `providerFmt` | The wire formats in play |
-| `alias` | The exposed model alias this request resolved to |
-| `upstreamModel` | The chain hop's upstream model id |
-| `maxOutputTokens` | Effective per-hop output ceiling (link ?? imported ?? model) |
-| `apiKey` | The **raw upstream key** selected for this attempt (`null` if the provider has none) - see below |
-| `keyMetadata` | Structured metadata for that exact selected provider key |
-| `headers` | The **full mutable outbound request header table** sent upstream - see below |
-| `respHeaders` | The mutable client-facing response headers on buffered response hooks; observable on stream hooks - see below |
-| `urlOverride` | A **request** transform may set this to replace the composed upstream URL |
-| `state` | Shared request → response/stream state bag for this route attempt |
+| Field                       | Use                                                                                                           |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `provider`                  | The `Provider` row for this hop                                                                               |
+| `clientFmt` / `providerFmt` | The wire formats in play                                                                                      |
+| `alias`                     | The exposed model alias this request resolved to                                                              |
+| `upstreamModel`             | The chain hop's upstream model id                                                                             |
+| `maxOutputTokens`           | Effective per-hop output ceiling (link ?? imported ?? model)                                                  |
+| `apiKey`                    | The **raw upstream key** selected for this attempt (`null` if the provider has none) - see below              |
+| `keyMetadata`               | Structured metadata for that exact selected provider key                                                      |
+| `headers`                   | The **full mutable outbound request header table** sent upstream - see below                                  |
+| `respHeaders`               | The mutable client-facing response headers on buffered response hooks; observable on stream hooks - see below |
+| `urlOverride`               | A **request** transform may set this to replace the composed upstream URL                                     |
+| `state`                     | Shared request → response/stream state bag for this route attempt                                             |
 
 `ctx.headers` arrives **already merged**, built by the engine BEFORE any
 request stage runs: client headers first (the base - everything the inbound
@@ -278,8 +278,9 @@ boundary before status branching, so 429/error headers are persisted too.
 ### Optional display metadata: `label` / `blurb` / `group`
 
 `onRequest`/`onResponse`/`onStreamEvent` all accept an optional 4th argument
+
 - a `TransformMeta` object - purely for how the stage shows up in the
-read-only [resolved-transforms preview](#the-default-provider-transform-stack):
+  read-only [resolved-transforms preview](#the-default-provider-transform-stack):
 
 ```ts
 onRequest(
@@ -294,10 +295,10 @@ onRequest(
 );
 ```
 
-| Field | Effect |
-|---|---|
-| `label` | Short human name shown instead of the raw stage `name` (e.g. `"anthropic:thinking-signature"` → `"Thinking-signature normalization"`). Omit it and the UI humanizes the `name` suffix after the last `:` instead - never a requirement to set. |
-| `blurb` | One-line description shown under the label. |
+| Field   | Effect                                                                                                                                                                                                                                                                                     |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `label` | Short human name shown instead of the raw stage `name` (e.g. `"anthropic:thinking-signature"` → `"Thinking-signature normalization"`). Omit it and the UI humanizes the `name` suffix after the last `:` instead - never a requirement to set.                                             |
+| `blurb` | One-line description shown under the label.                                                                                                                                                                                                                                                |
 | `group` | Clusters this stage with every SIBLING (same phase, same source) that sets the identical `group` string under one collapsible row in the UI, instead of one row each - see the six Anthropic request hooks in `anthropic/hooks/stack.ts` (all `group: "anthropic-hooks"`) for the pattern. |
 
 None of these three fields are read by the engine or the pipeline itself -
@@ -342,19 +343,19 @@ response (provider → client), buffered or streaming:
 
 So a stage always sees the body in the shape it was **written for**:
 
-- A request stage tagged the **client** format runs *before* conversion
+- A request stage tagged the **client** format runs _before_ conversion
   (edits the body as the client sent it).
-- A request stage tagged the **provider** format runs *after* conversion
+- A request stage tagged the **provider** format runs _after_ conversion
   (edits the body as it's about to be sent upstream) - this is what the
   Anthropic request hooks use: tagged `"messages"`, so they engage
   post-conversion for a Chat client hitting a Messages provider, and
   pre-conversion (i.e. natively, no bridge involved) for a Messages client
   hitting a Messages provider.
-- A response/stream stage tagged the **provider** format runs *before* the
+- A response/stream stage tagged the **provider** format runs _before_ the
   provider→client bridge (reads provider-native field names) - this is what
   thinking extraction uses, so `<thinking>`/`reasoning_content` extraction
   happens on the raw upstream shape before any renaming.
-- A response/stream stage tagged the **client** format runs *after* the
+- A response/stream stage tagged the **client** format runs _after_ the
   bridge (edits the body as the client is about to receive it).
 - A stage tagged a format that's **neither** `clientFmt` nor `providerFmt` on
   this hop is **skipped entirely** - its shape never occurs on this hop, so
@@ -364,7 +365,7 @@ So a stage always sees the body in the shape it was **written for**:
   `StreamTransform`, no `format` field) stages always land **last**, post-
   conversion - this is the historical placement, kept for per-model library
   transforms (`formats/transforms/apply.ts`'s `buildModelTransforms`), which
-  are written against whatever shape the *model's provider* actually speaks,
+  are written against whatever shape the _model's provider_ actually speaks,
   not a specific client format.
 
 Ordering **within** a bucket (same phase, same format) follows the merge
@@ -391,7 +392,7 @@ function buildTransformPlan(
   plan: { forwardPath: string; providerFmt: WireFmt; unsupported?: string },
   extra?: AdapterTransforms,
   onStage?: StageObserver,
-): TransformPlan
+): TransformPlan;
 ```
 
 Composes the ordered `request`/`response`/`stream` stage arrays for one
@@ -408,7 +409,7 @@ function applyBodyTransforms(
   body: Json,
   ctx: TransformCtx,
   onApply?: (name: string, changed: boolean) => void,
-): Json
+): Json;
 ```
 
 Runs an ordered stage list, threading `ctx` through each. A throwing stage
@@ -447,10 +448,10 @@ when a genuinely new default needs more route context.
 
 Currently registered:
 
-| id | Stages | Why it's a default, not per-adapter |
-|---|---|---|
-| `anthropic-hooks` | `defaultAnthropicRequestHooks()` - tagged `"messages"` | Applies to *any* hop that emits Messages shape, whether the provider is native Anthropic or a Claude model routed through an OpenAI-catalog provider's `/v1/messages` link - not a property of one adapter |
-| `thinking` | `defaultThinkingResponse`/`defaultThinkingStream`, filtered to the hop's `providerFmt` | `<thinking>`/`reasoning_content` extraction must run on every provider's raw output, and only once (pre-bridge, on the provider-native shape) - see below |
+| id                | Stages                                                                                 | Why it's a default, not per-adapter                                                                                                                                                                        |
+| ----------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `anthropic-hooks` | `defaultAnthropicRequestHooks()` - tagged `"messages"`                                 | Applies to _any_ hop that emits Messages shape, whether the provider is native Anthropic or a Claude model routed through an OpenAI-catalog provider's `/v1/messages` link - not a property of one adapter |
+| `thinking`        | `defaultThinkingResponse`/`defaultThinkingStream`, filtered to the hop's `providerFmt` | `<thinking>`/`reasoning_content` extraction must run on every provider's raw output, and only once (pre-bridge, on the provider-native shape) - see below                                                  |
 
 Adding a new all-provider behavior is one entry in `DEFAULT_TRANSFORMS` - no
 engine change, no per-provider wiring.
@@ -461,7 +462,7 @@ engine change, no per-provider wiring.
 ### Why `thinking` filters to `ctx.providerFmt`
 
 `defaultThinkingResponse`/`defaultThinkingStream` return tagged stages for
-*all three* formats (a scanner exists per format). The default set filters
+_all three_ formats (a scanner exists per format). The default set filters
 to only the stage tagged the hop's actual `providerFmt` - thinking
 extraction is meant to run **once**, on the provider's native shape,
 pre-bridge, exactly as the pre-refactor standalone `applyThinking`/
@@ -473,18 +474,18 @@ over an already-converted body.
 
 `defaultAnthropicRequestHooks()` returns six ordered, `"messages"`-tagged
 `onRequest` stages, each additionally gated on `ctx.providerFmt === "messages"`
-(so the pre-conversion slot - a client sending Messages to a *non*-Messages
+(so the pre-conversion slot - a client sending Messages to a _non_-Messages
 provider - stays a no-op, reproducing the historical "fires only when the
 provider emits Messages" behavior exactly):
 
 1. **`anthropic:thinking-signature`** - every `thinking` content block
-   (synthetic *or* genuine) is rewritten to a signature-free `text` block
+   (synthetic _or_ genuine) is rewritten to a signature-free `text` block
    carrying the same reasoning prose (`thinkingBlocksToText`);
    `redacted_thinking` blocks are always dropped. Runs **first** so every
    later hook sees a body with no `thinking`-typed blocks at all. This is
    unconditional - even a real Anthropic signature can't be trusted here,
    because a fallback-chain retry may route the same conversation to a
-   *different* Anthropic-compatible provider that can't validate another
+   _different_ Anthropic-compatible provider that can't validate another
    provider's signature. See
    [format-conversion.md § Synthetic thinking-block signatures](./format-conversion.md#synthetic-thinking-block-signatures)
    for the full reasoning and the live-API event sequence this is
@@ -557,8 +558,8 @@ interface TransformDef {
   id: string;
   label: string;
   blurb: string;
-  phases: TransformPhase[];      // ["request"] | ["response"] | both
-  params: ParamSpec[];            // drives the UI's config form
+  phases: TransformPhase[]; // ["request"] | ["response"] | both
+  params: ParamSpec[]; // drives the UI's config form
   build: (params: Record<string, unknown>) => BodyXform;
 }
 ```
@@ -571,18 +572,18 @@ Built-in defs, grouped by how generic they are:
 
 **Format-aware ops** (`builtins-extra.ts`):
 
-| id | Phase | What it does |
-|---|---|---|
-| `anthropic-cache` | request | Adds `cache_control:{type:"ephemeral", ttl}` breakpoints to the stable prefix (last `system` block, last tool, last message) for Anthropic prompt caching. `ttl` = `5m` (default) or `1h`. **A family default for every Anthropic-native provider** (see below) - usually not picked manually; add it here explicitly only to override the `ttl` for one specific model. No-ops on a non-Anthropic-shaped body (see `looksOpenAIShaped`'s doc comment) - a real concern now that this runs unconditionally as a family default, not just when a user opted in. |
-| `system-prepend` | request | Prepends a user-supplied system instruction (Anthropic `system` field or a chat system message) |
-| `sanitize-tool-args` | response | Fixes malformed tool-call arguments from non-Claude models: numeric strings → numbers, clamp `Read.limit` ≤ 2000, drop negative offsets / invalid pdf `pages`. **Also a family default for every Anthropic-native provider.** |
+| id                   | Phase    | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `anthropic-cache`    | request  | Adds `cache_control:{type:"ephemeral", ttl}` breakpoints to the stable prefix (last `system` block, last tool, last message) for Anthropic prompt caching. `ttl` = `5m` (default) or `1h`. **A family default for every Anthropic-native provider** (see below) - usually not picked manually; add it here explicitly only to override the `ttl` for one specific model. No-ops on a non-Anthropic-shaped body (see `looksOpenAIShaped`'s doc comment) - a real concern now that this runs unconditionally as a family default, not just when a user opted in. |
+| `system-prepend`     | request  | Prepends a user-supplied system instruction (Anthropic `system` field or a chat system message)                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `sanitize-tool-args` | response | Fixes malformed tool-call arguments from non-Claude models: numeric strings → numbers, clamp `Read.limit` ≤ 2000, drop negative offsets / invalid pdf `pages`. **Also a family default for every Anthropic-native provider.**                                                                                                                                                                                                                                                                                                                                  |
 
 A model's configured list (`ModelTransformConfig[]`) is resolved to actual
 `RequestTransform`/`ResponseTransform` stages by `formats/transforms/apply.ts`:
 
 ```ts
-buildModelTransforms(config, phase)  // -> stages for one phase
-modelTransformBags(config)            // -> { request, response } bags
+buildModelTransforms(config, phase); // -> stages for one phase
+modelTransformBags(config); // -> { request, response } bags
 ```
 
 Both are defensive by design: an unknown `id` or a phase mismatch is
@@ -616,18 +617,18 @@ Declared **once**, on the generic `anthropic-compatible` catalog entry (the
 for the whole family), and inherited by every Anthropic-native adapter via
 `quirks.defaultTransforms: ANTHROPIC_DEFAULT_TRANSFORMS`:
 
-| Catalog id | File | Inherits the base |
-|---|---|---|
-| `anthropic-compatible` | `catalog/anthropic-compatible.ts` | *is* the base |
-| `anthropic` | `catalog/anthropic.ts` | same array reference |
-| `claude-code` | `catalog/claude-code.ts` | same array reference |
+| Catalog id             | File                              | Inherits the base    |
+| ---------------------- | --------------------------------- | -------------------- |
+| `anthropic-compatible` | `catalog/anthropic-compatible.ts` | _is_ the base        |
+| `anthropic`            | `catalog/anthropic.ts`            | same array reference |
+| `claude-code`          | `catalog/claude-code.ts`          | same array reference |
 
 A new Anthropic-family-wide default (a new prompt-caching knob, another
 correctness fix that applies to any Claude-speaking provider) is added to
 `ANTHROPIC_DEFAULT_TRANSFORMS` **once** and every one of these three catalog
 adapters picks it up - there is nothing to keep in sync, since all three
 `quirks.defaultTransforms` fields literally point at the same array. A
-provider whose family needs an *additional* default beyond the shared base
+provider whose family needs an _additional_ default beyond the shared base
 spreads it: `defaultTransforms: [...ANTHROPIC_DEFAULT_TRANSFORMS, { id:
 "...", ... }]`.
 
@@ -641,24 +642,24 @@ for a provider whose adapter declares no `quirks.defaultTransforms`.
 
 ```ts
 function dropOverriddenDefaults(
-  defaults: ModelTransformConfig[] | undefined,  // family defaults (adapter quirks)
-  own: ModelTransformConfig[] | undefined,        // this model's own config
-): ModelTransformConfig[]                         // defaults minus anything `own` overrides
+  defaults: ModelTransformConfig[] | undefined, // family defaults (adapter quirks)
+  own: ModelTransformConfig[] | undefined, // this model's own config
+): ModelTransformConfig[]; // defaults minus anything `own` overrides
 
 function mergeTransforms(
   defaults: ModelTransformConfig[] | undefined,
   own: ModelTransformConfig[] | undefined,
-): ModelTransformConfig[]                         // dropOverriddenDefaults(...) followed by `own`
+): ModelTransformConfig[]; // dropOverriddenDefaults(...) followed by `own`
 ```
 
 Both dedupe by `(id, phase)`: a model's own entry overrides a family default
-that declares the same transform, but any default the model *hasn't*
+that declares the same transform, but any default the model _hasn't_
 overridden still applies. `engine.ts`'s `buildChain` calls
 `dropOverriddenDefaults` **fresh on every request** to compute the
 `ChainEntry`'s `familyTransforms` (kept separate from `ownTransforms` - see
 [the four transform layers](#the-four-transform-layers) - so `buildRoute` can
-place family defaults *before* the adapter's own stack and the model's own
-transforms *after* it). `mergeTransforms` itself is a flat convenience
+place family defaults _before_ the adapter's own stack and the model's own
+transforms _after_ it). `mergeTransforms` itself is a flat convenience
 (`dropOverriddenDefaults` + `own` concatenated) used where relative order
 against an adapter stack doesn't matter. Either way: even a model whose own
 `transforms` config is empty still gets its family's defaults, and a
@@ -672,14 +673,14 @@ re-import or migration step**.
 > row's own editable JSON, indistinguishable from something the operator
 > configured. This is deliberately **no longer done**
 > (`POST /providers/:id/models` now stores only what the caller actually
-> supplied). Two reasons: (1) it made a family default *look* editable in
+> supplied). Two reasons: (1) it made a family default _look_ editable in
 > the UI when deleting it did nothing (`mergeTransforms` would just
 > resurrect it from the live family-default computation on the next
 > request - the delete silently had no effect), and (2) it meant a
 > newly-added family default (like `anthropic-cache` in this change) never
-> reached a model imported *before* the code change, without re-importing
+> reached a model imported _before_ the code change, without re-importing
 > it. Since the merge already happens fresh on every request, storing a copy
-> at import time was redundant *and* the source of both bugs. Existing rows
+> at import time was redundant _and_ the source of both bugs. Existing rows
 > imported under the old behavior still work exactly as before - a stored
 > entry with the same `(id, phase)` as a live family default simply looks
 > like an (identical) override, which `mergeTransforms` handles the same
@@ -702,14 +703,14 @@ Response (`ResolvedTransforms`, `src/admin/routes/resolved-transforms.ts`):
 
 ```ts
 interface ResolvedTransformStage {
-  name: string;                                            // e.g. "family:anthropic-cache"
-  source: "builtin" | "family" | "adapter" | "model";       // which of the 4 layers
+  name: string; // e.g. "family:anthropic-cache"
+  source: "builtin" | "family" | "adapter" | "model"; // which of the 4 layers
   phase: "request" | "response" | "stream";
-  label?: string;    // human name - see "Optional display metadata" above
+  label?: string; // human name - see "Optional display metadata" above
   blurb?: string;
-  params?: Record<string, unknown>;   // family/model stages only (library params)
-  group?: string;    // siblings sharing this string cluster in the UI
-  overridden?: boolean;  // family stages a model config replaces - see `overridden` below
+  params?: Record<string, unknown>; // family/model stages only (library params)
+  group?: string; // siblings sharing this string cluster in the UI
+  overridden?: boolean; // family stages a model config replaces - see `overridden` below
 }
 interface ResolvedTransforms {
   providerId: string;
@@ -719,7 +720,7 @@ interface ResolvedTransforms {
   request: ResolvedTransformStage[];
   response: ResolvedTransformStage[];
   stream: ResolvedTransformStage[];
-  overridden: ResolvedTransformStage[];  // family defaults the model config replaces
+  overridden: ResolvedTransformStage[]; // family defaults the model config replaces
 }
 ```
 
@@ -812,7 +813,7 @@ written for (e.g. a family default running whether or not the operator
 pinned the hop's endpoint away from the family's native format) needs its
 OWN shape guard, since it has no `ctx.providerFmt` to gate on - see
 `looksOpenAIShaped` in `builtins-extra.ts` for the pattern: check for
-strong, unambiguous markers of the *other* format and no-op if found, rather
+strong, unambiguous markers of the _other_ format and no-op if found, rather
 than assuming the body is shaped the way the family normally sends it.
 
 ---
@@ -822,6 +823,7 @@ than assuming the body is shaped the way the family normally sends it.
 Exactly which files to touch, for each of the four cases above.
 
 ### Adding a new BUILTIN default (Anthropic or otherwise - applies to every
+
 matching provider, unconditionally, no library entry)
 
 1. Author the stage(s) - a new file under `src/formats/anthropic/hooks/` (if
@@ -873,6 +875,7 @@ matching provider, unconditionally, no library entry)
    `GET /providers/:id/transforms/resolved` reports automatically.
 
 ### Adding a new LIBRARY transform (user-configurable, opt-in per model -
+
 also the prerequisite step for a new family default)
 
 1. `src/formats/transforms/registry.ts` - add a `TransformDef` to `LIBRARY`

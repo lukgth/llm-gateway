@@ -278,44 +278,59 @@ test("readResponseUsage: absent or invalid cache fields stay absent", () => {
 });
 
 test("normalizeUsage rejects invalid counts and falls back to valid provider aliases", () => {
-  assert.deepEqual(normalizeUsage({
-    input_tokens: Number.NaN,
-    output_tokens: Number.POSITIVE_INFINITY,
-    prompt_tokens: 12,
-    completion_tokens: 0,
-    cache_read_input_tokens: -1,
-    cache_creation_input_tokens: Number.POSITIVE_INFINITY,
-    prompt_tokens_details: { cached_tokens: 4, cache_write_tokens: 2 },
-  }), { input: 12, output: 0, cached: 4, cacheWrite: 2 });
-  assert.deepEqual(normalizeUsage({
-    input_tokens: -1,
-    output_tokens: "3",
-    cache_read_input_tokens: Number.NaN,
-    cache_creation_input_tokens: -2,
-  }), {});
+  assert.deepEqual(
+    normalizeUsage({
+      input_tokens: Number.NaN,
+      output_tokens: Number.POSITIVE_INFINITY,
+      prompt_tokens: 12,
+      completion_tokens: 0,
+      cache_read_input_tokens: -1,
+      cache_creation_input_tokens: Number.POSITIVE_INFINITY,
+      prompt_tokens_details: { cached_tokens: 4, cache_write_tokens: 2 },
+    }),
+    { input: 12, output: 0, cached: 4, cacheWrite: 2 },
+  );
+  assert.deepEqual(
+    normalizeUsage({
+      input_tokens: -1,
+      output_tokens: "3",
+      cache_read_input_tokens: Number.NaN,
+      cache_creation_input_tokens: -2,
+    }),
+    {},
+  );
   assert.deepEqual(normalizeUsage(null), {});
   assert.deepEqual(normalizeUsage([]), {});
 });
 
 test("normalizeUsage adds only valid Anthropic buckets, not nested cache fallbacks", () => {
-  assert.deepEqual(normalizeUsage({
-    input_tokens: 12,
-    cache_read_input_tokens: -1,
-    cache_creation_input_tokens: -2,
-    input_tokens_details: { cached_tokens: 4, cache_write_tokens: 2 },
-  }), { input: 12, cached: 4, cacheWrite: 2 });
+  assert.deepEqual(
+    normalizeUsage({
+      input_tokens: 12,
+      cache_read_input_tokens: -1,
+      cache_creation_input_tokens: -2,
+      input_tokens_details: { cached_tokens: 4, cache_write_tokens: 2 },
+    }),
+    { input: 12, cached: 4, cacheWrite: 2 },
+  );
 });
 
 test("normalizeUsage derives Gemini input from total only when the difference is valid", () => {
-  assert.deepEqual(normalizeUsage({
-    totalTokenCount: 20,
-    candidatesTokenCount: 8,
-    cachedContentTokenCount: 4,
-  }), { input: 12, output: 8, cached: 4 });
-  assert.deepEqual(normalizeUsage({
-    totalTokenCount: 4,
-    candidatesTokenCount: 8,
-  }), { output: 8 });
+  assert.deepEqual(
+    normalizeUsage({
+      totalTokenCount: 20,
+      candidatesTokenCount: 8,
+      cachedContentTokenCount: 4,
+    }),
+    { input: 12, output: 8, cached: 4 },
+  );
+  assert.deepEqual(
+    normalizeUsage({
+      totalTokenCount: 4,
+      candidatesTokenCount: 8,
+    }),
+    { output: 8 },
+  );
 });
 
 // --- readCachedTokens ---------------------------------------------------------
@@ -336,10 +351,7 @@ test("readCachedTokens: negative values are absent", () => {
 });
 
 test("readCacheWriteTokens: Anthropic, OpenAI, and nested shapes", () => {
-  assert.equal(
-    readCacheWriteTokens({ cache_creation_input_tokens: 7 }),
-    7,
-  );
+  assert.equal(readCacheWriteTokens({ cache_creation_input_tokens: 7 }), 7);
   assert.equal(readCacheWriteTokens({ cache_write_tokens: 9 }), 9);
   assert.equal(
     readCacheWriteTokens({
@@ -348,10 +360,7 @@ test("readCacheWriteTokens: Anthropic, OpenAI, and nested shapes", () => {
     11,
   );
   assert.equal(readCacheWriteTokens({}), null);
-  assert.equal(
-    readCacheWriteTokens({ cache_creation_input_tokens: -2 }),
-    null,
-  );
+  assert.equal(readCacheWriteTokens({ cache_creation_input_tokens: -2 }), null);
 });
 
 test("readCachedTokens: OpenAI input_tokens_details.cached_tokens (Responses)", () => {

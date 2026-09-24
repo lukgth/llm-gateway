@@ -45,12 +45,16 @@ test("legacy OAuth table migrates to multiple account rows", () => {
   try {
     const raw = new Database(file);
     legacySchema(raw);
-    raw.prepare(
-      `INSERT INTO provider_oauth_credentials
+    raw
+      .prepare(
+        `INSERT INTO provider_oauth_credentials
        (id, provider_id, integration_id, encrypted_secrets, expires_at,
         public_metadata, status, revision, created_at, updated_at)
        VALUES ('row-one', 'provider', 'test', 'ciphertext', 1, ?, 'disabled', 7, 'created', 'updated')`,
-    ).run(JSON.stringify({ accountId: "account-1", email: "USER@example.com" }));
+      )
+      .run(
+        JSON.stringify({ accountId: "account-1", email: "USER@example.com" }),
+      );
     raw.close();
 
     const db = openDatabase(file);
@@ -126,7 +130,9 @@ test("Cline identifier migration re-encrypts authenticated AAD atomically", () =
     );
     assert.equal(
       (
-        db.prepare("SELECT catalog_id FROM providers WHERE id='provider'").get() as {
+        db
+          .prepare("SELECT catalog_id FROM providers WHERE id='provider'")
+          .get() as {
           catalog_id: string;
         }
       ).catalog_id,

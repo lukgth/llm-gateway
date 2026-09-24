@@ -128,9 +128,7 @@ class CommandCodeAdapter extends OpenAICompatibleAdapter {
       //    keys return org: null and query the same endpoints WITHOUT orgId.
       const whoami = await getJson<CcWhoami>("/alpha/whoami");
       const orgId = whoami.org?.id;
-      const orgParam = orgId
-        ? `?orgId=${encodeURIComponent(orgId)}`
-        : "";
+      const orgParam = orgId ? `?orgId=${encodeURIComponent(orgId)}` : "";
 
       // 2. subscriptions -> billing period start + plan (summary needs `since`).
       const sub = await getJson<CcSubscription>(

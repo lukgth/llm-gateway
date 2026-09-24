@@ -68,9 +68,7 @@ test("defaultPricingFor: entries with no published cache rate omit cachedPer1m",
 });
 
 test("defaultPricingFor: resolves exact values for every newly added id", () => {
-  const cases: Array<
-    [string, number, number, number | undefined]
-  > = [
+  const cases: Array<[string, number, number, number | undefined]> = [
     ["gpt-5.5", 5, 30, 0.5],
     ["gpt-5.5-pro", 30, 180, undefined],
     ["gpt-5.4", 2.5, 15, 0.25],
@@ -172,11 +170,7 @@ test("defaultPricingFor: glm-5.3 resolves the same published rate as glm-5.2", (
 });
 
 test("defaultPricingFor: resolves all Muse Spark tiers", () => {
-  for (const id of [
-    "muse-spark-1.3",
-    "muse-spark-1.2",
-    "muse-spark-1.1",
-  ]) {
+  for (const id of ["muse-spark-1.3", "muse-spark-1.2", "muse-spark-1.1"]) {
     const m = defaultPricingFor(id);
     assert.ok(m, `expected to resolve ${id}`);
     assert.equal(m!.promptPer1m, 1.25, `${id} promptPer1m`);
@@ -271,7 +265,12 @@ test("defaultPricingFor: cache-write rates match published 5-minute/default-tier
   }
   // Earlier OpenAI generations and providers with no published write price
   // omit the field, so computeCostUsd falls back to the cached rate.
-  for (const id of ["gpt-5.5", "deepseek-v4-flash", "deepseek-flash", "gemini-3.7-flash"]) {
+  for (const id of [
+    "gpt-5.5",
+    "deepseek-v4-flash",
+    "deepseek-flash",
+    "gemini-3.7-flash",
+  ]) {
     const m = defaultPricingFor(id);
     assert.ok(m, `expected to resolve ${id}`);
     assert.equal(m!.cacheWritePer1m, undefined, `${id} cacheWritePer1m`);

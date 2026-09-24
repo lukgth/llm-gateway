@@ -19,7 +19,9 @@ const tls = require("tls");
 const target = process.argv[2];
 const token = process.argv[3] || "sk-test-invalid";
 if (!target) {
-  console.error("usage: node scripts/diagnose-provider.js <url> [bearer-token]");
+  console.error(
+    "usage: node scripts/diagnose-provider.js <url> [bearer-token]",
+  );
   process.exit(1);
 }
 const url = new URL(target);
@@ -42,9 +44,14 @@ async function main() {
     : "n/a";
   line("autoSelectFamily default", asf);
   if (asf === false)
-    line("", "^ Node picks ONE address; a dead AAAA route hangs. curl would not.");
+    line(
+      "",
+      "^ Node picks ONE address; a dead AAAA route hangs. curl would not.",
+    );
 
-  console.log(`\n=== proxy env (curl honors these; node's http module does NOT) ===`);
+  console.log(
+    `\n=== proxy env (curl honors these; node's http module does NOT) ===`,
+  );
   let anyProxy = false;
   for (const k of [
     "http_proxy",
@@ -117,14 +124,22 @@ async function main() {
     await new Promise((done) => {
       const t = Date.now();
       const s = tls.connect(
-        { host: url.hostname, port, servername: url.hostname, ALPNProtocols: ["h2", "http/1.1"] },
+        {
+          host: url.hostname,
+          port,
+          servername: url.hostname,
+          ALPNProtocols: ["h2", "http/1.1"],
+        },
         () => {
           line("handshake", `${Date.now() - t}ms`);
           line("protocol", s.getProtocol());
           line("alpn", s.alpnProtocol || "(none)");
           const c = s.getPeerCertificate();
           line("cert CN", (c && c.subject && c.subject.CN) || "?");
-          line("authorized", s.authorized ? "yes" : `no: ${s.authorizationError}`);
+          line(
+            "authorized",
+            s.authorized ? "yes" : `no: ${s.authorizationError}`,
+          );
           s.destroy();
           done();
         },
@@ -145,7 +160,7 @@ async function main() {
   // A v4-only lookup - what the gateway now installs on every direct agent.
   const v4OnlyLookup = (host, opts, cb) => {
     const callback = typeof opts === "function" ? opts : cb;
-    const o = typeof opts === "function" ? {} : (opts || {});
+    const o = typeof opts === "function" ? {} : opts || {};
     dns.lookup(host, { ...o, all: true }, (err, list) => {
       if (err) return callback(err);
       const v4 = list.filter((a) => a.family === 4);
@@ -179,28 +194,42 @@ async function main() {
           port,
           path: url.pathname + url.search,
           method: "GET",
-          headers: { accept: "application/json", authorization: `Bearer ${token}` },
+          headers: {
+            accept: "application/json",
+            authorization: `Bearer ${token}`,
+          },
           ...extra,
         },
         (res) => {
           const c = [];
           res.on("data", (d) => c.push(d));
           res.on("end", () => {
-            const body = Buffer.concat(c).toString("utf8").slice(0, 100).replace(/\s+/g, " ");
+            const body = Buffer.concat(c)
+              .toString("utf8")
+              .slice(0, 100)
+              .replace(/\s+/g, " ");
             line(name, `status=${res.statusCode} ${Date.now() - t}ms  ${body}`);
             done();
           });
           res.on("error", (e) => {
-            line(name, `RESPONSE STREAM ERROR ${e.message || "(empty)"} ${Date.now() - t}ms`);
+            line(
+              name,
+              `RESPONSE STREAM ERROR ${e.message || "(empty)"} ${Date.now() - t}ms`,
+            );
             done();
           });
         },
       );
       req.on("error", (e) => {
-        line(name, `ERR ${e.message || "(empty message)"} code=${e.code || "?"} ${Date.now() - t}ms`);
+        line(
+          name,
+          `ERR ${e.message || "(empty message)"} code=${e.code || "?"} ${Date.now() - t}ms`,
+        );
         done();
       });
-      req.setTimeout(15000, () => req.destroy(new Error("timeout after 15000ms")));
+      req.setTimeout(15000, () =>
+        req.destroy(new Error("timeout after 15000ms")),
+      );
       req.end();
     });
   }

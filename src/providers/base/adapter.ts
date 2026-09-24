@@ -44,10 +44,6 @@ import { ORDERED_KEYS } from "../../formats/anthropic/hooks/sanitize-request";
 import { limitAnthropicCacheControl } from "../../formats/anthropic/hooks/cache-control-limiter";
 import { endpointPathFor, resolveKind } from "./url";
 import { fetchModelList, normalizeModels, minimalProbeBody } from "./models";
-import {
-  parseStandardRateLimitHeaders,
-  standardRateLimitToUsageWindows,
-} from "../../services/anthropic/unified-usage";
 import type {
   WireFmt,
   EndpointRoute,
@@ -735,38 +731,5 @@ export class AnthropicCompatibleAdapter extends ProviderAdapter {
         return { reply: (text as { text?: string })?.text ?? null };
       },
     });
-  }
-
-  // Every plain Anthropic-family provider (official "anthropic" catalog, or
-  // any Anthropic-compatible custom/generic template - claude-code.ts
-  // overrides this itself for the unified/subscription scheme instead) gets
-  // usage reporting for free here: the standard anthropic-ratelimit-*
-  // headers, captured passively by the engine on every real request (see
-  // engine.ts's captureClaudeUsage, despite the name - it now captures for
-  // ANY messages-format provider, not just Claude Code) into the same
-  // ctx.unifiedUsage snapshot Claude Code's own keyUsage() reads.
-  override supportsKeyUsage(_ctx: UsageCtx): boolean {
-    return true;
-  }
-
-  override async keyUsage(ctx: UsageCtx): Promise<KeyUsageResult> {
-    if (!ctx.unifiedUsage) {
-      return {
-        windows: [],
-        unavailable: true,
-        message: "No usage captured yet - send a request with this key.",
-      };
-    }
-    const windows = standardRateLimitToUsageWindows(
-      parseStandardRateLimitHeaders(ctx.unifiedUsage.headers),
-    );
-    if (!windows.length) {
-      return {
-        windows: [],
-        unavailable: true,
-        message: "The latest response did not contain rate-limit headers.",
-      };
-    }
-    return { windows, dummy: false };
   }
 }

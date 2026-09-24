@@ -73,8 +73,15 @@ small closed set of topics:
 
 ```ts
 type WsTopic =
-  | "overview" | "usage" | "usage:breakdown" | "request-logs"
-  | "providers" | "models" | "keys" | "users" | "settings";
+  | "overview"
+  | "usage"
+  | "usage:breakdown"
+  | "request-logs"
+  | "providers"
+  | "models"
+  | "keys"
+  | "users"
+  | "settings";
 ```
 
 **Subscribe** (client → server):
@@ -87,7 +94,11 @@ The server immediately pushes the current data for that topic, then again
 whenever it changes:
 
 ```json
-{ "type": "push", "topic": "overview", "data": { /* same shape as the REST endpoint */ } }
+{
+  "type": "push",
+  "topic": "overview",
+  "data": {/* same shape as the REST endpoint */}
+}
 ```
 
 Some topics also auto-refresh on a timer regardless of mutations
@@ -120,13 +131,17 @@ For a single ad-hoc read that doesn't need a standing subscription:
 ```
 
 ```json
-{ "type": "response", "id": "<uuid>", "data": { /* ... */ } }
+{ "type": "response", "id": "<uuid>", "data": {/* ... */} }
 ```
 
 or, on failure:
 
 ```json
-{ "type": "response", "id": "<uuid>", "error": { "message": "unknown endpoint: foo" } }
+{
+  "type": "response",
+  "id": "<uuid>",
+  "error": { "message": "unknown endpoint: foo" }
+}
 ```
 
 `endpoint` must be one of the `WsTopic` values - `handleRequest` reuses the
@@ -207,14 +222,18 @@ join key. `result` is the same `ProviderTestResult` shape
 { "type": "batch-test-done", "id": "<uuid>", "total": 3, "ok": 2 }
 ```
 
-**Error** (server → client, only for a *fatal setup* failure - unknown
+**Error** (server → client, only for a _fatal setup_ failure - unknown
 provider, a `keyId` that doesn't resolve or belongs to a different provider,
 an empty or oversized `keyIds`, or a duplicate `id` already running; NOT
 sent when an individual key's test simply fails, which is a normal
 `batch-test-progress` with `result.ok === false`):
 
 ```json
-{ "type": "batch-test-error", "id": "<uuid>", "message": "key not found on this provider: xyz" }
+{
+  "type": "batch-test-error",
+  "id": "<uuid>",
+  "message": "key not found on this provider: xyz"
+}
 ```
 
 If the connection drops mid-batch, the server-side job's `isCancelled()`

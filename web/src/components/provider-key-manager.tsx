@@ -21,7 +21,12 @@ import { api } from "@/lib/api";
 import type { KeyStat, ProviderKey, ProviderTestResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useWsBatchTest } from "@/hooks/use-ws";
-import { EmptyState, Field, GridRowsSkeleton, TableSearch } from "@/components/shared";
+import {
+  EmptyState,
+  Field,
+  GridRowsSkeleton,
+  TableSearch,
+} from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -573,19 +578,48 @@ export function ProviderKeyManager({
                   <div role="columnheader" className="flex justify-start pr-2">
                     <Checkbox disabled aria-label="Select all visible keys" />
                   </div>
-                  <div role="columnheader" className="truncate">Key</div>
-                  <div role="columnheader" className="hidden truncate md:block">Tags</div>
-                  <div role="columnheader" className="truncate">Status</div>
-                  <div role="columnheader" className="truncate">Active</div>
-                  <div role="columnheader" className="hidden truncate text-right md:block">Success</div>
-                  <div role="columnheader" className="hidden truncate text-right md:block">Errors</div>
-                  <div role="columnheader" className="text-right">Actions</div>
+                  <div role="columnheader" className="truncate">
+                    Key
+                  </div>
+                  <div role="columnheader" className="hidden truncate md:block">
+                    Tags
+                  </div>
+                  <div role="columnheader" className="truncate">
+                    Status
+                  </div>
+                  <div role="columnheader" className="truncate">
+                    Active
+                  </div>
+                  <div
+                    role="columnheader"
+                    className="hidden truncate text-right md:block"
+                  >
+                    Success
+                  </div>
+                  <div
+                    role="columnheader"
+                    className="hidden truncate text-right md:block"
+                  >
+                    Errors
+                  </div>
+                  <div role="columnheader" className="text-right">
+                    Actions
+                  </div>
                 </div>
               </div>
               <GridRowsSkeleton
                 gridClassName={GRID}
                 cols={8}
-                widths={["1.25rem", "70%", "50%", "40%", "30%", "20%", "20%", "5rem"]}
+                widths={[
+                  "1.25rem",
+                  "70%",
+                  "50%",
+                  "40%",
+                  "30%",
+                  "20%",
+                  "20%",
+                  "5rem",
+                ]}
               />
             </div>
           </div>

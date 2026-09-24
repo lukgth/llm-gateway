@@ -111,7 +111,9 @@ class HyperCharmAdapter extends OpenAICompatibleAdapter {
     // of the tier's own budget.
     const creditsPerPeriod = readCreditsPerPeriod(ctx.provider);
     const limitCents = Math.round(creditsPerPeriod * CENTS_PER_CREDIT);
-    const usedCents = Math.round(Math.max(0, creditsPerPeriod - balance) * CENTS_PER_CREDIT);
+    const usedCents = Math.round(
+      Math.max(0, creditsPerPeriod - balance) * CENTS_PER_CREDIT,
+    );
     const window: ProviderKeyUsageWindow = {
       id: "hypercredits",
       label: "Balance",
@@ -127,8 +129,7 @@ class HyperCharmAdapter extends OpenAICompatibleAdapter {
     const line = `${fmt} Hypercredits remaining`;
     return {
       windows: [window],
-      message:
-        balance <= 0 ? `${line} - insufficient for API calls` : line,
+      message: balance <= 0 ? `${line} - insufficient for API calls` : line,
     };
   }
 }

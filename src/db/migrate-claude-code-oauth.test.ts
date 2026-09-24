@@ -8,7 +8,10 @@ import { ProviderAuthCrypto } from "../services/provider-auth/crypto";
 import { migrateClaudeCodePlainKeysToManagedAuth } from "./migrate-claude-code-oauth";
 import { createProvider } from "../repo/providers";
 import { createProviderKey, listProviderKeys } from "../repo/provider-keys";
-import { getProviderOAuth, listProviderOAuthViews } from "../repo/provider-oauth";
+import {
+  getProviderOAuth,
+  listProviderOAuthViews,
+} from "../repo/provider-oauth";
 import { NEVER_EXPIRES } from "../services/provider-auth/types";
 import { WireKind } from "../types";
 
@@ -32,7 +35,9 @@ test("migrates plain claude-code API keys into encrypted managed-auth credential
         catalogId: "claude-code",
         endpoints: [WireKind.Messages],
       });
-      createProviderKey(db, provider.id, { credential: "sk-ant-api03-plain-key-one" });
+      createProviderKey(db, provider.id, {
+        credential: "sk-ant-api03-plain-key-one",
+      });
       createProviderKey(db, provider.id, {
         credential: "sk-ant-api03-plain-key-two",
         label: "secondary",
@@ -51,7 +56,10 @@ test("migrates plain claude-code API keys into encrypted managed-auth credential
         assert.equal(view.integrationId, "claude-code");
         assert.equal(view.status, "active");
         const stored = getProviderOAuth(db, crypto, provider.id, view.id)!;
-        assert.match(stored.credential.secrets.accessToken, /^sk-ant-api03-plain-key-/);
+        assert.match(
+          stored.credential.secrets.accessToken,
+          /^sk-ant-api03-plain-key-/,
+        );
         assert.equal(stored.credential.secrets.refreshToken, undefined);
         assert.equal(stored.credential.expiresAt, NEVER_EXPIRES);
         // Not OAuth-prefixed -> plain API key, never refreshable.
@@ -107,7 +115,9 @@ test("is a no-op for providers with no keys, and idempotent on re-run", () => {
       migrateClaudeCodePlainKeysToManagedAuth(db, crypto);
       assert.equal(listProviderOAuthViews(db, provider.id).length, 0);
 
-      createProviderKey(db, provider.id, { credential: "sk-ant-api03-later-key" });
+      createProviderKey(db, provider.id, {
+        credential: "sk-ant-api03-later-key",
+      });
       migrateClaudeCodePlainKeysToManagedAuth(db, crypto);
       assert.equal(listProviderOAuthViews(db, provider.id).length, 1);
 

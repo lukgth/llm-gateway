@@ -1,7 +1,13 @@
 import { Link } from "react-router-dom";
 import type { OverviewResponse } from "@/lib/types";
 import { useWsSubscription } from "@/hooks/use-ws";
-import { fmtCacheHint, fmtNum, fmtTokens, fmtUsd, fmtWriteHint } from "@/lib/utils";
+import {
+  fmtCacheHint,
+  fmtNum,
+  fmtTokens,
+  fmtUsd,
+  fmtWriteHint,
+} from "@/lib/utils";
 import {
   PageHeader,
   Stat,
@@ -76,11 +82,11 @@ export default function Dashboard() {
             <Skeleton className="h-4 w-36" />
           </CardHeader>
           <CardContent className="p-0">
-              <TableSkeleton
-                rows={5}
-                cols={5}
-                widths={["60%", "40%", "40%", "40%", "30%"]}
-              />
+            <TableSkeleton
+              rows={5}
+              cols={5}
+              widths={["60%", "40%", "40%", "40%", "30%"]}
+            />
           </CardContent>
         </Card>
       </div>
@@ -181,7 +187,9 @@ export default function Dashboard() {
                     </TableHead>
                     <TableHead className="w-[16%] text-right">Tokens</TableHead>
                     <TableHead className="w-[15%] text-right">Cached</TableHead>
-                    <TableHead className="w-[15%] text-right">Written</TableHead>
+                    <TableHead className="w-[15%] text-right">
+                      Written
+                    </TableHead>
                     <TableHead className="w-[15%] text-right">Cost</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -217,9 +225,15 @@ export default function Dashboard() {
                       </TableCell>
                       <TableCell
                         className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
-                        title={(m.cacheWrite ?? 0) > 0 ? fmtNum(m.cacheWrite ?? 0) : undefined}
+                        title={
+                          (m.cacheWrite ?? 0) > 0
+                            ? fmtNum(m.cacheWrite ?? 0)
+                            : undefined
+                        }
                       >
-                        {(m.cacheWrite ?? 0) > 0 ? fmtTokens(m.cacheWrite ?? 0) : "-"}
+                        {(m.cacheWrite ?? 0) > 0
+                          ? fmtTokens(m.cacheWrite ?? 0)
+                          : "-"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
                         {m.costUsd > 0 ? fmtUsd(m.costUsd) : "-"}
@@ -297,9 +311,15 @@ export default function Dashboard() {
                       </TableCell>
                       <TableCell
                         className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
-                        title={(p.cacheWrite ?? 0) > 0 ? fmtNum(p.cacheWrite ?? 0) : undefined}
+                        title={
+                          (p.cacheWrite ?? 0) > 0
+                            ? fmtNum(p.cacheWrite ?? 0)
+                            : undefined
+                        }
                       >
-                        {(p.cacheWrite ?? 0) > 0 ? fmtTokens(p.cacheWrite ?? 0) : "-"}
+                        {(p.cacheWrite ?? 0) > 0
+                          ? fmtTokens(p.cacheWrite ?? 0)
+                          : "-"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
                         {p.costUsd > 0 ? fmtUsd(p.costUsd) : "-"}

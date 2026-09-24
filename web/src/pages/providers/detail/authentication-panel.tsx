@@ -24,7 +24,12 @@ import type {
   ProviderTemplate,
   ProviderTestProbe,
 } from "@/lib/types";
-import { EmptyState, Field, GridRowsSkeleton, TableSearch } from "@/components/shared";
+import {
+  EmptyState,
+  Field,
+  GridRowsSkeleton,
+  TableSearch,
+} from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -95,7 +100,9 @@ interface MetadataEntry {
   value: string;
 }
 
-function metadataEntries(metadata: Record<string, string> | undefined): MetadataEntry[] {
+function metadataEntries(
+  metadata: Record<string, string> | undefined,
+): MetadataEntry[] {
   return Object.entries(metadata ?? {}).map(([key, value]) => ({ key, value }));
 }
 
@@ -130,12 +137,15 @@ export function AuthenticationPanel({
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [testing, setTesting] = useState<Set<string>>(new Set());
   const [toggling, setToggling] = useState<Set<string>>(new Set());
-  const [results, setResults] = useState<Map<string, ProviderTestProbe>>(new Map());
+  const [results, setResults] = useState<Map<string, ProviderTestProbe>>(
+    new Map(),
+  );
   const [testingAll, setTestingAll] = useState(false);
   const [session, setSession] = useState<ProviderAuthSession | null>(null);
   const [connectMode, setConnectMode] = useState<"add" | string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [editingAccount, setEditingAccount] = useState<ProviderOAuthAccount | null>(null);
+  const [editingAccount, setEditingAccount] =
+    useState<ProviderOAuthAccount | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -172,8 +182,12 @@ export function AuthenticationPanel({
       ].some((value) => value?.toLowerCase().includes(query)),
     );
   }, [accounts, filter]);
-  const activeCount = accounts.filter((account) => account.status === "active").length;
-  const disabledCount = accounts.filter((account) => account.status === "disabled").length;
+  const activeCount = accounts.filter(
+    (account) => account.status === "active",
+  ).length;
+  const disabledCount = accounts.filter(
+    (account) => account.status === "disabled",
+  ).length;
   const visibleIds = useMemo(
     () => new Set(filteredRows.map((row) => row.id)),
     [filteredRows],
@@ -185,7 +199,9 @@ export function AuthenticationPanel({
         .map(([id]) => id),
     [results, visibleIds],
   );
-  const selectedAccounts = accounts.filter((account) => selected.has(account.id));
+  const selectedAccounts = accounts.filter((account) =>
+    selected.has(account.id),
+  );
   const canEnableSelected = selectedAccounts.some(
     (account) => account.status === "disabled",
   );
@@ -193,7 +209,8 @@ export function AuthenticationPanel({
     (account) => account.status === "active",
   );
   const allVisibleSelected =
-    filteredRows.length > 0 && filteredRows.every((row) => selected.has(row.id));
+    filteredRows.length > 0 &&
+    filteredRows.every((row) => selected.has(row.id));
 
   const virtualizer = useVirtualizer({
     count: filteredRows.length,
@@ -213,7 +230,8 @@ export function AuthenticationPanel({
           toast[result.ok ? "success" : "error"](
             result.ok
               ? `Reachable · ${result.ms}ms`
-              : result.error || `Test failed${result.status ? ` (${result.status})` : ""}`,
+              : result.error ||
+                  `Test failed${result.status ? ` (${result.status})` : ""}`,
           );
         return result;
       } catch (error) {
@@ -243,13 +261,16 @@ export function AuthenticationPanel({
     if (!queue.length) return;
     setTestingAll(true);
     let passed = 0;
-    const workers = Array.from({ length: Math.min(5, queue.length) }, async () => {
-      while (queue.length) {
-        const account = queue.shift();
-        if (!account) return;
-        if ((await testAccount(account.id))?.ok) passed++;
-      }
-    });
+    const workers = Array.from(
+      { length: Math.min(5, queue.length) },
+      async () => {
+        while (queue.length) {
+          const account = queue.shift();
+          if (!account) return;
+          if ((await testAccount(account.id))?.ok) passed++;
+        }
+      },
+    );
     try {
       await Promise.all(workers);
       toast[passed === activeCount ? "success" : "error"](
@@ -282,7 +303,10 @@ export function AuthenticationPanel({
 
   const removeAccount = useCallback(
     async (account: ProviderOAuthAccount) => {
-      const label = account.account.email || account.account.label || mask(account.accessToken);
+      const label =
+        account.account.email ||
+        account.account.label ||
+        mask(account.accessToken);
       if (!confirm(`Remove ${label}?`)) return;
       try {
         await api.deleteProviderAuth(provider.id, account.id);
@@ -303,12 +327,17 @@ export function AuthenticationPanel({
       return !!account;
     });
     if (!ids.length) return;
-    if (operation === "remove" && !confirm(`Remove ${ids.length} selected account(s)?`))
+    if (
+      operation === "remove" &&
+      !confirm(`Remove ${ids.length} selected account(s)?`)
+    )
       return;
     try {
       await api.batchProviderAuth(provider.id, { [operation]: ids });
       setSelected(new Set());
-      toast.success(`${ids.length} account(s) ${operation === "remove" ? "removed" : `${operation}d`}`);
+      toast.success(
+        `${ids.length} account(s) ${operation === "remove" ? "removed" : `${operation}d`}`,
+      );
       await reload();
     } catch (error) {
       toast.error((error as Error).message);
@@ -321,10 +350,13 @@ export function AuthenticationPanel({
     try {
       if (connectMode === "add")
         await api.addProviderAuth(provider.id, session.id);
-      else await api.reconnectProviderAuth(provider.id, connectMode, session.id);
+      else
+        await api.reconnectProviderAuth(provider.id, connectMode, session.id);
       setSession(null);
       setConnectMode(null);
-      toast.success(connectMode === "add" ? "Account added" : "Account reconnected");
+      toast.success(
+        connectMode === "add" ? "Account added" : "Account reconnected",
+      );
       await reload();
     } catch (error) {
       toast.error((error as Error).message);
@@ -356,7 +388,8 @@ export function AuthenticationPanel({
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
-    const safeProviderId = provider.id.replace(/[^a-zA-Z0-9._-]+/g, "-") || "provider";
+    const safeProviderId =
+      provider.id.replace(/[^a-zA-Z0-9._-]+/g, "-") || "provider";
     anchor.href = url;
     anchor.download = `${safeProviderId}-accounts.txt`;
     document.body.appendChild(anchor);
@@ -374,21 +407,39 @@ export function AuthenticationPanel({
         <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
           {selected.size > 0 ? (
             <>
-              <span className="mr-1 text-xs font-medium">{selected.size} selected</span>
-              <Button variant="outline" size="sm" disabled={!canEnableSelected} onClick={() => void runBulk("enable")}>
+              <span className="mr-1 text-xs font-medium">
+                {selected.size} selected
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!canEnableSelected}
+                onClick={() => void runBulk("enable")}
+              >
                 <Power className="h-3.5 w-3.5" /> Enable
               </Button>
-              <Button variant="outline" size="sm" disabled={!canDisableSelected} onClick={() => void runBulk("disable")}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!canDisableSelected}
+                onClick={() => void runBulk("disable")}
+              >
                 <PowerOff className="h-3.5 w-3.5" /> Disable
               </Button>
-              <Button variant="destructive" size="sm" onClick={() => void runBulk("remove")}>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => void runBulk("remove")}
+              >
                 <Trash2 className="h-3.5 w-3.5" /> Remove
               </Button>
             </>
           ) : (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Badge variant="success">{activeCount} active</Badge>
-              {disabledCount > 0 && <Badge variant="secondary">{disabledCount} disabled</Badge>}
+              {disabledCount > 0 && (
+                <Badge variant="secondary">{disabledCount} disabled</Badge>
+              )}
               {visibleFailedIds.length > 0 && (
                 <Button variant="ghost" size="sm" onClick={selectFailed}>
                   Select {visibleFailedIds.length} failed
@@ -397,20 +448,35 @@ export function AuthenticationPanel({
             </div>
           )}
           <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
-            <TableSearch value={filter} onChange={setFilter} placeholder="Search accounts…" />
+            <TableSearch
+              value={filter}
+              onChange={setFilter}
+              placeholder="Search accounts…"
+            />
             <Button
               variant="outline"
               size="sm"
               disabled={loading || accounts.length === 0}
-              onClick={() => exportAccounts(selected.size > 0 ? selectedAccounts : accounts)}
+              onClick={() =>
+                exportAccounts(selected.size > 0 ? selectedAccounts : accounts)
+              }
             >
               <Download className="h-3.5 w-3.5" />
               <span className="hidden lg:inline">
                 Export {selected.size > 0 ? "selected" : "all"}
               </span>
             </Button>
-            <Button variant="outline" size="sm" onClick={() => void testAll()} disabled={testingAll || activeCount === 0}>
-              {testingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void testAll()}
+              disabled={testingAll || activeCount === 0}
+            >
+              {testingAll ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FlaskConical className="h-3.5 w-3.5" />
+              )}
               <span className="hidden lg:inline">Test active</span>
             </Button>
             <Button size="sm" onClick={() => setConnectMode("add")}>
@@ -423,25 +489,63 @@ export function AuthenticationPanel({
           <div className="min-w-0" role="table" aria-label="OAuth accounts">
             <div className="no-scrollbar max-h-[28rem] overflow-x-auto overflow-y-auto">
               <div role="rowgroup">
-                <div role="row" className={cn(GRID, "sticky top-0 z-10 h-8 items-center border-b border-border bg-muted/30 px-4 text-xs font-medium text-muted-foreground")}>
+                <div
+                  role="row"
+                  className={cn(
+                    GRID,
+                    "sticky top-0 z-10 h-8 items-center border-b border-border bg-muted/30 px-4 text-xs font-medium text-muted-foreground",
+                  )}
+                >
                   <div role="columnheader" className="flex justify-start pr-2">
-                    <Checkbox disabled aria-label="Select all visible accounts" />
+                    <Checkbox
+                      disabled
+                      aria-label="Select all visible accounts"
+                    />
                   </div>
                   <div role="columnheader">Access token</div>
-                  <div role="columnheader" className="hidden md:block">Email</div>
-                  <div role="columnheader" className="hidden md:block">Info</div>
-                  <div role="columnheader" className="hidden md:block">Expires</div>
+                  <div role="columnheader" className="hidden md:block">
+                    Email
+                  </div>
+                  <div role="columnheader" className="hidden md:block">
+                    Info
+                  </div>
+                  <div role="columnheader" className="hidden md:block">
+                    Expires
+                  </div>
                   <div role="columnheader">Status</div>
                   <div role="columnheader">Active</div>
-                  <div role="columnheader" className="hidden text-right md:block">Success</div>
-                  <div role="columnheader" className="hidden text-right md:block">Errors</div>
-                  <div role="columnheader" className="text-right">Actions</div>
+                  <div
+                    role="columnheader"
+                    className="hidden text-right md:block"
+                  >
+                    Success
+                  </div>
+                  <div
+                    role="columnheader"
+                    className="hidden text-right md:block"
+                  >
+                    Errors
+                  </div>
+                  <div role="columnheader" className="text-right">
+                    Actions
+                  </div>
                 </div>
               </div>
               <GridRowsSkeleton
                 gridClassName={GRID}
                 cols={10}
-                widths={["1.25rem", "70%", "60%", "50%", "40%", "5rem", "1.75rem", "20%", "20%", "5rem"]}
+                widths={[
+                  "1.25rem",
+                  "70%",
+                  "60%",
+                  "50%",
+                  "40%",
+                  "5rem",
+                  "1.75rem",
+                  "20%",
+                  "20%",
+                  "5rem",
+                ]}
               />
             </div>
           </div>
@@ -451,32 +555,83 @@ export function AuthenticationPanel({
           <EmptyState msg="No accounts match your search" />
         ) : (
           <div className="min-w-0" role="table" aria-label="OAuth accounts">
-            <div ref={parentRef} className="no-scrollbar max-h-[28rem] overflow-x-auto overflow-y-auto">
+            <div
+              ref={parentRef}
+              className="no-scrollbar max-h-[28rem] overflow-x-auto overflow-y-auto"
+            >
               <div role="rowgroup">
-                <div role="row" className={cn(GRID, "sticky top-0 z-10 h-8 items-center border-b border-border bg-muted/30 px-4 text-xs font-medium text-muted-foreground")}>
+                <div
+                  role="row"
+                  className={cn(
+                    GRID,
+                    "sticky top-0 z-10 h-8 items-center border-b border-border bg-muted/30 px-4 text-xs font-medium text-muted-foreground",
+                  )}
+                >
                   <div role="columnheader" className="flex justify-start pr-2">
-                    <Checkbox checked={allVisibleSelected} onCheckedChange={(checked) => setSelected((current) => {
-                      const next = new Set(current);
-                      for (const row of filteredRows) checked ? next.add(row.id) : next.delete(row.id);
-                      return next;
-                    })} aria-label="Select all visible accounts" />
+                    <Checkbox
+                      checked={allVisibleSelected}
+                      onCheckedChange={(checked) =>
+                        setSelected((current) => {
+                          const next = new Set(current);
+                          for (const row of filteredRows)
+                            checked ? next.add(row.id) : next.delete(row.id);
+                          return next;
+                        })
+                      }
+                      aria-label="Select all visible accounts"
+                    />
                   </div>
                   <div role="columnheader">Access token</div>
-                  <div role="columnheader" className="hidden md:block">Email</div>
-                  <div role="columnheader" className="hidden md:block">Info</div>
-                  <div role="columnheader" className="hidden md:block">Expires</div>
+                  <div role="columnheader" className="hidden md:block">
+                    Email
+                  </div>
+                  <div role="columnheader" className="hidden md:block">
+                    Info
+                  </div>
+                  <div role="columnheader" className="hidden md:block">
+                    Expires
+                  </div>
                   <div role="columnheader">Status</div>
                   <div role="columnheader">Active</div>
-                  <div role="columnheader" className="hidden text-right md:block">Success</div>
-                  <div role="columnheader" className="hidden text-right md:block">Errors</div>
-                  <div role="columnheader" className="text-right">Actions</div>
+                  <div
+                    role="columnheader"
+                    className="hidden text-right md:block"
+                  >
+                    Success
+                  </div>
+                  <div
+                    role="columnheader"
+                    className="hidden text-right md:block"
+                  >
+                    Errors
+                  </div>
+                  <div role="columnheader" className="text-right">
+                    Actions
+                  </div>
                 </div>
               </div>
-              <div role="rowgroup" style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
+              <div
+                role="rowgroup"
+                style={{
+                  height: `${virtualizer.getTotalSize()}px`,
+                  position: "relative",
+                }}
+              >
                 {virtualizer.getVirtualItems().map((virtualRow) => {
                   const account = filteredRows[virtualRow.index];
                   return (
-                    <div key={account.id} role="presentation" style={{ position: "absolute", top: 0, left: 0, width: "100%", height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start - HEADER_HEIGHT}px)` }}>
+                    <div
+                      key={account.id}
+                      role="presentation"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: `${virtualRow.size}px`,
+                        transform: `translateY(${virtualRow.start - HEADER_HEIGHT}px)`,
+                      }}
+                    >
                       <AccountRow
                         account={account}
                         selected={selected.has(account.id)}
@@ -484,17 +639,27 @@ export function AuthenticationPanel({
                         testing={testing.has(account.id)}
                         toggling={toggling.has(account.id)}
                         result={results.get(account.id)}
-                        onSelect={() => setSelected((current) => {
-                          const next = new Set(current);
-                          next.has(account.id) ? next.delete(account.id) : next.add(account.id);
-                          return next;
-                        })}
-                        onReveal={() => setRevealed((current) => {
-                          const next = new Set(current);
-                          next.has(account.id) ? next.delete(account.id) : next.add(account.id);
-                          return next;
-                        })}
-                        onToggle={(enabled) => void toggleAccount(account.id, enabled)}
+                        onSelect={() =>
+                          setSelected((current) => {
+                            const next = new Set(current);
+                            next.has(account.id)
+                              ? next.delete(account.id)
+                              : next.add(account.id);
+                            return next;
+                          })
+                        }
+                        onReveal={() =>
+                          setRevealed((current) => {
+                            const next = new Set(current);
+                            next.has(account.id)
+                              ? next.delete(account.id)
+                              : next.add(account.id);
+                            return next;
+                          })
+                        }
+                        onToggle={(enabled) =>
+                          void toggleAccount(account.id, enabled)
+                        }
                         onTest={() => void testAccount(account.id, true)}
                         onReconnect={() => {
                           setSession(null);
@@ -517,7 +682,8 @@ export function AuthenticationPanel({
           <div className="mb-4">
             <div className="font-medium">Add account(s)</div>
             <p className="text-sm text-muted-foreground">
-              Paste credential JSON, or one or more bare tokens - one per line - to add several accounts at once.
+              Paste credential JSON, or one or more bare tokens - one per line -
+              to add several accounts at once.
             </p>
           </div>
           <BulkImportFlow
@@ -536,14 +702,23 @@ export function AuthenticationPanel({
         <Card className="p-4">
           <div className="mb-4">
             <div className="font-medium">Reconnect account</div>
-            <p className="text-sm text-muted-foreground">Complete device authorization, then save the connection.</p>
+            <p className="text-sm text-muted-foreground">
+              Complete device authorization, then save the connection.
+            </p>
           </div>
           <AuthStep tpl={template} session={session} onSession={setSession} />
           <div className="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={cancelConnect}>Cancel</Button>
+            <Button variant="ghost" size="sm" onClick={cancelConnect}>
+              Cancel
+            </Button>
             {session?.state === "ready" && (
-              <Button size="sm" onClick={() => void finishConnect()} disabled={saving}>
-                {saving && <Loader2 className="h-4 w-4 animate-spin" />} Save connection
+              <Button
+                size="sm"
+                onClick={() => void finishConnect()}
+                disabled={saving}
+              >
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />} Save
+                connection
               </Button>
             )}
           </div>
@@ -597,19 +772,29 @@ function AccountRow({
   const tagCount = Object.keys(account.account.tags ?? {}).length;
   const dead = account.status === "reauth_required" || !!account.health?.dead;
   const rateLimitedUntil = account.health?.rateLimitedUntil;
-  const rateLimited = !!rateLimitedUntil && new Date(rateLimitedUntil).getTime() > Date.now();
+  const rateLimited =
+    !!rateLimitedUntil && new Date(rateLimitedUntil).getTime() > Date.now();
   const healthDetail = [
-    account.health?.lastErrorStatus ? `Status ${account.health.lastErrorStatus}` : null,
+    account.health?.lastErrorStatus
+      ? `Status ${account.health.lastErrorStatus}`
+      : null,
     account.health?.lastError,
     account.health?.lastErrorAt
       ? `Observed ${new Date(account.health.lastErrorAt).toLocaleString()}`
       : null,
-    rateLimited && !dead ? `Resets ${new Date(rateLimitedUntil!).toLocaleString()}` : null,
+    rateLimited && !dead
+      ? `Resets ${new Date(rateLimitedUntil!).toLocaleString()}`
+      : null,
   ]
     .filter(Boolean)
     .join(" · ");
   const status = testing
-    ? { dot: "bg-muted-foreground animate-pulse", tone: "text-muted-foreground", label: "Testing…", title: "Running a live credential test" }
+    ? {
+        dot: "bg-muted-foreground animate-pulse",
+        tone: "text-muted-foreground",
+        label: "Testing…",
+        title: "Running a live credential test",
+      }
     : dead
       ? {
           dot: "bg-destructive",
@@ -620,69 +805,207 @@ function AccountRow({
           title: healthDetail || "Credential rejected by the provider",
         }
       : rateLimited
-        ? { dot: "bg-amber-500", tone: "text-amber-700 dark:text-amber-300", label: `Rate limited · ${resetLabel(rateLimitedUntil!)}`, title: healthDetail || "Rate limited by the provider" }
+        ? {
+            dot: "bg-amber-500",
+            tone: "text-amber-700 dark:text-amber-300",
+            label: `Rate limited · ${resetLabel(rateLimitedUntil!)}`,
+            title: healthDetail || "Rate limited by the provider",
+          }
         : result
           ? result.ok
-            ? { dot: "bg-success", tone: "text-success", label: `${result.ms} ms`, title: "Credential is reachable" }
-            : { dot: "bg-destructive", tone: "text-destructive", label: result.status ? `Failed (${result.status})` : "Test failed", title: result.error || undefined }
+            ? {
+                dot: "bg-success",
+                tone: "text-success",
+                label: `${result.ms} ms`,
+                title: "Credential is reachable",
+              }
+            : {
+                dot: "bg-destructive",
+                tone: "text-destructive",
+                label: result.status
+                  ? `Failed (${result.status})`
+                  : "Test failed",
+                title: result.error || undefined,
+              }
           : account.status === "disabled"
-            ? { dot: "bg-muted-foreground/50", tone: "text-muted-foreground", label: "Disabled", title: undefined }
-            : { dot: "bg-success", tone: "text-success", label: "Connected", title: undefined };
+            ? {
+                dot: "bg-muted-foreground/50",
+                tone: "text-muted-foreground",
+                label: "Disabled",
+                title: undefined,
+              }
+            : {
+                dot: "bg-success",
+                tone: "text-success",
+                label: "Connected",
+                title: undefined,
+              };
   return (
-    <div role="row" className={cn(GRID, "h-14 items-center border-b border-border/70 px-4 text-sm transition-colors hover:bg-muted/30", selected && "bg-primary/5", dead && "bg-destructive/5", account.status === "disabled" && "text-muted-foreground")}>
-      <div role="cell" className="flex justify-start pr-2"><Checkbox checked={selected} onCheckedChange={onSelect} aria-label={`Select ${account.account.email || mask(account.accessToken)}`} /></div>
-      <div role="cell" className="flex min-w-0 items-center gap-1 pr-3">
-        <span className="min-w-0 truncate font-mono text-sm text-foreground">{revealed ? account.accessToken : mask(account.accessToken)}</span>
-        <ActionButton label="Copy access token" onClick={() => { void navigator.clipboard.writeText(account.accessToken); toast.success("Access token copied"); }}><Copy /></ActionButton>
+    <div
+      role="row"
+      className={cn(
+        GRID,
+        "h-14 items-center border-b border-border/70 px-4 text-sm transition-colors hover:bg-muted/30",
+        selected && "bg-primary/5",
+        dead && "bg-destructive/5",
+        account.status === "disabled" && "text-muted-foreground",
+      )}
+    >
+      <div role="cell" className="flex justify-start pr-2">
+        <Checkbox
+          checked={selected}
+          onCheckedChange={onSelect}
+          aria-label={`Select ${account.account.email || mask(account.accessToken)}`}
+        />
       </div>
-      <div role="cell" className="hidden min-w-0 truncate md:block">{account.account.email || "-"}</div>
-      <div role="cell" className="hidden min-w-0 flex-col justify-center gap-0.5 md:flex">
+      <div role="cell" className="flex min-w-0 items-center gap-1 pr-3">
+        <span className="min-w-0 truncate font-mono text-sm text-foreground">
+          {revealed ? account.accessToken : mask(account.accessToken)}
+        </span>
+        <ActionButton
+          label="Copy access token"
+          onClick={() => {
+            void navigator.clipboard.writeText(account.accessToken);
+            toast.success("Access token copied");
+          }}
+        >
+          <Copy />
+        </ActionButton>
+      </div>
+      <div role="cell" className="hidden min-w-0 truncate md:block">
+        {account.account.email || "-"}
+      </div>
+      <div
+        role="cell"
+        className="hidden min-w-0 flex-col justify-center gap-0.5 md:flex"
+      >
         <span
-          className="truncate"
-          title={
-            isUnidentified(account) && account.account.label
-              ? account.account.label
-              : undefined
-          }
+          className="min-w-0 truncate"
+          title={account.account.label || undefined}
         >
           {account.account.label || <span className="opacity-50">-</span>}
         </span>
         {(account.account.subscriptionType || tagCount > 0) && (
-          <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <span className="flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
             {account.account.subscriptionType && (
-              <span className="truncate capitalize">{account.account.subscriptionType}</span>
+              <span className="min-w-0 shrink truncate capitalize">
+                {account.account.subscriptionType}
+              </span>
             )}
             {tagCount > 0 && (
-              <Badge variant="secondary" className="px-1 py-0 text-[10px] leading-4">
+              <Badge
+                variant="secondary"
+                className="shrink-0 px-1 py-0 text-[10px] leading-4"
+              >
                 {tagCount} tag{tagCount === 1 ? "" : "s"}
               </Badge>
             )}
           </span>
         )}
       </div>
-      <div role="cell" className="hidden min-w-0 truncate text-xs md:block" title={account.account.tokenKind === "long_lived" ? "This credential does not expire" : new Date(account.expiresAt).toLocaleString()}>
-        {account.account.tokenKind === "long_lived" ? "Never" : new Date(account.expiresAt).toLocaleDateString()}
+      <div
+        role="cell"
+        className="hidden min-w-0 truncate text-xs md:block"
+        title={
+          account.account.tokenKind === "long_lived"
+            ? "This credential does not expire"
+            : new Date(account.expiresAt).toLocaleString()
+        }
+      >
+        {account.account.tokenKind === "long_lived"
+          ? "Never"
+          : new Date(account.expiresAt).toLocaleDateString()}
       </div>
-      <div role="cell" className="min-w-0" title={status.title}><span className={cn("flex min-w-0 items-center gap-1.5 text-xs", status.tone)}><span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", status.dot)} /><span className="truncate whitespace-nowrap">{status.label}</span></span></div>
-      <div role="cell" className="flex items-center"><Switch checked={account.status === "active"} disabled={toggling || account.status === "reauth_required"} onCheckedChange={onToggle} aria-label={`${account.status === "active" ? "Disable" : "Enable"} account`} /></div>
-      <div role="cell" className="hidden text-right font-mono text-success md:block">{account.stats.success}</div>
-      <div role="cell" className={cn("hidden text-right font-mono md:block", account.stats.errors > 0 ? "text-destructive" : "text-muted-foreground")}>{account.stats.errors}</div>
+      <div role="cell" className="min-w-0" title={status.title}>
+        <span
+          className={cn(
+            "flex min-w-0 items-center gap-1.5 text-xs",
+            status.tone,
+          )}
+        >
+          <span
+            className={cn("h-1.5 w-1.5 shrink-0 rounded-full", status.dot)}
+          />
+          <span className="truncate whitespace-nowrap">{status.label}</span>
+        </span>
+      </div>
+      <div role="cell" className="flex items-center">
+        <Switch
+          checked={account.status === "active"}
+          disabled={toggling || account.status === "reauth_required"}
+          onCheckedChange={onToggle}
+          aria-label={`${account.status === "active" ? "Disable" : "Enable"} account`}
+        />
+      </div>
+      <div
+        role="cell"
+        className="hidden text-right font-mono text-success md:block"
+      >
+        {account.stats.success}
+      </div>
+      <div
+        role="cell"
+        className={cn(
+          "hidden text-right font-mono md:block",
+          account.stats.errors > 0
+            ? "text-destructive"
+            : "text-muted-foreground",
+        )}
+      >
+        {account.stats.errors}
+      </div>
       <div role="cell" className="flex items-center justify-end gap-1">
-        <ActionButton label={revealed ? "Hide access token" : "Reveal access token"} onClick={onReveal}>{revealed ? <EyeOff /> : <Eye />}</ActionButton>
-        <ActionButton label="Edit description and tags" onClick={onEdit}><Pencil /></ActionButton>
-        <ActionButton label="Test account" disabled={testing || account.status !== "active"} onClick={onTest}>{testing ? <Loader2 className="animate-spin" /> : <FlaskConical />}</ActionButton>
-        <ActionButton label="Reconnect account" onClick={onReconnect}><RefreshCw /></ActionButton>
-        <ActionButton label="Remove account" destructive onClick={onRemove}><Trash2 /></ActionButton>
+        <ActionButton
+          label={revealed ? "Hide access token" : "Reveal access token"}
+          onClick={onReveal}
+        >
+          {revealed ? <EyeOff /> : <Eye />}
+        </ActionButton>
+        <ActionButton label="Edit description and tags" onClick={onEdit}>
+          <Pencil />
+        </ActionButton>
+        <ActionButton
+          label="Test account"
+          disabled={testing || account.status !== "active"}
+          onClick={onTest}
+        >
+          {testing ? <Loader2 className="animate-spin" /> : <FlaskConical />}
+        </ActionButton>
+        <ActionButton label="Reconnect account" onClick={onReconnect}>
+          <RefreshCw />
+        </ActionButton>
+        <ActionButton label="Remove account" destructive onClick={onRemove}>
+          <Trash2 />
+        </ActionButton>
       </div>
     </div>
   );
 }
 
-function ActionButton({ label, destructive, children, ...props }: React.ComponentProps<typeof Button> & { label: string; destructive?: boolean }) {
+function ActionButton({
+  label,
+  destructive,
+  children,
+  ...props
+}: React.ComponentProps<typeof Button> & {
+  label: string;
+  destructive?: boolean;
+}) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon-sm" className={cn("text-muted-foreground hover:text-foreground", destructive && "hover:text-destructive")} aria-label={label} {...props}>{children}</Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className={cn(
+            "text-muted-foreground hover:text-foreground",
+            destructive && "hover:text-destructive",
+          )}
+          aria-label={label}
+          {...props}
+        >
+          {children}
+        </Button>
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
@@ -779,7 +1102,7 @@ function AccountEditDialog({
                 onChange={(event) => setLabel(event.target.value)}
                 placeholder={
                   unidentified
-                    ? "What is this account for? e.g. \"personal - max plan\""
+                    ? 'What is this account for? e.g. "personal - max plan"'
                     : "Optional human-readable label"
                 }
                 autoFocus
@@ -792,11 +1115,20 @@ function AccountEditDialog({
           </div>
 
           <DialogFooter className="border-t border-border pt-4">
-            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={saving}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+              {saving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Check className="h-3.5 w-3.5" />
+              )}
               Save changes
             </Button>
           </DialogFooter>
@@ -834,13 +1166,18 @@ function MetadataFields({
       ) : (
         <div className="max-h-56 space-y-3 overflow-y-auto pr-1">
           {entries.map((entry, index) => (
-            <div key={index} className="grid grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_32px] gap-2">
+            <div
+              key={index}
+              className="grid grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_32px] gap-2"
+            >
               <Input
                 value={entry.key}
                 onChange={(event) =>
                   onChange(
                     entries.map((item, itemIndex) =>
-                      itemIndex === index ? { ...item, key: event.target.value } : item,
+                      itemIndex === index
+                        ? { ...item, key: event.target.value }
+                        : item,
                     ),
                   )
                 }
@@ -852,7 +1189,9 @@ function MetadataFields({
                 onChange={(event) =>
                   onChange(
                     entries.map((item, itemIndex) =>
-                      itemIndex === index ? { ...item, value: event.target.value } : item,
+                      itemIndex === index
+                        ? { ...item, value: event.target.value }
+                        : item,
                     ),
                   )
                 }
@@ -865,7 +1204,11 @@ function MetadataFields({
                 size="icon-sm"
                 aria-label="Remove tag"
                 className="text-muted-foreground hover:text-destructive"
-                onClick={() => onChange(entries.filter((_, itemIndex) => itemIndex !== index))}
+                onClick={() =>
+                  onChange(
+                    entries.filter((_, itemIndex) => itemIndex !== index),
+                  )
+                }
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
@@ -890,7 +1233,14 @@ function splitCredentials(raw: string): string[] {
   } catch {
     // not a single JSON blob - fall through to per-line splitting
   }
-  return [...new Set(trimmed.split(/\r?\n/).map((line) => line.trim()).filter(Boolean))];
+  return [
+    ...new Set(
+      trimmed
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 // Add one or more accounts to an existing provider. A single JSON blob (or a
@@ -911,7 +1261,10 @@ function BulkImportFlow({
 }) {
   const [value, setValue] = useState("");
   const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
 
   const entries = useMemo(() => splitCredentials(value), [value]);
 
@@ -929,7 +1282,10 @@ function BulkImportFlow({
       } catch (error) {
         failures.push((error as Error).message);
       }
-      setProgress((current) => ({ done: (current?.done ?? 0) + 1, total: entries.length }));
+      setProgress((current) => ({
+        done: (current?.done ?? 0) + 1,
+        total: entries.length,
+      }));
     }
     setRunning(false);
     if (added) toast.success(`Added ${added} account${added === 1 ? "" : "s"}`);
@@ -980,9 +1336,15 @@ function BulkImportFlow({
         <Button variant="ghost" size="sm" onClick={onCancel} disabled={running}>
           Cancel
         </Button>
-        <Button size="sm" onClick={() => void run()} disabled={!entries.length || running}>
+        <Button
+          size="sm"
+          onClick={() => void run()}
+          disabled={!entries.length || running}
+        >
           {running && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {entries.length > 1 ? `Add ${entries.length} accounts` : "Add account"}
+          {entries.length > 1
+            ? `Add ${entries.length} accounts`
+            : "Add account"}
         </Button>
       </div>
     </div>

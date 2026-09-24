@@ -11,10 +11,10 @@ click a key, and add the fields in the Metadata section.
 Quota display scrapes the workspace dashboard page.
 Two metadata fields are required on each key:
 
-| Field | Value |
-|-------|-------|
-| `workspaceId` | The workspace slug from the URL |
-| `authCookie` | The value of the `auth` session cookie |
+| Field         | Value                                  |
+| ------------- | -------------------------------------- |
+| `workspaceId` | The workspace slug from the URL        |
+| `authCookie`  | The value of the `auth` session cookie |
 
 ### Finding `workspaceId`
 

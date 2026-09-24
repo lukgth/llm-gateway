@@ -159,7 +159,9 @@ async function readBufferedSse(
 ): Promise<Record<string, unknown>> {
   const text = await readErrorBody(upRes, MAX_BUFFER_BYTES);
   if (Buffer.byteLength(text) >= MAX_BUFFER_BYTES)
-    throw new Error(`upstream ${format === "chat" ? "Chat Completions" : "Responses"} stream too large`);
+    throw new Error(
+      `upstream ${format === "chat" ? "Chat Completions" : "Responses"} stream too large`,
+    );
   return format === "chat" ? collectChatSse(text) : collectResponsesSse(text);
 }
 
@@ -811,7 +813,11 @@ export class ForwardingEngine {
                 result.status,
                 result.reason ?? `upstream auth failed (${result.status})`,
               );
-              this.disableDeadKey(entry.provider.id, pick.keyHash, result.status);
+              this.disableDeadKey(
+                entry.provider.id,
+                pick.keyHash,
+                result.status,
+              );
             }
           } else if (result.status === 429) {
             if (
@@ -1383,38 +1389,28 @@ export class ForwardingEngine {
     const headers = upRes.headers || {};
 
     const captureClaudeUsage = () => {
-      if (!upstreamKey.hash) return;
+      if (!upstreamKey.hash || provider.catalogId !== "claude-code") return;
       try {
-        if (provider.catalogId === "claude-code") {
-          const unified = filterUnifiedRateLimitHeaders(headers);
-          if (Object.keys(unified).length)
-            upsertUnifiedUsage(
-              this.db,
-              provider.id,
-              upstreamKey.hash,
-              unified,
-              status,
-            );
-        } else if (route.providerFmt === "messages") {
-          // Any other Messages-format provider (the official Anthropic
-          // catalog, or an Anthropic-compatible custom/generic template) gets
-          // the STANDARD anthropic-ratelimit-* headers instead - Claude Code's
-          // subscription auth is the only path that ever sends the unified
-          // scheme, but a plain API key sends these on every response. Stored
-          // in the same table (it's just headers_json) under the same
-          // provider+key pair - safe because a provider can only be
-          // claude-code XOR something else, never both, so there's no
-          // capture ever competing for the same row.
-          const standard = filterStandardRateLimitHeaders(headers);
-          if (Object.keys(standard).length)
-            upsertUnifiedUsage(
-              this.db,
-              provider.id,
-              upstreamKey.hash,
-              standard,
-              status,
-            );
-        }
+        // OAuth-authenticated Claude Code traffic sends the unified
+        // (subscription-billing) headers; a legacy plain sk-ant-api03-...
+        // key migrated onto this catalog sends Anthropic's standard
+        // anthropic-ratelimit-* headers instead - a response only ever
+        // carries one family, so merging is safe (never both at once), and
+        // claude-code.ts's keyUsage() tries unified first, falling back to
+        // standard, so either capture is picked up regardless of which one
+        // this particular credential actually sends.
+        const captured = {
+          ...filterUnifiedRateLimitHeaders(headers),
+          ...filterStandardRateLimitHeaders(headers),
+        };
+        if (Object.keys(captured).length)
+          upsertUnifiedUsage(
+            this.db,
+            provider.id,
+            upstreamKey.hash,
+            captured,
+            status,
+          );
       } catch (err) {
         this.logger.warn("claude_usage_capture_failed", {
           provider: provider.id,
@@ -2377,7 +2373,12 @@ export class ForwardingEngine {
   private settleUsage(
     ctx: ForwardContext,
     provider: Provider | null,
-    usage: { input?: number; output?: number; cached?: number; cacheWrite?: number },
+    usage: {
+      input?: number;
+      output?: number;
+      cached?: number;
+      cacheWrite?: number;
+    },
   ): void {
     if (!ctx.apiKey) return;
     // These are raw better-sqlite3 writes; a transient DB error must not escape
@@ -2720,29 +2721,20 @@ export class ForwardingEngine {
     }
 
     const captureClaudeUsage = () => {
-      if (!pick) return;
+      if (!pick || provider.catalogId !== "claude-code") return;
       try {
-        if (provider.catalogId === "claude-code") {
-          const unified = filterUnifiedRateLimitHeaders(res.headers);
-          if (Object.keys(unified).length)
-            upsertUnifiedUsage(
-              this.db,
-              provider.id,
-              pick.keyHash,
-              unified,
-              res.status,
-            );
-        } else if (route.providerFmt === "messages") {
-          const standard = filterStandardRateLimitHeaders(res.headers);
-          if (Object.keys(standard).length)
-            upsertUnifiedUsage(
-              this.db,
-              provider.id,
-              pick.keyHash,
-              standard,
-              res.status,
-            );
-        }
+        const captured = {
+          ...filterUnifiedRateLimitHeaders(res.headers),
+          ...filterStandardRateLimitHeaders(res.headers),
+        };
+        if (Object.keys(captured).length)
+          upsertUnifiedUsage(
+            this.db,
+            provider.id,
+            pick.keyHash,
+            captured,
+            res.status,
+          );
       } catch (err) {
         this.logger.warn("claude_usage_capture_failed", {
           provider: provider.id,
@@ -2972,7 +2964,8 @@ export class ForwardingEngine {
           res.status,
           `upstream ${res.status}: ${res.text.slice(0, 300)}`,
         );
-        if (!managed) this.disableDeadKey(provider.id, pick.keyHash, res.status);
+        if (!managed)
+          this.disableDeadKey(provider.id, pick.keyHash, res.status);
       }
       return {
         ok: false,

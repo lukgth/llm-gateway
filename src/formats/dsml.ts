@@ -10,8 +10,7 @@ export interface DsmlToolCall {
 }
 
 export type DsmlEvent =
-  | { type: "text"; text: string }
-  | { type: "tool_call"; call: DsmlToolCall };
+  { type: "text"; text: string } | { type: "tool_call"; call: DsmlToolCall };
 
 type Prefix = "<｜DSML｜" | "<|DSML|";
 type ParseResult =
@@ -38,7 +37,8 @@ function markerAt(text: string, offset: number): number {
   let result = -1;
   for (const prefix of PREFIXES) {
     const candidate = text.indexOf(prefix, offset);
-    if (candidate >= 0 && (result < 0 || candidate < result)) result = candidate;
+    if (candidate >= 0 && (result < 0 || candidate < result))
+      result = candidate;
   }
   return result;
 }
@@ -67,18 +67,29 @@ function closeTags(prefix: Prefix, kind: string): string[] {
   return [`${prefix}/${kind}>`, `</${prefix.slice(1)}${kind}>`];
 }
 
-function closeAt(text: string, offset: number, prefix: Prefix, kind: string): string | null {
+function closeAt(
+  text: string,
+  offset: number,
+  prefix: Prefix,
+  kind: string,
+): string | null {
   for (const tag of closeTags(prefix, kind)) {
     if (text.startsWith(tag, offset)) return tag;
   }
   return null;
 }
 
-function nextClose(text: string, offset: number, prefix: Prefix, kind: string): { index: number; tag: string } | null {
+function nextClose(
+  text: string,
+  offset: number,
+  prefix: Prefix,
+  kind: string,
+): { index: number; tag: string } | null {
   let result: { index: number; tag: string } | null = null;
   for (const tag of closeTags(prefix, kind)) {
     const index = text.indexOf(tag, offset);
-    if (index >= 0 && (!result || index < result.index)) result = { index, tag };
+    if (index >= 0 && (!result || index < result.index))
+      result = { index, tag };
   }
   return result;
 }
@@ -92,7 +103,9 @@ function parseOpening(
   const end = text.indexOf(">", offset + prefix.length);
   if (end < 0) return null;
   const tag = text.slice(offset, end + 1);
-  const match = tag.match(new RegExp(`^${prefix.replace(/[|\\]/g, "\\$&")}${kind}\\s+name="([^"]*)"`));
+  const match = tag.match(
+    new RegExp(`^${prefix.replace(/[|\\]/g, "\\$&")}${kind}\\s+name="([^"]*)"`),
+  );
   if (!match || !/"\s*>$/.test(tag)) return undefined;
   const stringAttribute = tag.match(/\bstring="(true|false)"/);
   return {
@@ -151,12 +164,16 @@ function parseInvokeAt(text: string, offset: number): ParseResult {
   return { status: "incomplete" };
 }
 
-function wrapperAt(text: string, offset: number): { prefix: Prefix; name: string; end: number } | null {
+function wrapperAt(
+  text: string,
+  offset: number,
+): { prefix: Prefix; name: string; end: number } | null {
   const prefix = prefixAt(text, offset);
   if (!prefix) return null;
   for (const name of WRAPPER_NAMES) {
     const tag = `${prefix}${name}>`;
-    if (text.startsWith(tag, offset)) return { prefix, name, end: offset + tag.length };
+    if (text.startsWith(tag, offset))
+      return { prefix, name, end: offset + tag.length };
   }
   return null;
 }
@@ -231,11 +248,25 @@ function scan(text: string): Segment[] {
   return segments;
 }
 
-export function parseDsmlToolCalls(text: string): { text: string; calls: DsmlToolCall[] } {
+export function parseDsmlToolCalls(text: string): {
+  text: string;
+  calls: DsmlToolCall[];
+} {
   const segments = scan(text);
   return {
-    text: segments.filter((segment): segment is { type: "text"; text: string } => segment.type === "text").map((segment) => segment.text).join(""),
-    calls: segments.filter((segment): segment is { type: "tool_call"; call: DsmlToolCall } => segment.type === "tool_call").map((segment) => segment.call),
+    text: segments
+      .filter(
+        (segment): segment is { type: "text"; text: string } =>
+          segment.type === "text",
+      )
+      .map((segment) => segment.text)
+      .join(""),
+    calls: segments
+      .filter(
+        (segment): segment is { type: "tool_call"; call: DsmlToolCall } =>
+          segment.type === "tool_call",
+      )
+      .map((segment) => segment.call),
   };
 }
 
@@ -255,7 +286,8 @@ export class DsmlToolCallHealer {
       if (marker < 0) {
         const partial = partialPrefixLength(this.pending);
         if (partial) {
-          if (this.pending.length > partial) appendText(events, this.pending.slice(0, -partial));
+          if (this.pending.length > partial)
+            appendText(events, this.pending.slice(0, -partial));
           this.pending = this.pending.slice(-partial);
           break;
         }
@@ -267,7 +299,8 @@ export class DsmlToolCallHealer {
         const before = this.pending.slice(0, marker);
         const partial = partialPrefixLength(before);
         if (partial) {
-          if (before.length > partial) appendText(events, before.slice(0, -partial));
+          if (before.length > partial)
+            appendText(events, before.slice(0, -partial));
           this.pending = this.pending.slice(marker - partial);
           break;
         }
@@ -276,14 +309,26 @@ export class DsmlToolCallHealer {
       }
       const wrapper = wrapperAt(this.pending, 0);
       if (wrapper) {
-        const close = nextClose(this.pending, wrapper.end, wrapper.prefix, wrapper.name);
+        const close = nextClose(
+          this.pending,
+          wrapper.end,
+          wrapper.prefix,
+          wrapper.name,
+        );
         if (!close) break;
-        const parsedBody = parseBody(this.pending.slice(wrapper.end, close.index));
-        if (!parsedBody.valid) appendText(events, this.pending.slice(0, close.index + close.tag.length));
-        else for (const segment of parsedBody.segments) {
-          if (segment.type === "text") appendText(events, segment.text);
-          else events.push(segment);
-        }
+        const parsedBody = parseBody(
+          this.pending.slice(wrapper.end, close.index),
+        );
+        if (!parsedBody.valid)
+          appendText(
+            events,
+            this.pending.slice(0, close.index + close.tag.length),
+          );
+        else
+          for (const segment of parsedBody.segments) {
+            if (segment.type === "text") appendText(events, segment.text);
+            else events.push(segment);
+          }
         this.pending = this.pending.slice(close.index + close.tag.length);
         continue;
       }
@@ -297,12 +342,19 @@ export class DsmlToolCallHealer {
       appendText(events, this.pending.slice(0, 1));
       this.pending = this.pending.slice(1);
     }
-    for (const event of events) if (event.type === "tool_call") this.completed.push(event.call);
+    for (const event of events)
+      if (event.type === "tool_call") this.completed.push(event.call);
     return events;
   }
 
   feed(input: string): string {
-    return this.feedEvents(input).filter((event): event is { type: "text"; text: string } => event.type === "text").map((event) => event.text).join("");
+    return this.feedEvents(input)
+      .filter(
+        (event): event is { type: "text"; text: string } =>
+          event.type === "text",
+      )
+      .map((event) => event.text)
+      .join("");
   }
 
   drainCompleted(): DsmlToolCall[] {
@@ -321,7 +373,8 @@ export class DsmlToolCallHealer {
 
 export const DSML_COMPAT_META = {
   label: "Temporary Cline DSML compatibility workaround",
-  blurb: "Heals Cline's leaked DeepSeek DSML markup; remove this stage after Cline returns standard OpenAI tool calls.",
+  blurb:
+    "Heals Cline's leaked DeepSeek DSML markup; remove this stage after Cline returns standard OpenAI tool calls.",
 };
 
 function serializeChunk(chunk: ChatCompletionChunk): string {
@@ -339,7 +392,11 @@ export class DsmlChatStreamTransform extends Transform {
     super({ highWaterMark: 0 });
   }
 
-  _transform(chunk: Buffer, _encoding: string, callback: TransformCallback): void {
+  _transform(
+    chunk: Buffer,
+    _encoding: string,
+    callback: TransformCallback,
+  ): void {
     for (const frame of this.reader.feed(chunk)) {
       for (const output of this.processFrame(frame)) this.push(output);
     }
@@ -348,15 +405,25 @@ export class DsmlChatStreamTransform extends Transform {
 
   _flush(callback: TransformCallback): void {
     const frame = this.reader.flush();
-    if (frame !== null) for (const output of this.processFrame(frame)) this.push(output);
+    if (frame !== null)
+      for (const output of this.processFrame(frame)) this.push(output);
     const tail = this.healer.flushPending();
-    if (tail) this.push(serializeChunk({ object: "chat.completion.chunk", choices: [{ index: 0, delta: { content: tail }, finish_reason: null }] }));
+    if (tail)
+      this.push(
+        serializeChunk({
+          object: "chat.completion.chunk",
+          choices: [
+            { index: 0, delta: { content: tail }, finish_reason: null },
+          ],
+        }),
+      );
     callback();
   }
 
   private processFrame(frame: string): string[] {
     const parsed = parseSseData(frame);
-    if (parsed.data === null || parsed.data === "[DONE]") return [frame + "\n\n"];
+    if (parsed.data === null || parsed.data === "[DONE]")
+      return [frame + "\n\n"];
     let chunk: ChatCompletionChunk;
     try {
       chunk = JSON.parse(parsed.data) as ChatCompletionChunk;
@@ -364,13 +431,27 @@ export class DsmlChatStreamTransform extends Transform {
       return [frame + "\n\n"];
     }
     if (!Array.isArray(chunk.choices)) return [frame + "\n\n"];
-    this.nativeSeen ||= chunk.choices.some((choice) => Array.isArray(choice?.delta?.tool_calls) && choice.delta.tool_calls.length > 0);
+    this.nativeSeen ||= chunk.choices.some(
+      (choice) =>
+        Array.isArray(choice?.delta?.tool_calls) &&
+        choice.delta.tool_calls.length > 0,
+    );
     const output: string[] = [];
     for (const choice of chunk.choices) {
       const delta = choice.delta;
       if (!delta || typeof delta.content !== "string") {
-        const finish = choice.finish_reason === "stop" && this.recovered > 0 && !this.nativeSeen ? "tool_calls" : choice.finish_reason;
-        output.push(serializeChunk({ ...chunk, choices: [{ ...choice, finish_reason: finish }] }));
+        const finish =
+          choice.finish_reason === "stop" &&
+          this.recovered > 0 &&
+          !this.nativeSeen
+            ? "tool_calls"
+            : choice.finish_reason;
+        output.push(
+          serializeChunk({
+            ...chunk,
+            choices: [{ ...choice, finish_reason: finish }],
+          }),
+        );
         continue;
       }
       const events = this.healer.feedEvents(delta.content);
@@ -378,25 +459,57 @@ export class DsmlChatStreamTransform extends Transform {
       delete baseDelta.content;
       for (const event of events) {
         if (event.type === "text") {
-          if (event.text) output.push(serializeChunk({ ...chunk, choices: [{ ...choice, delta: { ...baseDelta, content: event.text } }] }));
+          if (event.text)
+            output.push(
+              serializeChunk({
+                ...chunk,
+                choices: [
+                  { ...choice, delta: { ...baseDelta, content: event.text } },
+                ],
+              }),
+            );
         } else if (!this.nativeSeen) {
           this.recovered++;
-          output.push(serializeChunk({
-            ...chunk,
-            choices: [{
-              ...choice,
-              finish_reason: null,
-              delta: {
-                ...baseDelta,
-                tool_calls: [{ index: this.nextIndex++, id: event.call.id, type: "function", function: { name: event.call.name, arguments: event.call.arguments } }],
-              },
-            }],
-          }));
+          output.push(
+            serializeChunk({
+              ...chunk,
+              choices: [
+                {
+                  ...choice,
+                  finish_reason: null,
+                  delta: {
+                    ...baseDelta,
+                    tool_calls: [
+                      {
+                        index: this.nextIndex++,
+                        id: event.call.id,
+                        type: "function",
+                        function: {
+                          name: event.call.name,
+                          arguments: event.call.arguments,
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            }),
+          );
         }
       }
       if (choice.finish_reason !== undefined && choice.finish_reason !== null) {
-        const finish = choice.finish_reason === "stop" && this.recovered > 0 && !this.nativeSeen ? "tool_calls" : choice.finish_reason;
-        output.push(serializeChunk({ ...chunk, choices: [{ ...choice, delta: baseDelta, finish_reason: finish }] }));
+        const finish =
+          choice.finish_reason === "stop" &&
+          this.recovered > 0 &&
+          !this.nativeSeen
+            ? "tool_calls"
+            : choice.finish_reason;
+        output.push(
+          serializeChunk({
+            ...chunk,
+            choices: [{ ...choice, delta: baseDelta, finish_reason: finish }],
+          }),
+        );
       }
     }
     return output;

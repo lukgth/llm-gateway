@@ -16,13 +16,21 @@ test("chat: a MISSING choices field is NOT flagged (field absent != field empty)
   // fixture, a non-standard endpoint) must not be misclassified as a dead
   // account just because this check doesn't recognize its shape.
   assert.equal(emptyUpstreamResponseReason("chat", {}), undefined);
-  assert.equal(emptyUpstreamResponseReason("chat", { id: "x", usage: {} }), undefined);
+  assert.equal(
+    emptyUpstreamResponseReason("chat", { id: "x", usage: {} }),
+    undefined,
+  );
 });
 
 test("chat: a choice with real text content is NOT empty", () => {
   assert.equal(
     emptyUpstreamResponseReason("chat", {
-      choices: [{ message: { role: "assistant", content: "hi" }, finish_reason: "stop" }],
+      choices: [
+        {
+          message: { role: "assistant", content: "hi" },
+          finish_reason: "stop",
+        },
+      ],
     }),
     undefined,
   );
@@ -31,7 +39,12 @@ test("chat: a choice with real text content is NOT empty", () => {
 test("chat: a choice with only whitespace content IS empty", () => {
   assert.match(
     emptyUpstreamResponseReason("chat", {
-      choices: [{ message: { role: "assistant", content: "   " }, finish_reason: "stop" }],
+      choices: [
+        {
+          message: { role: "assistant", content: "   " },
+          finish_reason: "stop",
+        },
+      ],
     })!,
     /no content/,
   );
@@ -45,7 +58,13 @@ test("chat: a choice with a tool call and no text is NOT empty", () => {
           message: {
             role: "assistant",
             content: null,
-            tool_calls: [{ id: "1", type: "function", function: { name: "f", arguments: "{}" } }],
+            tool_calls: [
+              {
+                id: "1",
+                type: "function",
+                function: { name: "f", arguments: "{}" },
+              },
+            ],
           },
           finish_reason: "tool_calls",
         },
@@ -59,7 +78,14 @@ test("chat: a choice with only a refusal is NOT empty (a refusal is a real answe
   assert.equal(
     emptyUpstreamResponseReason("chat", {
       choices: [
-        { message: { role: "assistant", refusal: "I can't help with that.", content: null }, finish_reason: "stop" },
+        {
+          message: {
+            role: "assistant",
+            refusal: "I can't help with that.",
+            content: null,
+          },
+          finish_reason: "stop",
+        },
       ],
     }),
     undefined,
@@ -70,7 +96,14 @@ test("chat: reasoning-only content (no answer, no refusal, no tool call) IS empt
   assert.match(
     emptyUpstreamResponseReason("chat", {
       choices: [
-        { message: { role: "assistant", reasoning_content: "thinking...", content: null }, finish_reason: "stop" },
+        {
+          message: {
+            role: "assistant",
+            reasoning_content: "thinking...",
+            content: null,
+          },
+          finish_reason: "stop",
+        },
       ],
     })!,
     /no content/,
@@ -81,8 +114,14 @@ test("chat: at least one choice with content among several is NOT empty", () => 
   assert.equal(
     emptyUpstreamResponseReason("chat", {
       choices: [
-        { message: { role: "assistant", content: null }, finish_reason: "stop" },
-        { message: { role: "assistant", content: "real answer" }, finish_reason: "stop" },
+        {
+          message: { role: "assistant", content: null },
+          finish_reason: "stop",
+        },
+        {
+          message: { role: "assistant", content: "real answer" },
+          finish_reason: "stop",
+        },
       ],
     }),
     undefined,
@@ -135,7 +174,9 @@ test("responses: a refusal content item is NOT empty", () => {
 test("responses: a function_call output item is NOT empty", () => {
   assert.equal(
     emptyUpstreamResponseReason("responses", {
-      output: [{ type: "function_call", name: "f", arguments: "{}", call_id: "1" }],
+      output: [
+        { type: "function_call", name: "f", arguments: "{}", call_id: "1" },
+      ],
     }),
     undefined,
   );
@@ -158,7 +199,10 @@ test("responses: a message item with an explicit empty content array IS empty", 
 // failures surface via a real non-2xx status instead (usage-credits.ts).
 
 test("messages: never flagged, even for an explicit empty content array", () => {
-  assert.equal(emptyUpstreamResponseReason("messages", { content: [] }), undefined);
+  assert.equal(
+    emptyUpstreamResponseReason("messages", { content: [] }),
+    undefined,
+  );
   assert.equal(emptyUpstreamResponseReason("messages", {}), undefined);
   assert.equal(
     emptyUpstreamResponseReason("messages", {
@@ -184,8 +228,20 @@ test("a non-object body is never flagged (nothing to inspect)", () => {
 });
 
 test("a non-array choices/output/content field is treated as absent, not empty", () => {
-  assert.equal(emptyUpstreamResponseReason("chat", { choices: null }), undefined);
-  assert.equal(emptyUpstreamResponseReason("chat", { choices: "not an array" }), undefined);
-  assert.equal(emptyUpstreamResponseReason("responses", { output: null }), undefined);
-  assert.equal(emptyUpstreamResponseReason("messages", { content: null }), undefined);
+  assert.equal(
+    emptyUpstreamResponseReason("chat", { choices: null }),
+    undefined,
+  );
+  assert.equal(
+    emptyUpstreamResponseReason("chat", { choices: "not an array" }),
+    undefined,
+  );
+  assert.equal(
+    emptyUpstreamResponseReason("responses", { output: null }),
+    undefined,
+  );
+  assert.equal(
+    emptyUpstreamResponseReason("messages", { content: null }),
+    undefined,
+  );
 });

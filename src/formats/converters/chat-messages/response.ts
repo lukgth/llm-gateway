@@ -53,7 +53,8 @@ export function chatResponseToMessages(
   // message whose sole content is a text block carrying the refusal text
   // (mirrors how VALID_STOP_REASONS/sanitize-response.ts already recognizes
   // "refusal" as a real Anthropic stop_reason).
-  const refusal = typeof msg.refusal === "string" && msg.refusal ? msg.refusal : undefined;
+  const refusal =
+    typeof msg.refusal === "string" && msg.refusal ? msg.refusal : undefined;
   if (refusal) {
     content.push({ type: "text", text: refusal });
   } else if (typeof msg.content === "string" && msg.content) {

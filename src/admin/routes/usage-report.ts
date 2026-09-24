@@ -14,7 +14,10 @@ import { getUnifiedUsage } from "../../repo/provider-key-usage";
 import { listProviderKeys, maskProviderKey } from "../../repo/provider-keys";
 import { lastUsedByKey } from "../../repo/request-logs";
 import { seedFromKey, makeUsageCtx } from "./provider-probe";
-import { KeyHealthStore, type KeyHealthSnapshot } from "../../gateway/key-health";
+import {
+  KeyHealthStore,
+  type KeyHealthSnapshot,
+} from "../../gateway/key-health";
 import { listProviderOAuthViews } from "../../repo/provider-oauth";
 import { providerAuthIntegration } from "../../services/provider-auth/registry";
 import {
@@ -113,7 +116,15 @@ export async function buildUsageReport(
     Promise.all(
       rows.map(
         async ({ key, enabled, metadata, keyHash, health, lastUsedAt }) => {
-          const mask = managedKeyMask(metadata) ?? maskProviderKey(key);
+          // Same mask everywhere a key is shown - the real secret, truncated
+          // (maskProviderKey), never the internal `oauth:<id>` health-key
+          // identifier (managedKeyMask's old fallback used to mask THAT
+          // string when no email/accountId was on file, producing
+          // "oauth:…51e6" instead of the actual sk-ant-oat01-…/access token
+          // mask every other provider kind shows). Only falls back to an
+          // identity-based mask when the secret can't be resolved at all
+          // (below), since there's nothing else to show in that case.
+          let mask = managedKeyMask(metadata) ?? maskProviderKey(key);
           let accessToken = key;
           if (requiresManagedAuth && providerCredentials) {
             // Resolve (and refresh if needed) through the shared service -
@@ -126,6 +137,7 @@ export async function buildUsageReport(
               );
               if (!handle) throw new Error("credential not resolvable");
               accessToken = handle.value;
+              mask = maskProviderKey(accessToken);
             } catch (e) {
               return {
                 keyMask: mask,
@@ -240,8 +252,12 @@ function snapshotToHealth(h: KeyHealthSnapshot): ProviderKeyUsage["health"] {
   return {
     usable: h.usable,
     dead: h.authFailed,
-    ...(h.rateLimitedUntilIso ? { rateLimitedUntil: h.rateLimitedUntilIso } : {}),
-    ...(h.lastErrorStatus !== null ? { lastErrorStatus: h.lastErrorStatus } : {}),
+    ...(h.rateLimitedUntilIso
+      ? { rateLimitedUntil: h.rateLimitedUntilIso }
+      : {}),
+    ...(h.lastErrorStatus !== null
+      ? { lastErrorStatus: h.lastErrorStatus }
+      : {}),
     ...(h.lastError ? { lastError: h.lastError } : {}),
     ...(h.lastErrorAt ? { lastErrorAt: h.lastErrorAt } : {}),
   };

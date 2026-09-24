@@ -67,10 +67,8 @@ function setup(
     provider,
     crypto,
     integration,
-    service: new ProviderCredentialService(
-      db,
-      crypto,
-      (id) => (id === integration.id ? integration : undefined),
+    service: new ProviderCredentialService(db, crypto, (id) =>
+      id === integration.id ? integration : undefined,
     ),
     close() {
       closeDatabase(db);
@@ -87,7 +85,12 @@ test("managed credential resolution keeps a stable non-secret health identity", 
     assert.equal(handle?.source, "oauth");
     assert.equal(handle?.healthKey, `oauth:${stored.id}`);
     assert.equal(handle?.value, "workos:access-token");
-    assert.equal(handle?.mask, "user@example.com");
+    // The mask is the truncated SECRET, unified with every other credential
+    // kind (plain provider keys, Codex, Claude Code) - never the account's
+    // email/label, which is display-only identity shown separately in the
+    // Authentication panel and was previously leaking into places like the
+    // request log's "upstream key used" badge.
+    assert.equal(handle?.mask, "workos…oken");
     assert.equal(handle?.healthKey.includes("access-token"), false);
   } finally {
     ctx.close();
@@ -218,7 +221,10 @@ test("authentication checks keep transient failures active", async () => {
   });
   try {
     assert.equal((await ctx.service.testManaged(ctx.provider.id)).status, 503);
-    assert.equal(getProviderOAuthView(ctx.db, ctx.provider.id)?.status, "active");
+    assert.equal(
+      getProviderOAuthView(ctx.db, ctx.provider.id)?.status,
+      "active",
+    );
   } finally {
     ctx.close();
   }
@@ -247,7 +253,10 @@ test("authentication checks keep refresh transport failures active", async () =>
       /refresh unavailable/,
     );
     assert.equal(tests, 1);
-    assert.equal(getProviderOAuthView(ctx.db, ctx.provider.id)?.status, "active");
+    assert.equal(
+      getProviderOAuthView(ctx.db, ctx.provider.id)?.status,
+      "active",
+    );
   } finally {
     ctx.close();
   }
@@ -318,10 +327,8 @@ test("expired credential without a refresh token is marked reauth_required witho
         return { ok: true, status: 200, ms: 1, models: [] };
       },
     };
-    const service = new ProviderCredentialService(
-      db,
-      crypto,
-      (id) => (id === integration.id ? integration : undefined),
+    const service = new ProviderCredentialService(db, crypto, (id) =>
+      id === integration.id ? integration : undefined,
     );
     await assert.rejects(
       () => service.resolveManaged(provider.id),

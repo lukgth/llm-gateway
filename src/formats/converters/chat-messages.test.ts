@@ -1035,13 +1035,19 @@ test("chatResponseToMessages: a refusal maps to stop_reason:refusal with the ref
     model: "m",
     choices: [
       {
-        message: { role: "assistant", refusal: "I can't help with that.", content: null },
+        message: {
+          role: "assistant",
+          refusal: "I can't help with that.",
+          content: null,
+        },
         finish_reason: "stop",
       },
     ],
   });
   assert.equal(out.stop_reason, "refusal");
-  assert.deepEqual(out.content, [{ type: "text", text: "I can't help with that." }]);
+  assert.deepEqual(out.content, [
+    { type: "text", text: "I can't help with that." },
+  ]);
 });
 
 test("chatResponseToMessages: refusal wins over any (spurious) content on the same message", () => {
@@ -1067,7 +1073,12 @@ test("chatResponseToMessages: no refusal -> unaffected, normal content/stop_reas
   const out = chatResponseToMessages({
     id: "c1",
     model: "m",
-    choices: [{ message: { role: "assistant", content: "hello" }, finish_reason: "stop" }],
+    choices: [
+      {
+        message: { role: "assistant", content: "hello" },
+        finish_reason: "stop",
+      },
+    ],
   });
   assert.equal(out.stop_reason, "end_turn");
   assert.deepEqual(out.content, [{ type: "text", text: "hello" }]);
@@ -1108,7 +1119,14 @@ test("round-trip: a refusal survives chat->messages->chat", () => {
     id: "c1",
     model: "m",
     choices: [
-      { message: { role: "assistant", refusal: "Can't do that.", content: null }, finish_reason: "stop" },
+      {
+        message: {
+          role: "assistant",
+          refusal: "Can't do that.",
+          content: null,
+        },
+        finish_reason: "stop",
+      },
     ],
   });
   const back = messagesResponseToChat(asMessages);
@@ -1121,7 +1139,11 @@ test("chatRequestToMessages: a replayed assistant refusal (content:null) becomes
     model: "m",
     messages: [
       { role: "user", content: "draft something risky" },
-      { role: "assistant", refusal: "I can't help with that.", content: null } as never,
+      {
+        role: "assistant",
+        refusal: "I can't help with that.",
+        content: null,
+      } as never,
     ],
   });
   const msgs = out.messages as Array<{ role: string; content: unknown }>;

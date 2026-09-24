@@ -38,13 +38,19 @@ import {
   subscriptionResponseStack,
   subscriptionStreamStack,
 } from "../../formats/anthropic/subscription/index";
-import { WireKind, type Provider, type ProviderKeyUsageWindow } from "../../types";
+import {
+  WireKind,
+  type Provider,
+  type ProviderKeyUsageWindow,
+} from "../../types";
 import { ANTHROPIC_DEFAULT_TRANSFORMS } from "./anthropic-compatible";
 import { withBetaQuery } from "../../formats/anthropic/subscription/billing";
 import {
   parseUnifiedRateLimitHeaders,
   unifiedRateLimitToUsageWindows,
   unifiedStatusMessage,
+  parseStandardRateLimitHeaders,
+  standardRateLimitToUsageWindows,
 } from "../../services/anthropic/unified-usage";
 import {
   CLAUDE_OAUTH_BETA_HEADER,
@@ -102,7 +108,9 @@ class ClaudeCodeAdapter extends AnthropicCompatibleAdapter {
     return this.passiveKeyUsage(ctx);
   }
 
-  private async queryOAuthUsage(ctx: UsageCtx): Promise<KeyUsageResult | undefined> {
+  private async queryOAuthUsage(
+    ctx: UsageCtx,
+  ): Promise<KeyUsageResult | undefined> {
     let res: Awaited<ReturnType<UsageCtx["request"]>>;
     try {
       res = await ctx.request(CLAUDE_OAUTH_USAGE_URL, {
@@ -152,17 +160,28 @@ class ClaudeCodeAdapter extends AnthropicCompatibleAdapter {
       };
     }
     const info = parseUnifiedRateLimitHeaders(ctx.unifiedUsage.headers);
-    if (!info) {
+    if (info) {
       return {
-        windows: [],
-        unavailable: true,
-        message: "The latest response did not contain unified usage headers.",
+        windows: unifiedRateLimitToUsageWindows(info),
+        message: unifiedStatusMessage(info),
+        dummy: false,
       };
     }
+    // No unified (subscription-billing) headers - this credential is either
+    // a legacy plain sk-ant-api03-... key migrated onto this catalog before
+    // OAuth-only import existed, or something else authenticating with a
+    // plain x-api-key. Anthropic's pay-as-you-go API sends the STANDARD
+    // anthropic-ratelimit-* headers instead (never the unified family), so
+    // fall back to those rather than reporting no usage at all.
+    const standardWindows = standardRateLimitToUsageWindows(
+      parseStandardRateLimitHeaders(ctx.unifiedUsage.headers),
+    );
+    if (standardWindows.length)
+      return { windows: standardWindows, dummy: false };
     return {
-      windows: unifiedRateLimitToUsageWindows(info),
-      message: unifiedStatusMessage(info),
-      dummy: false,
+      windows: [],
+      unavailable: true,
+      message: "The latest response did not contain usage headers.",
     };
   }
 }
@@ -190,7 +209,8 @@ function usageWindowsFromOAuthUsage(
     const entry = raw as Record<string, unknown>;
     const used = entry.utilization;
     if (typeof used !== "number" || !Number.isFinite(used)) continue;
-    const resetsAt = typeof entry.resets_at === "string" ? entry.resets_at : undefined;
+    const resetsAt =
+      typeof entry.resets_at === "string" ? entry.resets_at : undefined;
     windows.push({
       id: key,
       label,

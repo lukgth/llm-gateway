@@ -77,7 +77,10 @@ test("openai-codex template pins the Codex backend and import authentication", (
     actionLabel: "Import Codex credentials",
   });
   // No API-key field; baseUrl is pinned non-editable.
-  assert.equal(tpl.fields.some((f) => f.key === "apiKeys"), false);
+  assert.equal(
+    tpl.fields.some((f) => f.key === "apiKeys"),
+    false,
+  );
   const base = tpl.fields.find((f) => f.key === "baseUrl");
   assert.ok(base);
   assert.equal(base.editable, false);
@@ -209,8 +212,10 @@ test("missing account metadata omits the account header instead of sending a bla
 });
 
 test("fetchModels requests the versioned models path with identity headers and filters public models", async () => {
-  const calls: Array<{ url: string; init: { headers: Record<string, string> } }> =
-    [];
+  const calls: Array<{
+    url: string;
+    init: { headers: Record<string, string> };
+  }> = [];
   const transport = (async (
     url: string,
     init: { headers: Record<string, string> },
@@ -221,8 +226,16 @@ test("fetchModels requests the versioned models path with identity headers and f
       status: 200,
       json: async () => ({
         models: [
-          { slug: "gpt-5.2-codex", display_name: "GPT-5.2 Codex", visibility: "list" },
-          { slug: "internal-only", display_name: "Internal", visibility: "hide" },
+          {
+            slug: "gpt-5.2-codex",
+            display_name: "GPT-5.2 Codex",
+            visibility: "list",
+          },
+          {
+            slug: "internal-only",
+            display_name: "Internal",
+            visibility: "hide",
+          },
           { slug: "api-disabled", supported_in_api: false },
           { slug: "plain-visible" },
         ],
@@ -255,7 +268,10 @@ test("fetchModels requests the versioned models path with identity headers and f
   assert.equal(calls[0].init.headers["originator"], CODEX_ORIGINATOR);
   assert.equal(calls[0].init.headers["version"], CODEX_CLIENT_VERSION);
   assert.equal(calls[0].init.headers["user-agent"], codexUserAgent());
-  assert.equal(calls[0].init.headers["authorization"], "Bearer codex-access-token");
+  assert.equal(
+    calls[0].init.headers["authorization"],
+    "Bearer codex-access-token",
+  );
   assert.equal(calls[0].init.headers["chatgpt-account-id"], "acct-123");
   assert.deepEqual(
     models.map((m) => m.id),

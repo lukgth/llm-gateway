@@ -256,11 +256,7 @@ function stampAndBuild(
   const stages = opencodeGo.requestTransforms(STAMP_PROVIDER);
   assert.deepEqual(
     stages.map((s) => s.name),
-    [
-      "opencode:session",
-      "opencode:session",
-      "opencode:session",
-    ],
+    ["opencode:session", "opencode:session", "opencode:session"],
   );
   const stage = (stages as TaggedRequestTransform[]).find(
     (s) => s.format === clientFmt,
@@ -396,13 +392,16 @@ test("go never claims the anonymous Zen identity and never rewrites the body", (
   );
   assert.ok(stage);
   const body: Record<string, unknown> = { model: "big-pickle" };
-  stage.apply(body as never, {
-    provider: PROVIDER as unknown as Provider,
-    clientFmt: WireKind.Chat,
-    providerFmt: WireKind.Chat,
-    apiKey: null,
-    upstreamModel: "big-pickle",
-  } as TransformCtx);
+  stage.apply(
+    body as never,
+    {
+      provider: PROVIDER as unknown as Provider,
+      clientFmt: WireKind.Chat,
+      providerFmt: WireKind.Chat,
+      apiKey: null,
+      upstreamModel: "big-pickle",
+    } as TransformCtx,
+  );
   assert.equal("stream" in body, false);
   assert.equal("tools" in body, false);
 });

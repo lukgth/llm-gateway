@@ -78,8 +78,8 @@ test("provider OAuth supports multiple encrypted account rows", () => {
 
     assert.notEqual(one.id, two.id);
     assert.deepEqual(
-      listProviderOAuthViews(ctx.db, ctx.provider.id).map((view) =>
-        view.account.email,
+      listProviderOAuthViews(ctx.db, ctx.provider.id).map(
+        (view) => view.account.email,
       ),
       ["one@example.com", "two@example.com"],
     );
@@ -127,12 +127,8 @@ test("connecting the same upstream identity updates the existing row", () => {
     assert.equal(updated.id, initial.id);
     assert.equal(listProviderOAuthViews(ctx.db, ctx.provider.id).length, 1);
     assert.deepEqual(
-      getProviderOAuth(
-        ctx.db,
-        ctx.crypto,
-        ctx.provider.id,
-        initial.id,
-      )?.credential,
+      getProviderOAuth(ctx.db, ctx.crypto, ctx.provider.id, initial.id)
+        ?.credential,
       reconnect,
     );
   } finally {
@@ -176,7 +172,10 @@ test("OAuth account lifecycle and rotation target one row", () => {
       one.id,
     )!;
     const rotated = credential("rotated");
-    assert.equal(rotateProviderOAuth(ctx.db, ctx.crypto, stored, rotated), true);
+    assert.equal(
+      rotateProviderOAuth(ctx.db, ctx.crypto, stored, rotated),
+      true,
+    );
     assert.equal(
       rotateProviderOAuth(ctx.db, ctx.crypto, stored, credential("stale")),
       false,

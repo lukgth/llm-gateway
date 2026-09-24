@@ -59,33 +59,34 @@ function credentialFromTokens(
   },
 ): ProviderAuthCredential {
   const accessClaims = jwtClaims(opts.accessToken);
-  const idToken = stringOrUndefined(tokens.id_token) ??
-    stringOrUndefined(tokens.idToken);
+  const idToken =
+    stringOrUndefined(tokens.id_token) ?? stringOrUndefined(tokens.idToken);
   const idClaims = claimsOf(idToken ?? "");
   const accountId = resolveAccountId(
     idClaims,
     accessClaims,
-    stringOrUndefined(tokens.account_id) ??
-      stringOrUndefined(tokens.accountId),
+    stringOrUndefined(tokens.account_id) ?? stringOrUndefined(tokens.accountId),
     opts.hintAccountId,
   );
-  if (!accountId)
-    throw new Error(`${opts.context} lacks a ChatGPT account id`);
+  if (!accountId) throw new Error(`${opts.context} lacks a ChatGPT account id`);
   return {
     integrationId: "codex",
     secrets: {
       accessToken: opts.accessToken,
-      refreshToken: stringOrUndefined(tokens.refresh_token) ??
+      refreshToken:
+        stringOrUndefined(tokens.refresh_token) ??
         stringOrUndefined(tokens.refreshToken),
       idToken,
     },
     expiresAt: opts.expiresAt,
     account: {
       accountId,
-      email: stringOrUndefined(idClaims.email) ??
+      email:
+        stringOrUndefined(idClaims.email) ??
         stringOrUndefined(accessClaims.email) ??
         opts.hintEmail,
-      label: stringOrUndefined(idClaims.name) ??
+      label:
+        stringOrUndefined(idClaims.name) ??
         stringOrUndefined(accessClaims.name),
       // Only the id_token carries this claim (see claimPlanType) - a refresh
       // response commonly omits id_token entirely, so fall back to whatever
@@ -106,7 +107,8 @@ function credentialFromPayload(
     fallbackSubscriptionType?: string;
   },
 ): ProviderAuthCredential {
-  const accessToken = stringOrUndefined(payload.accessToken) ??
+  const accessToken =
+    stringOrUndefined(payload.accessToken) ??
     stringOrUndefined(payload.access_token);
   if (!accessToken || !looksLikeJwt(accessToken))
     throw new Error(`${opts.context} did not return a valid access token JWT`);
@@ -151,10 +153,16 @@ async function credentialFromPersonalAccessToken(
   try {
     res = await boundedFetch(fetchImpl, OPENAI_WHOAMI_URL, {
       method: "GET",
-      headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" },
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        accept: "application/json",
+      },
     });
   } catch (error) {
-    throw normalizeNetworkError(error, "Codex personal access token lookup failed");
+    throw normalizeNetworkError(
+      error,
+      "Codex personal access token lookup failed",
+    );
   }
   if (!res.ok) {
     const detail = await upstreamErrorDetail(res);
@@ -261,11 +269,13 @@ function cookieExpiry(payload: Record<string, unknown>): number | undefined {
 
 function claimAccountId(claims: Record<string, unknown>): string | undefined {
   const authClaim = record(claims["https://api.openai.com/auth"]);
-  return stringOrUndefined(authClaim.chatgpt_account_id) ??
+  return (
+    stringOrUndefined(authClaim.chatgpt_account_id) ??
     stringOrUndefined(claims.chatgpt_account_id) ??
     firstOrganizationId(claims.organizations) ??
     stringOrUndefined(claims.account_id) ??
-    stringOrUndefined(claims.accountId);
+    stringOrUndefined(claims.accountId)
+  );
 }
 
 // codex-rs's own known-plan display names (protocol/src/auth.rs KnownPlan::
@@ -360,7 +370,9 @@ async function boundedFetch(
   });
 }
 
-async function readJsonLimited(res: Response): Promise<Record<string, unknown>> {
+async function readJsonLimited(
+  res: Response,
+): Promise<Record<string, unknown>> {
   const declared = Number(res.headers.get("content-length") ?? 0);
   if (declared > MAX_BODY_BYTES)
     throw new Error("Authentication response too large");
@@ -377,9 +389,7 @@ async function readJsonLimited(res: Response): Promise<Record<string, unknown>> 
   }
 }
 
-async function upstreamErrorDetail(
-  res: Response,
-): Promise<string | undefined> {
+async function upstreamErrorDetail(res: Response): Promise<string | undefined> {
   try {
     const text = await res.text();
     if (!text) return undefined;
@@ -401,11 +411,15 @@ async function upstreamErrorDetail(
 // OAuth token endpoint error shape: {"error": "invalid_grant", "error_description": "..."}.
 // codex-rs's classify_refresh_token_failure() reads the same "error" code -
 // see refresh_token_expired/reused/invalidated in codex-rs/login/src/auth/manager.rs.
-function refreshErrorCode(payload: Record<string, unknown>): string | undefined {
+function refreshErrorCode(
+  payload: Record<string, unknown>,
+): string | undefined {
   return stringOrUndefined(payload.error)?.toLowerCase();
 }
 
-function refreshErrorDetail(payload: Record<string, unknown>): string | undefined {
+function refreshErrorDetail(
+  payload: Record<string, unknown>,
+): string | undefined {
   const description = stringOrUndefined(payload.error_description);
   if (description) return description.slice(0, 160);
   const code = stringOrUndefined(payload.error);
@@ -542,9 +556,7 @@ class CodexAuthIntegration implements ProviderAuthIntegration {
     return credential.secrets.accessToken;
   }
 
-  async test(
-    credential: ProviderAuthCredential,
-  ): Promise<ProviderTestProbe> {
+  async test(credential: ProviderAuthCredential): Promise<ProviderTestProbe> {
     const started = Date.now();
     try {
       const res = await boundedFetch(
@@ -599,9 +611,7 @@ class CodexAuthIntegration implements ProviderAuthIntegration {
     }
   }
 
-  private async importAuthJson(
-    value: string,
-  ): Promise<ProviderAuthCredential> {
+  private async importAuthJson(value: string): Promise<ProviderAuthCredential> {
     let parsed: unknown;
     try {
       parsed = JSON.parse(value);
@@ -616,21 +626,28 @@ class CodexAuthIntegration implements ProviderAuthIntegration {
     // resolved_mode(): explicit auth_mode wins, else the field's presence
     // implies AuthMode::PersonalAccessToken). Mutually exclusive with the
     // `tokens` JWT pair - check first and return early, no JWT parsing at all.
-    const explicitPat = stringOrUndefined(root.personal_access_token) ??
+    const explicitPat =
+      stringOrUndefined(root.personal_access_token) ??
       stringOrUndefined(root.personalAccessToken);
     if (explicitPat)
       return credentialFromPersonalAccessToken(this.fetchImpl, explicitPat);
-    if (root.auth_mode === "personalAccessToken" || root.authMode === "personalAccessToken")
+    if (
+      root.auth_mode === "personalAccessToken" ||
+      root.authMode === "personalAccessToken"
+    )
       throw new Error(
         "Codex auth JSON declares personalAccessToken mode but has no personal_access_token value",
       );
 
     const tokensRaw =
-      root.tokens && typeof root.tokens === "object" && !Array.isArray(root.tokens)
+      root.tokens &&
+      typeof root.tokens === "object" &&
+      !Array.isArray(root.tokens)
         ? root.tokens
         : root;
     const tokens = tokensRaw as Record<string, unknown>;
-    const accessToken = stringOrUndefined(tokens.access_token) ??
+    const accessToken =
+      stringOrUndefined(tokens.access_token) ??
       stringOrUndefined(tokens.accessToken);
     if (!accessToken || !looksLikeJwt(accessToken))
       throw new Error("Codex auth JSON must contain a valid access token JWT");

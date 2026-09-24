@@ -27,7 +27,10 @@ import {
   listProviderKeys,
   deleteProviderKeysByProvider,
 } from "../repo/provider-keys";
-import { NEVER_EXPIRES, type ProviderAuthCredential } from "../services/provider-auth/types";
+import {
+  NEVER_EXPIRES,
+  type ProviderAuthCredential,
+} from "../services/provider-auth/types";
 import { CLAUDE_OAUTH_TOKEN_PREFIX } from "../providers/claude-code-oauth";
 
 export function migrateClaudeCodePlainKeysToManagedAuth(
@@ -49,7 +52,9 @@ export function migrateClaudeCodePlainKeysToManagedAuth(
         // this prefix; a pre-migration key without it is a plain Console API
         // key by definition - not a heuristic, an invariant of the prefix's
         // own design (CLAUDE_OAUTH_TOKEN_PREFIX doc comment).
-        const isOAuthToken = key.credential.startsWith(CLAUDE_OAUTH_TOKEN_PREFIX);
+        const isOAuthToken = key.credential.startsWith(
+          CLAUDE_OAUTH_TOKEN_PREFIX,
+        );
         const credential: ProviderAuthCredential = {
           integrationId: "claude-code",
           secrets: { accessToken: key.credential },

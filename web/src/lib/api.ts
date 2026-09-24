@@ -166,15 +166,13 @@ export const api = {
   providerAuthStatus: (sessionId: string) =>
     req<ProviderAuthSession>(`/api/provider-auth/sessions/${sessionId}`),
   pollProviderAuth: (sessionId: string) =>
-    req<ProviderAuthSession>(
-      `/api/provider-auth/sessions/${sessionId}/poll`,
-      { method: "POST" },
-    ),
+    req<ProviderAuthSession>(`/api/provider-auth/sessions/${sessionId}/poll`, {
+      method: "POST",
+    }),
   testProviderAuth: (sessionId: string) =>
-    req<ProviderTestProbe>(
-      `/api/provider-auth/sessions/${sessionId}/test`,
-      { method: "POST" },
-    ),
+    req<ProviderTestProbe>(`/api/provider-auth/sessions/${sessionId}/test`, {
+      method: "POST",
+    }),
   cancelProviderAuth: (sessionId: string) =>
     req<void>(`/api/provider-auth/sessions/${sessionId}`, {
       method: "DELETE",

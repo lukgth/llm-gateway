@@ -76,8 +76,7 @@ export function parseClineFreeModels(body: unknown): ClineFreeModel[] {
       ...(typeof entry.contextWindow === "number" && entry.contextWindow > 0
         ? { contextWindow: entry.contextWindow }
         : {}),
-      ...(typeof entry.maxOutputTokens === "number" &&
-      entry.maxOutputTokens > 0
+      ...(typeof entry.maxOutputTokens === "number" && entry.maxOutputTokens > 0
         ? { maxOutputTokens: entry.maxOutputTokens }
         : {}),
       raw: entry,

@@ -38,7 +38,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fmtCacheHint, fmtNum, fmtTokens, fmtUsd, fmtWriteHint } from "@/lib/utils";
+import {
+  fmtCacheHint,
+  fmtNum,
+  fmtTokens,
+  fmtUsd,
+  fmtWriteHint,
+} from "@/lib/utils";
 import {
   ModelIcon,
   ProviderIcon,
@@ -101,7 +107,16 @@ export default function Usage() {
               <TableSkeleton
                 rows={6}
                 cols={8}
-                widths={["10%", "50%", "40%", "60%", "30%", "30%", "30%", "30%"]}
+                widths={[
+                  "10%",
+                  "50%",
+                  "40%",
+                  "60%",
+                  "30%",
+                  "30%",
+                  "30%",
+                  "30%",
+                ]}
               />
             </CardContent>
           </Card>
@@ -111,22 +126,22 @@ export default function Usage() {
             <Skeleton className="h-4 w-56" />
           </CardHeader>
           <CardContent className="p-0">
-              <TableSkeleton
-                rows={6}
-                cols={10}
-                widths={[
-                  "50%",
-                  "40%",
-                  "60%",
-                  "60%",
-                  "30%",
-                  "30%",
-                  "30%",
-                  "30%",
-                  "30%",
-                  "30%",
-                ]}
-              />
+            <TableSkeleton
+              rows={6}
+              cols={10}
+              widths={[
+                "50%",
+                "40%",
+                "60%",
+                "60%",
+                "30%",
+                "30%",
+                "30%",
+                "30%",
+                "30%",
+                "30%",
+              ]}
+            />
           </CardContent>
         </Card>
       </div>
@@ -322,9 +337,15 @@ export default function Usage() {
                     </TableCell>
                     <TableCell
                       className="text-right tabular-nums text-muted-foreground"
-                      title={(r.cacheWrite ?? 0) > 0 ? fmtNum(r.cacheWrite ?? 0) : undefined}
+                      title={
+                        (r.cacheWrite ?? 0) > 0
+                          ? fmtNum(r.cacheWrite ?? 0)
+                          : undefined
+                      }
                     >
-                      {(r.cacheWrite ?? 0) > 0 ? fmtTokens(r.cacheWrite ?? 0) : "-"}
+                      {(r.cacheWrite ?? 0) > 0
+                        ? fmtTokens(r.cacheWrite ?? 0)
+                        : "-"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {r.costUsd > 0 ? fmtUsd(r.costUsd) : "-"}
@@ -607,7 +628,9 @@ const KeyUsageRow = memo(function KeyUsageRow({
         </TableCell>
         <TableCell
           className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
-          title={(k.cacheWrite ?? 0) > 0 ? fmtNum(k.cacheWrite ?? 0) : undefined}
+          title={
+            (k.cacheWrite ?? 0) > 0 ? fmtNum(k.cacheWrite ?? 0) : undefined
+          }
         >
           {(k.cacheWrite ?? 0) > 0 ? fmtTokens(k.cacheWrite ?? 0) : "-"}
         </TableCell>
@@ -630,7 +653,16 @@ const KeyUsageRow = memo(function KeyUsageRow({
               <TableSkeleton
                 rows={3}
                 cols={8}
-                widths={["70%", "40%", "30%", "30%", "30%", "30%", "20%", "20%"]}
+                widths={[
+                  "70%",
+                  "40%",
+                  "30%",
+                  "30%",
+                  "30%",
+                  "30%",
+                  "20%",
+                  "20%",
+                ]}
               />
             ) : detail.length === 0 ? (
               <p className="p-3 text-xs text-muted-foreground">
@@ -647,7 +679,9 @@ const KeyUsageRow = memo(function KeyUsageRow({
                     </TableHead>
                     <TableHead className="w-[13%] text-right">Tokens</TableHead>
                     <TableHead className="w-[13%] text-right">Cached</TableHead>
-                    <TableHead className="w-[13%] text-right">Written</TableHead>
+                    <TableHead className="w-[13%] text-right">
+                      Written
+                    </TableHead>
                     <TableHead className="w-[10%] text-right">Cost</TableHead>
                     <TableHead className="w-[8%] text-right pr-4">
                       Share
@@ -697,9 +731,15 @@ const KeyUsageRow = memo(function KeyUsageRow({
                         </TableCell>
                         <TableCell
                           className="text-right tabular-nums text-muted-foreground whitespace-nowrap"
-                          title={(d.cacheWrite ?? 0) > 0 ? fmtNum(d.cacheWrite ?? 0) : undefined}
+                          title={
+                            (d.cacheWrite ?? 0) > 0
+                              ? fmtNum(d.cacheWrite ?? 0)
+                              : undefined
+                          }
                         >
-                          {(d.cacheWrite ?? 0) > 0 ? fmtTokens(d.cacheWrite ?? 0) : "-"}
+                          {(d.cacheWrite ?? 0) > 0
+                            ? fmtTokens(d.cacheWrite ?? 0)
+                            : "-"}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">
                           {d.costUsd > 0 ? fmtUsd(d.costUsd) : "-"}

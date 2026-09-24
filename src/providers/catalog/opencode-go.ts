@@ -101,7 +101,6 @@ class OpenCodeGoAdapter extends OpenAICompatibleAdapter {
     ];
   }
 
-
   override messages(ctx: BuildCtx): BuiltRequest {
     return super.messages({
       ...ctx,
@@ -152,9 +151,10 @@ class OpenCodeGoAdapter extends OpenAICompatibleAdapter {
     // Parse before branching on status: the failure body carries the upstream's
     // own message ("Unauthorized"), which is far more useful to an operator
     // than a bare "HTTP 401".
-    let data:
-      | { usage?: Record<string, WindowLike>; error?: { message?: string } }
-      | null = null;
+    let data: {
+      usage?: Record<string, WindowLike>;
+      error?: { message?: string };
+    } | null = null;
     try {
       data = res.json() as {
         usage?: Record<string, WindowLike>;

@@ -12,6 +12,7 @@ import {
 } from "../repo/provider-oauth";
 import type { ProviderAuthCrypto } from "./provider-auth/crypto";
 import { providerAuthIntegrationById } from "./provider-auth/registry";
+import { maskProviderKey } from "../repo/provider-keys";
 import {
   ProviderReauthRequiredError,
   type ProviderAuthAccount,
@@ -27,7 +28,9 @@ export interface ProviderCredentialHandle {
 }
 
 function accountIdFromHealthKey(healthKey: string): string | null {
-  return healthKey.startsWith("oauth:") ? healthKey.slice("oauth:".length) : null;
+  return healthKey.startsWith("oauth:")
+    ? healthKey.slice("oauth:".length)
+    : null;
 }
 
 // The flat string-keyed keyMetadata a managed-auth credential's account
@@ -62,7 +65,9 @@ export function managedCredentialMetadata(
     // is joined here and split back apart by claude-code.ts's keyUsage(),
     // its only consumer.
     ...(account.scopes?.length ? { scopes: account.scopes.join(",") } : {}),
-    ...(account.subscriptionType ? { subscriptionType: account.subscriptionType } : {}),
+    ...(account.subscriptionType
+      ? { subscriptionType: account.subscriptionType }
+      : {}),
     ...(account.rateLimitTier ? { rateLimitTier: account.rateLimitTier } : {}),
   };
 }
@@ -99,7 +104,7 @@ export class ProviderCredentialService {
   ): Promise<ProviderTestProbe> {
     const view = accountId
       ? getProviderOAuthView(this.db, providerId, accountId)
-      : listProviderOAuthViews(this.db, providerId)[0] ?? null;
+      : (listProviderOAuthViews(this.db, providerId)[0] ?? null);
     if (!view) throw new Error("Provider authentication is not connected");
     if (view.status === "disabled")
       return {
@@ -137,8 +142,8 @@ export class ProviderCredentialService {
     forceRefresh = false,
   ): Promise<ProviderCredentialHandle | null> {
     const healthKey = accountId ? undefined : this.candidates(providerId)[0];
-    const resolvedId = accountId ??
-      (healthKey ? accountIdFromHealthKey(healthKey) : null);
+    const resolvedId =
+      accountId ?? (healthKey ? accountIdFromHealthKey(healthKey) : null);
     if (!resolvedId) return null;
     const view = getProviderOAuthView(this.db, providerId, resolvedId);
     if (!view) return null;
@@ -146,7 +151,12 @@ export class ProviderCredentialService {
       throw new Error("Provider authentication is disabled");
     if (view.status === "reauth_required")
       throw new Error("Provider authentication must be reconnected");
-    const stored = getProviderOAuth(this.db, this.crypto, providerId, resolvedId);
+    const stored = getProviderOAuth(
+      this.db,
+      this.crypto,
+      providerId,
+      resolvedId,
+    );
     if (!stored) return null;
     const needsRefresh =
       forceRefresh || stored.credential.expiresAt <= Date.now() + 5 * 60_000;
@@ -235,11 +245,7 @@ export class ProviderCredentialService {
       // behind a manual reconnect. This mirrors how the Codex CLI itself
       // only forces re-login on a classified-permanent refresh failure.
       if (error instanceof ProviderReauthRequiredError)
-        markProviderOAuthReauthRequired(
-          this.db,
-          stored.providerId,
-          stored.id,
-        );
+        markProviderOAuthReauthRequired(this.db, stored.providerId, stored.id);
       throw error;
     }
   }
@@ -250,11 +256,18 @@ export class ProviderCredentialService {
     const integration = this.integrationById(stored.integrationId);
     if (!integration)
       throw new Error("Unknown provider authentication integration");
+    const value = integration.runtimeCredential(stored.credential);
     return {
       source: "oauth",
-      value: integration.runtimeCredential(stored.credential),
+      value,
       healthKey: `oauth:${stored.id}`,
-      mask: stored.account.email || stored.account.label || "Connected account",
+      // The masked SECRET, unified with every other credential kind (plain
+      // provider keys, Codex, clinefree) - never the account's email/label,
+      // which is display-only identity (shown separately in the
+      // Authentication panel) and was leaking into places like the request
+      // log's "upstream key used" badge as e.g. an operator's own custom
+      // nickname instead of a masked token.
+      mask: maskProviderKey(value),
       metadata: managedCredentialMetadata(stored.integrationId, stored.account),
     };
   }

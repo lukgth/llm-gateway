@@ -8,7 +8,12 @@ import {
 
 const invoke = (body: string, pipes = "|") =>
   `<${pipes}DSML${pipes}invoke name="mcp__ao_mcp_search_works">${body}<${pipes}DSML${pipes}/invoke>`;
-const parameter = (name: string, value: string, stringValue = "true", pipes = "|") =>
+const parameter = (
+  name: string,
+  value: string,
+  stringValue = "true",
+  pipes = "|",
+) =>
   `<${pipes}DSML${pipes}parameter name="${name}" string="${stringValue}">${value}<${pipes}DSML${pipes}/parameter>`;
 
 test("parses fullwidth AO3 invoke and false JSON parameters", () => {
@@ -55,7 +60,9 @@ test("healer preserves text/call/text order across arbitrary splits", () => {
       ...healer.feedEvents(source.slice(split)),
     ];
     assert.deepEqual(
-      events.map((event) => event.type === "text" ? event.text : event.call.name),
+      events.map((event) =>
+        event.type === "text" ? event.text : event.call.name,
+      ),
       ["a", "mcp__ao_mcp_search_works", "b"],
       `split ${split}`,
     );
@@ -66,10 +73,16 @@ test("healer preserves text/call/text order across arbitrary splits", () => {
 test("healer discards incomplete recognized DSML but preserves ordinary prose", () => {
   const healer = new DsmlToolCallHealer();
   assert.equal(healer.feed("ordinary "), "ordinary ");
-  assert.equal(healer.feed(invoke(parameter("x", "unterminated")).slice(0, -9)), "");
+  assert.equal(
+    healer.feed(invoke(parameter("x", "unterminated")).slice(0, -9)),
+    "",
+  );
   assert.equal(healer.flushPending(), "");
   assert.equal(healer.drainCompleted().length, 0);
-  assert.equal(parseDsmlToolCalls("mention <DSML> plainly").text, "mention <DSML> plainly");
+  assert.equal(
+    parseDsmlToolCalls("mention <DSML> plainly").text,
+    "mention <DSML> plainly",
+  );
 });
 
 test("stream transform emits cleaned text and recovered tool call", async () => {
@@ -96,8 +109,14 @@ test("stream transform emits cleaned text and recovered tool call", async () => 
     .map((frame) => JSON.parse(frame.slice(6)));
   const deltas = parsed.flatMap((chunk) => chunk.choices ?? []);
   assert.equal(deltas[0].delta.content, "left ");
-  assert.equal(deltas[1].delta.tool_calls[0].function.name, "mcp__ao_mcp_search_works");
-  assert.deepEqual(JSON.parse(deltas[1].delta.tool_calls[0].function.arguments), { rating: ["Mature"] });
+  assert.equal(
+    deltas[1].delta.tool_calls[0].function.name,
+    "mcp__ao_mcp_search_works",
+  );
+  assert.deepEqual(
+    JSON.parse(deltas[1].delta.tool_calls[0].function.arguments),
+    { rating: ["Mature"] },
+  );
   assert.equal(deltas.at(-1).finish_reason, "tool_calls");
   assert.ok(!output.join("").includes("DSML"));
 });

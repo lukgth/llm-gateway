@@ -23,7 +23,8 @@
 
 export const CLAUDE_API_BASE_URL = "https://api.anthropic.com";
 // OAuth token endpoint (authorization_code exchange + refresh_token grant).
-export const CLAUDE_OAUTH_TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
+export const CLAUDE_OAUTH_TOKEN_URL =
+  "https://platform.claude.com/v1/oauth/token";
 // Account/org identity for an OAuth token (email, plan, org uuid). Requires
 // user:profile scope - NOT available to a user:inference-only token.
 export const CLAUDE_OAUTH_PROFILE_URL = `${CLAUDE_API_BASE_URL}/api/oauth/profile`;
@@ -71,7 +72,9 @@ export const CLAUDE_OAUTH_TOKEN_PREFIX = "sk-ant-oat01-";
 // silently accepting it as a "plain API key" the way it used to.
 export const ANTHROPIC_API_KEY_PREFIX = "sk-ant-api";
 
-export function hasProfileScope(scopes: readonly string[] | undefined): boolean {
+export function hasProfileScope(
+  scopes: readonly string[] | undefined,
+): boolean {
   return !!scopes?.includes(CLAUDE_AI_PROFILE_SCOPE);
 }
 

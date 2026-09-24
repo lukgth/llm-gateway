@@ -55,11 +55,8 @@ function setup(results: ProviderAuthPollResult[]) {
     },
   };
   const crypto = new ProviderAuthCrypto(db, dir);
-  const service = new ProviderAuthService(
-    db,
-    crypto,
-    (catalogId) =>
-      catalogId === integration.catalogId ? integration : undefined,
+  const service = new ProviderAuthService(db, crypto, (catalogId) =>
+    catalogId === integration.catalogId ? integration : undefined,
   );
   return {
     db,
@@ -78,38 +75,35 @@ async function waitForPoll(view: { nextPollAt?: string }) {
   await new Promise((resolve) => setTimeout(resolve, delay));
 }
 
-test(
-  "provider auth sessions enforce ownership, cadence, and token-free views",
-  async () => {
-    const ctx = setup([{ state: "ready", credential }]);
-    try {
-      const started = await ctx.service.begin("test-provider", "owner-a");
-      assert.equal(started.state, "pending");
-      assert.equal(started.verification?.userCode, "ABCD");
-      assert.equal(JSON.stringify(started).includes("server-secret"), false);
-      assert.equal(JSON.stringify(started).includes("access-secret"), false);
-      assert.throws(() => ctx.service.get(started.id, "owner-b"));
+test("provider auth sessions enforce ownership, cadence, and token-free views", async () => {
+  const ctx = setup([{ state: "ready", credential }]);
+  try {
+    const started = await ctx.service.begin("test-provider", "owner-a");
+    assert.equal(started.state, "pending");
+    assert.equal(started.verification?.userCode, "ABCD");
+    assert.equal(JSON.stringify(started).includes("server-secret"), false);
+    assert.equal(JSON.stringify(started).includes("access-secret"), false);
+    assert.throws(() => ctx.service.get(started.id, "owner-b"));
 
-      const early = await ctx.service.poll(started.id, "owner-a");
-      assert.equal(early.state, "pending");
-      assert.equal(ctx.polls(), 0);
+    const early = await ctx.service.poll(started.id, "owner-a");
+    assert.equal(early.state, "pending");
+    assert.equal(ctx.polls(), 0);
 
-      await waitForPoll(started);
-      const ready = await ctx.service.poll(started.id, "owner-a");
-      assert.equal(ready.state, "ready");
-      assert.equal(ready.account?.email, "user@example.com");
-      assert.equal(JSON.stringify(ready).includes("access-secret"), false);
-      assert.deepEqual(await ctx.service.test(started.id, "owner-a"), {
-        ok: true,
-        status: 200,
-        ms: 1,
-        models: [],
-      });
-    } finally {
-      ctx.close();
-    }
-  },
-);
+    await waitForPoll(started);
+    const ready = await ctx.service.poll(started.id, "owner-a");
+    assert.equal(ready.state, "ready");
+    assert.equal(ready.account?.email, "user@example.com");
+    assert.equal(JSON.stringify(ready).includes("access-secret"), false);
+    assert.deepEqual(await ctx.service.test(started.id, "owner-a"), {
+      ok: true,
+      status: 200,
+      ms: 1,
+      models: [],
+    });
+  } finally {
+    ctx.close();
+  }
+});
 
 test("provider auth sessions adopt once and persist encrypted credentials", async () => {
   const ctx = setup([{ state: "ready", credential }]);
@@ -203,11 +197,8 @@ test("provider auth import creates a ready owner-bound session consumed once", a
       },
     };
     const crypto = new ProviderAuthCrypto(db, dir);
-    const service = new ProviderAuthService(
-      db,
-      crypto,
-      (catalogId) =>
-        catalogId === integration.catalogId ? integration : undefined,
+    const service = new ProviderAuthService(db, crypto, (catalogId) =>
+      catalogId === integration.catalogId ? integration : undefined,
     );
 
     // Integrations without an import method are rejected up front.
@@ -215,7 +206,11 @@ test("provider auth import creates a ready owner-bound session consumed once", a
     try {
       await assert.rejects(
         () =>
-          plain.service.import("test-provider", { kind: "auth_json", value: "x" }, "owner-a"),
+          plain.service.import(
+            "test-provider",
+            { kind: "auth_json", value: "x" },
+            "owner-a",
+          ),
         /does not support importing/,
       );
     } finally {
@@ -255,7 +250,14 @@ test("provider auth import creates a ready owner-bound session consumed once", a
     const stored = getProviderOAuth(db, crypto, provider.id)!;
     assert.equal(stored.credential.secrets.accessToken, "imported-access");
     assert.equal(stored.credential.secrets.refreshToken, undefined);
-    assert.throws(() => service.adoptForNewProvider(view.id, "owner-a", provider.id, "test-provider"));
+    assert.throws(() =>
+      service.adoptForNewProvider(
+        view.id,
+        "owner-a",
+        provider.id,
+        "test-provider",
+      ),
+    );
 
     // Expired credentials are rejected at import time.
     integration.import = async () => ({
@@ -264,7 +266,11 @@ test("provider auth import creates a ready owner-bound session consumed once", a
     });
     await assert.rejects(
       () =>
-        service.import("test-provider", { kind: "session_cookie", value: "c" }, "owner-a"),
+        service.import(
+          "test-provider",
+          { kind: "session_cookie", value: "c" },
+          "owner-a",
+        ),
       /expired/i,
     );
   } finally {

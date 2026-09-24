@@ -482,7 +482,10 @@ test("provider catalog test: non-OAuth ad-hoc OpenAI payload still probes and di
     };
     assert.equal(response.ok, true);
     assert.equal(response.status, 200);
-    assert.deepEqual(response.models.map((model) => model.id), ["gpt-test"]);
+    assert.deepEqual(
+      response.models.map((model) => model.id),
+      ["gpt-test"],
+    );
     assert.equal(requestCount, 2, "connectivity probe plus model discovery");
     assert.deepEqual(seenAuth, ["Bearer sk-test", "Bearer sk-test"]);
   } finally {

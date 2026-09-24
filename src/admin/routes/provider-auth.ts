@@ -16,14 +16,16 @@ import { bad } from "./respond";
 import type { RouteCtx } from "./types";
 
 function owner(req: AdminRequest): string {
-  if (!req.__adminSessionBinding) throw new Error("Admin session binding missing");
+  if (!req.__adminSessionBinding)
+    throw new Error("Admin session binding missing");
   return req.__adminSessionBinding;
 }
 
 function parseBatchOAuth(value: unknown): BatchOAuthOps {
-  const input = value && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : {};
+  const input =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
   const ids = (name: string): string[] | undefined => {
     const raw = input[name];
     if (raw === undefined) return undefined;
@@ -90,8 +92,7 @@ export function registerProviderAuthRoutes(ctx: RouteCtx): void {
       const value = typeof body.value === "string" ? body.value : "";
       if (!value.trim()) throw new Error("value is required");
       const template = getProviderTemplate(catalogId);
-      if (!template)
-        throw new Error("Unknown provider");
+      if (!template) throw new Error("Unknown provider");
       if (
         providerAuthIntegration(catalogId)?.import === undefined ||
         template.authentication?.flow !== "import"
@@ -224,7 +225,12 @@ export function registerProviderAuthRoutes(ctx: RouteCtx): void {
       const accountId = String(req.params.accountId);
       let view: ReturnType<typeof setProviderOAuthEnabled> = null;
       if (typeof body.enabled === "boolean")
-        view = setProviderOAuthEnabled(ctx.db, current.id, accountId, body.enabled);
+        view = setProviderOAuthEnabled(
+          ctx.db,
+          current.id,
+          accountId,
+          body.enabled,
+        );
       if (body.label !== undefined || body.tags !== undefined) {
         const label =
           body.label === undefined
@@ -248,7 +254,12 @@ export function registerProviderAuthRoutes(ctx: RouteCtx): void {
           ...(tags !== undefined ? { tags } : {}),
         });
       }
-      if (view === null && typeof body.enabled !== "boolean" && body.label === undefined && body.tags === undefined)
+      if (
+        view === null &&
+        typeof body.enabled !== "boolean" &&
+        body.label === undefined &&
+        body.tags === undefined
+      )
         throw new Error("enabled, label, or tags is required");
       if (!view)
         return res.status(404).json({ error: { message: "not found" } });
@@ -259,30 +270,37 @@ export function registerProviderAuthRoutes(ctx: RouteCtx): void {
     }
   });
 
-  r.post("/providers/:id/auth/:accountId/test", requireAdmin, async (req, res) => {
-    const current = oauthProvider(String(req.params.id), res);
-    if (!current)
-      return res.status(404).json({ error: { message: "not found" } });
-    try {
-      const accountId = String(req.params.accountId);
-      const result = await providerCredentials.testManaged(current.id, accountId);
-      if (result.ok) {
-        const account = providerCredentials
-          .views(current.id)
-          .find((item) => item.id === accountId);
-        if (account)
-          new KeyHealthStore(ctx.db).recordSuccess(
-            current.id,
-            account.credHash,
-            null,
-          );
+  r.post(
+    "/providers/:id/auth/:accountId/test",
+    requireAdmin,
+    async (req, res) => {
+      const current = oauthProvider(String(req.params.id), res);
+      if (!current)
+        return res.status(404).json({ error: { message: "not found" } });
+      try {
+        const accountId = String(req.params.accountId);
+        const result = await providerCredentials.testManaged(
+          current.id,
+          accountId,
+        );
+        if (result.ok) {
+          const account = providerCredentials
+            .views(current.id)
+            .find((item) => item.id === accountId);
+          if (account)
+            new KeyHealthStore(ctx.db).recordSuccess(
+              current.id,
+              account.credHash,
+              null,
+            );
+        }
+        ctx.broadcast(["providers"], "provider:auth-test");
+        res.json(result);
+      } catch (error) {
+        bad(res, error);
       }
-      ctx.broadcast(["providers"], "provider:auth-test");
-      res.json(result);
-    } catch (error) {
-      bad(res, error);
-    }
-  });
+    },
+  );
 
   r.post(
     "/providers/:id/auth/:accountId/reconnect",
@@ -313,13 +331,7 @@ export function registerProviderAuthRoutes(ctx: RouteCtx): void {
     const current = oauthProvider(String(req.params.id), res);
     if (!current)
       return res.status(404).json({ error: { message: "not found" } });
-    if (
-      !deleteProviderOAuth(
-        ctx.db,
-        current.id,
-        String(req.params.accountId),
-      )
-    )
+    if (!deleteProviderOAuth(ctx.db, current.id, String(req.params.accountId)))
       return res.status(404).json({ error: { message: "not connected" } });
     reload();
     res.status(204).end();
