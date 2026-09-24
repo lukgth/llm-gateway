@@ -17,7 +17,10 @@ import { seedFromKey, makeUsageCtx } from "./provider-probe";
 import { KeyHealthStore, type KeyHealthSnapshot } from "../../gateway/key-health";
 import { listProviderOAuthViews } from "../../repo/provider-oauth";
 import { providerAuthIntegration } from "../../services/provider-auth/registry";
-import type { ProviderCredentialService } from "../../services/provider-credentials";
+import {
+  managedCredentialMetadata,
+  type ProviderCredentialService,
+} from "../../services/provider-credentials";
 
 // The usage dashboard audits EVERY provider's live keyUsage() probe, and any
 // could hang: an unreachable route (blackholed / dropped SYN) stalls in the
@@ -61,11 +64,7 @@ export async function buildUsageReport(
           // token (fresh/refreshed) through the same service the engine uses.
           key: `oauth:${view.id}`,
           enabled: view.status === "active",
-          metadata: {
-            integrationId: view.integrationId,
-            accountId: view.account.accountId ?? "",
-            email: view.account.email ?? "",
-          },
+          metadata: managedCredentialMetadata(view.integrationId, view.account),
           keyHash: view.credHash,
           lastUsedAt: lastUsed.get(view.credHash),
           health: snapshotToHealth(h),

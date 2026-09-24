@@ -434,8 +434,22 @@ function AccountRow({
         <ActionButton label="Copy access token" onClick={() => { void navigator.clipboard.writeText(account.accessToken); toast.success("Access token copied"); }}><Copy /></ActionButton>
       </div>
       <div role="cell" className="hidden min-w-0 truncate md:block">{account.account.email || "-"}</div>
-      <div role="cell" className="hidden min-w-0 truncate md:block">{account.account.label || "-"}</div>
-      <div role="cell" className="hidden min-w-0 truncate text-xs md:block" title={new Date(account.expiresAt).toLocaleString()}>{new Date(account.expiresAt).toLocaleDateString()}</div>
+      <div role="cell" className="hidden min-w-0 flex-col justify-center gap-0.5 md:flex">
+        <span className="truncate">{account.account.label || "-"}</span>
+        {(account.account.tokenKind === "long_lived" || account.account.subscriptionType) && (
+          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            {account.account.tokenKind === "long_lived" && (
+              <Badge variant="secondary" className="px-1 py-0 text-[10px] leading-4">Long-lived</Badge>
+            )}
+            {account.account.subscriptionType && (
+              <span className="truncate capitalize">{account.account.subscriptionType}</span>
+            )}
+          </span>
+        )}
+      </div>
+      <div role="cell" className="hidden min-w-0 truncate text-xs md:block" title={account.account.tokenKind === "long_lived" ? "This credential does not expire" : new Date(account.expiresAt).toLocaleString()}>
+        {account.account.tokenKind === "long_lived" ? "Never" : new Date(account.expiresAt).toLocaleDateString()}
+      </div>
       <div role="cell" className="min-w-0"><span className={cn("flex min-w-0 items-center gap-1.5 text-xs", status.tone)}><span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", status.dot)} /><span className="truncate whitespace-nowrap">{status.label}</span></span></div>
       <div role="cell" className="flex items-center"><Switch checked={account.status === "active"} disabled={toggling || account.status === "reauth_required"} onCheckedChange={onToggle} aria-label={`${account.status === "active" ? "Disable" : "Enable"} account`} /></div>
       <div role="cell" className="hidden text-right font-mono text-success md:block">{account.stats.success}</div>

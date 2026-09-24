@@ -48,6 +48,14 @@ export interface ChatMessage {
   tool_calls?: ChatToolCall[];
   tool_call_id?: string;
   name?: string;
+  // Structured-output/moderation refusal (OpenAI Chat Completions): a sibling
+  // of `content`, not a variant of it - the model declined to produce the
+  // requested structured output (or was otherwise moderation-refused) and
+  // explains why here instead. Present (non-null) only when the model
+  // refused; `content` is then null. See docs/format-conversion.md's refusal
+  // section for the Anthropic-side mapping (a stop_reason:"refusal" message
+  // whose sole text block carries this string).
+  refusal?: string | null;
   // gateway-attached reasoning fields (from <thinking> extraction / bridging)
   reasoning?: string;
   reasoning_content?: string;
@@ -141,6 +149,9 @@ export interface ChatCompletionResponse {
 export interface ChatDelta {
   role?: string;
   content?: string;
+  // Streamed incrementally like `content` - OpenAI sends the refusal text in
+  // pieces across chunks rather than one final string. See ChatMessage.refusal.
+  refusal?: string;
   tool_calls?: Array<{
     index?: number;
     id?: string;

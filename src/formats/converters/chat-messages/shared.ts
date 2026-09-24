@@ -60,7 +60,10 @@ export function extractReasoningText(obj: unknown): string {
   return "";
 }
 
-// Map OpenAI finish_reason -> Anthropic stop_reason.
+// Map OpenAI finish_reason -> Anthropic stop_reason. Note "refusal" is NOT
+// listed here on purpose: OpenAI never puts "refusal" in `finish_reason`
+// itself (that stays "stop") - the refusal signal is the separate
+// `message.refusal` field, detected and mapped by response.ts directly.
 export const FINISH_TO_STOP: Record<string, string> = {
   stop: "end_turn",
   length: "max_tokens",
@@ -68,11 +71,18 @@ export const FINISH_TO_STOP: Record<string, string> = {
   function_call: "tool_use",
   content_filter: "end_turn",
 };
+// Map Anthropic stop_reason -> OpenAI finish_reason. "refusal" maps to
+// "stop" (OpenAI's real finish_reason for a structured-output refusal,
+// confirmed against OpenAI's own SDK/docs examples) - response.ts is
+// responsible for ALSO moving the refusal text from `content` into the
+// dedicated `message.refusal` field when it sees this stop_reason; this map
+// alone only gets finish_reason right, not the content placement.
 export const STOP_TO_FINISH: Record<string, string> = {
   end_turn: "stop",
   max_tokens: "length",
   stop_sequence: "stop",
   tool_use: "tool_calls",
+  refusal: "stop",
 };
 
 // --- usage translation (S2) ------------------------------------------------

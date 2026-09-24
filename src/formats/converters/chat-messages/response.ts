@@ -46,7 +46,17 @@ export function chatResponseToMessages(
       signature: SYNTHETIC_THINKING_SIGNATURE,
     });
 
-  if (typeof msg.content === "string" && msg.content) {
+  // Refusal (OpenAI Chat's structured-output/moderation decline): a sibling
+  // of `content`, never combined with it - content is null whenever refusal
+  // is set (see ChatMessage.refusal's doc comment). Anthropic has no
+  // separate refusal field; it's expressed as stop_reason:"refusal" on a
+  // message whose sole content is a text block carrying the refusal text
+  // (mirrors how VALID_STOP_REASONS/sanitize-response.ts already recognizes
+  // "refusal" as a real Anthropic stop_reason).
+  const refusal = typeof msg.refusal === "string" && msg.refusal ? msg.refusal : undefined;
+  if (refusal) {
+    content.push({ type: "text", text: refusal });
+  } else if (typeof msg.content === "string" && msg.content) {
     content.push({ type: "text", text: msg.content });
   } else if (Array.isArray(msg.content)) {
     for (const p of msg.content as AnthropicBlock[]) {
@@ -54,8 +64,9 @@ export function chatResponseToMessages(
         content.push({ type: "text", text: p.text });
     }
   }
-  const stopReason =
-    FINISH_TO_STOP[choice.finish_reason as string] ?? "end_turn";
+  const stopReason = refusal
+    ? "refusal"
+    : (FINISH_TO_STOP[choice.finish_reason as string] ?? "end_turn");
 
   const toolCalls = msg.tool_calls as
     | Array<{ id: string; function: { name: string; arguments?: string } }>
@@ -120,9 +131,18 @@ export function messagesResponseToChat(
     }
   }
   const message: WireChatMessage = { role: "assistant" };
-  if (textContent != null) message.content = textContent;
+  // A refusal-stopped message's sole content is its refusal text (see
+  // chatResponseToMessages above) - move it to the dedicated `refusal` field
+  // instead of `content`, matching OpenAI's own shape for a declined
+  // structured output.
+  if (msgBody.stop_reason === "refusal" && textContent != null) {
+    message.refusal = textContent;
+    message.content = null;
+  } else {
+    if (textContent != null) message.content = textContent;
+    if (textContent == null && !toolCalls.length) message.content = null;
+  }
   if (toolCalls.length) message.tool_calls = toolCalls;
-  if (textContent == null && !toolCalls.length) message.content = null;
   if (reasoningContent != null) message.reasoning_content = reasoningContent;
 
   const finish = STOP_TO_FINISH[msgBody.stop_reason as string] ?? "stop";

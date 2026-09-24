@@ -42,6 +42,30 @@ export interface ProviderKey {
   updatedAt: string;
 }
 
+// Non-secret classification + display metadata for a managed-auth credential
+// - mirrors the backend's ProviderAuthAccount (services/provider-auth/types.ts)
+// exactly, since it's the same JSON object round-tripped through
+// public_metadata. One shape everywhere this is seen (session view, admin
+// view), not a per-endpoint ad-hoc subset.
+export interface ProviderAuthAccount {
+  accountId?: string;
+  email?: string;
+  label?: string;
+  /** "oauth" (refreshable, real expiry) or "long_lived" (never expires,
+   *  never refreshes - a PAT, an inference-only token, or a plain API key
+   *  routed through managed-auth storage). */
+  tokenKind?: "oauth" | "long_lived";
+  /** Which wire auth scheme this secret needs: "api_key" (e.g. x-api-key) or
+   *  "oauth_token" (bearer + provider-specific OAuth headers). */
+  authKind?: "api_key" | "oauth_token";
+  /** OAuth scopes actually granted, when known. */
+  scopes?: string[];
+  /** Upstream subscription/plan label, when known (e.g. "pro", "max"). */
+  subscriptionType?: string;
+  /** Upstream rate-limit tier, when reported. */
+  rateLimitTier?: string;
+}
+
 export interface ProviderOAuthView {
   id: string;
   providerId: string;
@@ -50,7 +74,7 @@ export interface ProviderOAuthView {
   credHash: string;
   status: "active" | "disabled" | "reauth_required";
   expiresAt: string;
-  account: { accountId?: string; email?: string; label?: string };
+  account: ProviderAuthAccount;
   createdAt: string;
   updatedAt: string;
 }
@@ -96,7 +120,7 @@ export interface ProviderAuthSession {
     uriComplete?: string;
     userCode: string;
   };
-  account?: { accountId?: string; email?: string; label?: string };
+  account?: ProviderAuthAccount;
   error?: { code: string; message: string };
 }
 

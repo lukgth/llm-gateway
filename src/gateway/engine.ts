@@ -83,7 +83,10 @@ import { addUsage, subtractUsage, addBreakdown } from "../repo/usage";
 import { insertRequestLog, throttleLogError } from "../repo/request-logs";
 import { getPricingByAlias, computeCostUsd } from "../repo/pricing";
 import { upsertUnifiedUsage } from "../repo/provider-key-usage";
-import { filterUnifiedRateLimitHeaders } from "../services/anthropic/unified-usage";
+import {
+  filterUnifiedRateLimitHeaders,
+  filterStandardRateLimitHeaders,
+} from "../services/anthropic/unified-usage";
 import {
   classifyAnthropicRateLimit,
   type RateLimitScope,
@@ -95,6 +98,7 @@ import {
   isClaudeCodeUsageCreditsError,
   isClaudeCodeModelCreditsError,
   isAnthropicCreditBalanceError,
+  isAnthropicAccountAuthError,
 } from "../services/anthropic/usage-credits";
 import {
   clineRetryDelayMs,
@@ -106,6 +110,7 @@ import {
   countInputTokens,
 } from "../services/anthropic/count-tokens";
 import { logUpstreamNon2xx } from "./engine-support/log-upstream-error";
+import { emptyUpstreamResponseReason } from "./engine-support/empty-response";
 import { captureRequest, packResponseSummary } from "./debug-capture";
 import type {
   ChainEntry,
@@ -1378,17 +1383,38 @@ export class ForwardingEngine {
     const headers = upRes.headers || {};
 
     const captureClaudeUsage = () => {
-      if (provider.catalogId !== "claude-code" || !upstreamKey.hash) return;
+      if (!upstreamKey.hash) return;
       try {
-        const unified = filterUnifiedRateLimitHeaders(headers);
-        if (Object.keys(unified).length)
-          upsertUnifiedUsage(
-            this.db,
-            provider.id,
-            upstreamKey.hash,
-            unified,
-            status,
-          );
+        if (provider.catalogId === "claude-code") {
+          const unified = filterUnifiedRateLimitHeaders(headers);
+          if (Object.keys(unified).length)
+            upsertUnifiedUsage(
+              this.db,
+              provider.id,
+              upstreamKey.hash,
+              unified,
+              status,
+            );
+        } else if (route.providerFmt === "messages") {
+          // Any other Messages-format provider (the official Anthropic
+          // catalog, or an Anthropic-compatible custom/generic template) gets
+          // the STANDARD anthropic-ratelimit-* headers instead - Claude Code's
+          // subscription auth is the only path that ever sends the unified
+          // scheme, but a plain API key sends these on every response. Stored
+          // in the same table (it's just headers_json) under the same
+          // provider+key pair - safe because a provider can only be
+          // claude-code XOR something else, never both, so there's no
+          // capture ever competing for the same row.
+          const standard = filterStandardRateLimitHeaders(headers);
+          if (Object.keys(standard).length)
+            upsertUnifiedUsage(
+              this.db,
+              provider.id,
+              upstreamKey.hash,
+              standard,
+              status,
+            );
+        }
       } catch (err) {
         this.logger.warn("claude_usage_capture_failed", {
           provider: provider.id,
@@ -1537,6 +1563,7 @@ export class ForwardingEngine {
         isAnthropicCreditBalanceError({
           status,
           catalogId: provider.catalogId,
+          providerFmt: route.providerFmt,
           body: errBody,
         })
       ) {
@@ -1553,6 +1580,47 @@ export class ForwardingEngine {
           status,
           reason: `Anthropic key has insufficient credit balance (status ${status}: ${errBody.slice(0, 200)})`,
           creditBalanceExhausted: true,
+        };
+      }
+      // Some Anthropic-compatible upstreams report a genuine dead/invalid
+      // credential using Anthropic's error envelope
+      // (authentication_error/permission_error) but the wrong HTTP status -
+      // 400 instead of the spec's 401/403. AUTH_FAIL_STATUS only looks at
+      // the status code, so without this the request would hard-fail to the
+      // client instead of rotating off a dead key - handled inline here
+      // (mirroring the credit-balance case above) rather than through
+      // forward()'s centralized AUTH_FAIL_STATUS dispatch, which never sees
+      // this because `status` really is 400, not 401/403.
+      if (
+        isAnthropicAccountAuthError({
+          status,
+          catalogId: provider.catalogId,
+          providerFmt: route.providerFmt,
+          body: errBody,
+        })
+      ) {
+        if (upstreamKey.hash)
+          this.keyHealth.markAuthFailed(
+            provider.id,
+            upstreamKey.hash,
+            status,
+            `account auth error (400): ${errBody.slice(0, 200)}`,
+          );
+        logUpstreamNon2xx(this.logger, {
+          status,
+          provider: provider.id,
+          upstreamModel,
+          path: ctx.clientPath,
+          keyMask: upstreamKey.mask,
+          requestHeaders,
+          responseHeaders: headers,
+          body: errBody,
+          category: "authentication failure",
+        });
+        return {
+          committed: false,
+          status,
+          reason: `Anthropic account auth error (status ${status}: ${errBody.slice(0, 200)})`,
         };
       }
       logUpstreamNon2xx(this.logger, {
@@ -1707,6 +1775,12 @@ export class ForwardingEngine {
         attemptCtx,
         response,
       );
+      if (usage.emptyUpstreamReason)
+        return {
+          committed: false,
+          status,
+          reason: `empty upstream response: ${usage.emptyUpstreamReason}`,
+        };
       return {
         committed: true,
         status,
@@ -1728,6 +1802,12 @@ export class ForwardingEngine {
         effectiveHeaders,
         attemptCtx,
       );
+      if (usage.emptyUpstreamReason)
+        return {
+          committed: false,
+          status,
+          reason: `empty upstream response: ${usage.emptyUpstreamReason}`,
+        };
       // Settlement + logging happen centrally in forward(); hand back the
       // actual counts (falling back to the input estimate when the upstream
       // reported nothing).
@@ -2034,6 +2114,11 @@ export class ForwardingEngine {
     cached?: number;
     cacheWrite?: number;
     debugResponse?: string | null;
+    // Set (and every other field omitted) when the upstream body was
+    // structurally empty for its format - see emptyUpstreamResponseReason.
+    // Nothing has been written to `res` yet in this case; the caller is
+    // responsible for treating the attempt as uncommitted.
+    emptyUpstreamReason?: string;
   }> {
     let parsed: Record<string, unknown>;
     let stripped: Buffer;
@@ -2082,6 +2167,22 @@ export class ForwardingEngine {
         return {};
       }
     }
+
+    // A 2xx upstream response with an EXPLICIT empty choices/output/content
+    // array - a dead or invalid account commonly answers this way instead of
+    // a real error status, since the account is fine at the transport level
+    // and just has nothing to say. Never fires when the field is simply
+    // absent (see emptyUpstreamResponseReason's doc comment) - only when
+    // it's present and empty/content-less, so a minimal or non-standard but
+    // otherwise legitimate response is never misclassified. Caught here,
+    // before anything is written to `res`, so the caller can report it back
+    // to attemptOnce's caller as an uncommitted failure and let forward()'s
+    // retry loop rotate to another key instead of handing the client an
+    // empty completion. Checked on the PROVIDER-shape body (pre-transform)
+    // so it sees exactly what upstream sent, not a client-shape bridge's own
+    // empty-content fallbacks.
+    const emptyReason = emptyUpstreamResponseReason(route.providerFmt, parsed);
+    if (emptyReason) return { emptyUpstreamReason: emptyReason };
 
     // Read the upstream-reported usage from the PROVIDER-shape body. Settlement
     // (reserve reversal + actual attribution) happens centrally in forward().
@@ -2619,17 +2720,29 @@ export class ForwardingEngine {
     }
 
     const captureClaudeUsage = () => {
-      if (provider.catalogId !== "claude-code" || !pick) return;
+      if (!pick) return;
       try {
-        const unified = filterUnifiedRateLimitHeaders(res.headers);
-        if (Object.keys(unified).length)
-          upsertUnifiedUsage(
-            this.db,
-            provider.id,
-            pick.keyHash,
-            unified,
-            res.status,
-          );
+        if (provider.catalogId === "claude-code") {
+          const unified = filterUnifiedRateLimitHeaders(res.headers);
+          if (Object.keys(unified).length)
+            upsertUnifiedUsage(
+              this.db,
+              provider.id,
+              pick.keyHash,
+              unified,
+              res.status,
+            );
+        } else if (route.providerFmt === "messages") {
+          const standard = filterStandardRateLimitHeaders(res.headers);
+          if (Object.keys(standard).length)
+            upsertUnifiedUsage(
+              this.db,
+              provider.id,
+              pick.keyHash,
+              standard,
+              res.status,
+            );
+        }
       } catch (err) {
         this.logger.warn("claude_usage_capture_failed", {
           provider: provider.id,
@@ -2784,6 +2897,7 @@ export class ForwardingEngine {
         isAnthropicCreditBalanceError({
           status: res.status,
           catalogId: provider.catalogId,
+          providerFmt: route.providerFmt,
           body: res.text,
         })
       ) {
@@ -2801,6 +2915,31 @@ export class ForwardingEngine {
           reason: `Anthropic key has insufficient credit balance (status ${res.status}: ${res.text.slice(0, 200)})`,
           retryable: true,
           creditBalanceExhausted: true,
+        };
+      }
+      // Same non-compliant-status auth error as the main forwarding path
+      // (handleUpstreamResponse) - see its comment for why this can't ride
+      // AUTH_FAIL_STATUS.
+      if (
+        isAnthropicAccountAuthError({
+          status: res.status,
+          catalogId: provider.catalogId,
+          providerFmt: route.providerFmt,
+          body: res.text,
+        })
+      ) {
+        if (pick)
+          this.keyHealth.markAuthFailed(
+            provider.id,
+            pick.keyHash,
+            res.status,
+            `account auth error (400): ${res.text.slice(0, 200)}`,
+          );
+        return {
+          ok: false,
+          status: res.status,
+          reason: `Anthropic account auth error (status ${res.status}: ${res.text.slice(0, 200)})`,
+          retryable: true,
         };
       }
       // A Zen free-tier refusal is a verdict on the request, not the key -

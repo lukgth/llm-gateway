@@ -12,9 +12,10 @@ import {
   setProviderOAuthEnabled,
 } from "../repo/provider-oauth";
 import { ProviderAuthCrypto } from "./provider-auth/crypto";
-import type {
-  ProviderAuthCredential,
-  ProviderAuthIntegration,
+import {
+  ProviderReauthRequiredError,
+  type ProviderAuthCredential,
+  type ProviderAuthIntegration,
 } from "./provider-auth/types";
 import { ProviderCredentialService } from "./provider-credentials";
 
@@ -93,7 +94,27 @@ test("managed credential resolution keeps a stable non-secret health identity", 
   }
 });
 
-test("expired managed credentials become reconnect-required after refresh failure", async () => {
+test("expired managed credentials become reconnect-required only when refresh fails PERMANENTLY", async () => {
+  const ctx = setup(Date.now() - 1, {
+    async refresh() {
+      throw new ProviderReauthRequiredError("refresh token revoked");
+    },
+  });
+  try {
+    await assert.rejects(
+      () => ctx.service.resolveManaged(ctx.provider.id),
+      /refresh token revoked/,
+    );
+    assert.equal(
+      getProviderOAuthView(ctx.db, ctx.provider.id)?.status,
+      "reauth_required",
+    );
+  } finally {
+    ctx.close();
+  }
+});
+
+test("expired managed credentials stay active after a TRANSIENT refresh failure", async () => {
   const ctx = setup(Date.now() - 1, {
     async refresh() {
       throw new Error("network unavailable");
@@ -104,9 +125,12 @@ test("expired managed credentials become reconnect-required after refresh failur
       () => ctx.service.resolveManaged(ctx.provider.id),
       /network unavailable/,
     );
+    // A plain (non-ProviderReauthRequiredError) failure - a network blip, a
+    // 5xx from the auth server - must NOT force reconnection: the next call
+    // should get to retry the refresh instead of being stranded.
     assert.equal(
       getProviderOAuthView(ctx.db, ctx.provider.id)?.status,
-      "reauth_required",
+      "active",
     );
   } finally {
     ctx.close();
@@ -301,7 +325,7 @@ test("expired credential without a refresh token is marked reauth_required witho
     );
     await assert.rejects(
       () => service.resolveManaged(provider.id),
-      /re-import the Codex session/,
+      /re-import the session/,
     );
     assert.equal(refreshes, 0);
     assert.equal(

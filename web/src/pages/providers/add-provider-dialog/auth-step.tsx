@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, Copy, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -173,10 +173,47 @@ export function AuthStep({
   );
 }
 
-// Import flow (OpenAI Codex): paste the contents of ~/.codex/auth.json. The
-// only login path for Codex - web-session tokens are read-only on the Codex
-// backend, and browser sign-in is for local gateways only. Errors surface only
+// Import flow (OpenAI Codex, Claude Code): paste an existing credential file
+// or a bare secret. The only login path for either provider - Codex's
+// web-session tokens are read-only on its backend, and Claude Code OAuth has
+// no non-interactive login this gateway can drive. Errors surface only
 // server-provided, secret-free messages.
+const IMPORT_COPY: Record<
+  string,
+  { description: ReactNode; placeholder: string; ariaLabel: string }
+> = {
+  "openai-codex": {
+    description: (
+      <>
+        Paste the contents of <code>~/.codex/auth.json</code> (the file Codex
+        CLI writes after <code>codex login</code>) from a machine where you
+        are signed in to Codex. It contains a refresh token, so the gateway
+        keeps it renewed automatically.
+      </>
+    ),
+    placeholder: '{ "tokens": { "access_token": "…", "refresh_token": "…" } }',
+    ariaLabel: "Codex auth.json contents",
+  },
+  "claude-code": {
+    description: (
+      <>
+        Paste Claude Code's credential JSON (the <code>claudeAiOauth</code>{" "}
+        object), or a bare secret - a long-lived <code>sk-ant-oat01-…</code>{" "}
+        token or a <code>sk-ant-api03-…</code> Console API key. A refreshable
+        credential is kept renewed automatically; a long-lived one never
+        needs it.
+      </>
+    ),
+    placeholder: '{ "claudeAiOauth": { "accessToken": "…", "refreshToken": "…" } }',
+    ariaLabel: "Claude Code credential contents",
+  },
+};
+const DEFAULT_IMPORT_COPY = {
+  description: "Paste the credential this provider's login flow produces.",
+  placeholder: "",
+  ariaLabel: "Credential contents",
+};
+
 function ImportFlow({
   tpl,
   session,
@@ -193,7 +230,7 @@ function ImportFlow({
     if (!value.trim() || importing) return;
     setImporting(true);
     try {
-      onSession(await api.importProviderAuth(value));
+      onSession(await api.importProviderAuth(tpl.id, value));
       setValue("");
     } catch (error) {
       toast.error((error as Error).message);
@@ -203,6 +240,7 @@ function ImportFlow({
   }, [value, importing, onSession]);
 
   const ready = session?.state === "ready";
+  const copy = IMPORT_COPY[tpl.id] ?? DEFAULT_IMPORT_COPY;
 
   return (
     <div className="space-y-3 rounded-lg border border-border p-4">
@@ -218,22 +256,17 @@ function ImportFlow({
 
       {!ready && (
         <>
-          <p className="text-xs text-muted-foreground">
-            Paste the contents of <code>~/.codex/auth.json</code> (the file
-            Codex CLI writes after <code>codex login</code>) from a machine where
-            you are signed in to Codex. It contains a refresh token, so the
-            gateway keeps it renewed automatically.
-          </p>
+          <p className="text-xs text-muted-foreground">{copy.description}</p>
 
           <textarea
-            aria-label="Codex auth.json contents"
+            aria-label={copy.ariaLabel}
             spellCheck={false}
             autoComplete="off"
             rows={8}
             value={value}
             onChange={(event) => setValue(event.target.value)}
             className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            placeholder='{ "tokens": { "access_token": "…", "refresh_token": "…" } }'
+            placeholder={copy.placeholder}
           />
 
           <div className="flex items-center justify-between">
@@ -246,7 +279,7 @@ function ImportFlow({
               ) : (
                 <ExternalLink className="hidden" />
               )}
-              {tpl.authentication!.actionLabel ?? "Import Codex credentials"}
+              {tpl.authentication!.actionLabel ?? "Import credentials"}
             </Button>
           </div>
         </>

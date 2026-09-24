@@ -1026,3 +1026,107 @@ test("streaming (chat->messages): no reasoning at all -> no thinking block, no s
     ),
   );
 });
+
+// --- refusal (OpenAI Chat message.refusal <-> Anthropic stop_reason:"refusal") --
+
+test("chatResponseToMessages: a refusal maps to stop_reason:refusal with the refusal text as content", () => {
+  const out = chatResponseToMessages({
+    id: "c1",
+    model: "m",
+    choices: [
+      {
+        message: { role: "assistant", refusal: "I can't help with that.", content: null },
+        finish_reason: "stop",
+      },
+    ],
+  });
+  assert.equal(out.stop_reason, "refusal");
+  assert.deepEqual(out.content, [{ type: "text", text: "I can't help with that." }]);
+});
+
+test("chatResponseToMessages: refusal wins over any (spurious) content on the same message", () => {
+  const out = chatResponseToMessages({
+    id: "c1",
+    model: "m",
+    choices: [
+      {
+        message: {
+          role: "assistant",
+          refusal: "Declined.",
+          content: "this should not appear",
+        },
+        finish_reason: "stop",
+      },
+    ],
+  });
+  assert.equal(out.stop_reason, "refusal");
+  assert.deepEqual(out.content, [{ type: "text", text: "Declined." }]);
+});
+
+test("chatResponseToMessages: no refusal -> unaffected, normal content/stop_reason path", () => {
+  const out = chatResponseToMessages({
+    id: "c1",
+    model: "m",
+    choices: [{ message: { role: "assistant", content: "hello" }, finish_reason: "stop" }],
+  });
+  assert.equal(out.stop_reason, "end_turn");
+  assert.deepEqual(out.content, [{ type: "text", text: "hello" }]);
+});
+
+test("messagesResponseToChat: stop_reason:refusal moves the text block into message.refusal, content becomes null", () => {
+  const out = messagesResponseToChat({
+    id: "m1",
+    type: "message",
+    role: "assistant",
+    model: "m",
+    content: [{ type: "text", text: "I can't help with that." }],
+    stop_reason: "refusal",
+    stop_sequence: null,
+  });
+  assert.equal(out.choices?.[0]?.message?.refusal, "I can't help with that.");
+  assert.equal(out.choices?.[0]?.message?.content, null);
+  assert.equal(out.choices?.[0]?.finish_reason, "stop");
+});
+
+test("messagesResponseToChat: a normal end_turn message never sets message.refusal", () => {
+  const out = messagesResponseToChat({
+    id: "m1",
+    type: "message",
+    role: "assistant",
+    model: "m",
+    content: [{ type: "text", text: "hello" }],
+    stop_reason: "end_turn",
+    stop_sequence: null,
+  });
+  assert.equal(out.choices?.[0]?.message?.refusal, undefined);
+  assert.equal(out.choices?.[0]?.message?.content, "hello");
+  assert.equal(out.choices?.[0]?.finish_reason, "stop");
+});
+
+test("round-trip: a refusal survives chat->messages->chat", () => {
+  const asMessages = chatResponseToMessages({
+    id: "c1",
+    model: "m",
+    choices: [
+      { message: { role: "assistant", refusal: "Can't do that.", content: null }, finish_reason: "stop" },
+    ],
+  });
+  const back = messagesResponseToChat(asMessages);
+  assert.equal(back.choices?.[0]?.message?.refusal, "Can't do that.");
+  assert.equal(back.choices?.[0]?.message?.content, null);
+});
+
+test("chatRequestToMessages: a replayed assistant refusal (content:null) becomes a text block", () => {
+  const out = chatRequestToMessages({
+    model: "m",
+    messages: [
+      { role: "user", content: "draft something risky" },
+      { role: "assistant", refusal: "I can't help with that.", content: null } as never,
+    ],
+  });
+  const msgs = out.messages as Array<{ role: string; content: unknown }>;
+  const assistantMsg = msgs.find((m) => m.role === "assistant")!;
+  assert.deepEqual(assistantMsg.content, [
+    { type: "text", text: "I can't help with that." },
+  ]);
+});

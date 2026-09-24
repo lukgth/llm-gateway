@@ -22,6 +22,12 @@ export const CODEX_MODELS_URL = `${CODEX_API_BASE_URL}${CODEX_BASE_PATH}/models`
 export const CHATGPT_SESSION_URL = `${CODEX_API_BASE_URL}/api/auth/session`;
 // OAuth token endpoint used for refresh_token grants (codex-rs login manager).
 export const OPENAI_TOKEN_URL = "https://auth.openai.com/oauth/token";
+// Personal-access-token identity lookup (codex-rs auth/personal_access_token.rs
+// PROD_AUTHAPI_BASE_URL + WHOAMI_PATH). A PAT has no JWT claims to decode, so
+// this is the only way to resolve its account/plan/email - the same shape
+// `codex login --with-access-token`/PersonalAccessTokenAuth::load() uses.
+export const OPENAI_WHOAMI_URL =
+  "https://auth.openai.com/api/accounts/v1/user-auth-credential/whoami";
 // Codex CLI's public OAuth client id - required by the refresh grant.
 export const CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 // DEFAULT_ORIGINATOR from codex-rs default_client.rs - the originator header

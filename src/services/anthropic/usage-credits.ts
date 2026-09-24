@@ -110,14 +110,25 @@ const CREDIT_BALANCE_SUBSTRINGS = ["credit balance is too low"];
 // Detect the "credit balance too low" 400. NOT a key fault in the auth sense -
 // the key/account is otherwise valid, it just has no funds - so the engine
 // should penalize (rate-limit/cooldown) rather than disable the key, and
-// rotate to another one. Gated to the official Anthropic catalog since that's
-// the only adapter with a prepaid-balance billing model.
+// rotate to another one. Gated to the official Anthropic catalog OR any
+// other adapter actually speaking the Messages wire format (providerFmt) -
+// the prepaid-balance error is a property of Anthropic's BACKEND, not of the
+// one stock "anthropic" catalog template, so any Anthropic-compatible
+// provider (a differently-named catalog entry, a custom/generic template
+// pointed at api.anthropic.com or a compatible proxy) hitting the identical
+// body must rotate the same way instead of hard-failing just because its
+// catalogId isn't the literal string "anthropic". `providerFmt` is optional
+// only so existing callers that don't have it yet keep the old catalogId-only
+// behavior instead of silently widening.
 export function isAnthropicCreditBalanceError(input: {
   status: number;
   catalogId: string | null | undefined;
+  providerFmt?: string | null;
   body: string;
 }): boolean {
-  if (input.status !== 400 || input.catalogId !== "anthropic") return false;
+  if (input.status !== 400) return false;
+  if (input.catalogId !== "anthropic" && input.providerFmt !== "messages")
+    return false;
 
   try {
     const parsed = JSON.parse(input.body) as {
@@ -129,6 +140,42 @@ export function isAnthropicCreditBalanceError(input: {
       typeof message === "string" &&
       CREDIT_BALANCE_SUBSTRINGS.some((s) => message.toLowerCase().includes(s))
     );
+  } catch {
+    return false;
+  }
+}
+
+// Some Anthropic-compatible upstreams (proxies/gateways that front the real
+// API, or a misconfigured/non-compliant custom endpoint) report what is
+// genuinely an auth/permission failure using Anthropic's error ENVELOPE
+// (`{"type":"error","error":{"type":"authentication_error"|"permission_error",
+// ...}}`) but the WRONG HTTP status - 400 instead of the spec's 401/403. The
+// gateway's AUTH_FAIL_STATUS set only looks at the status code, so this shape
+// falls all the way through to the generic non-retryable 400 path and gets
+// hard-committed to the client instead of rotating off a dead credential.
+// This reads the error's OWN declared type instead of trusting the transport
+// status, so it still rotates correctly even when the status is wrong.
+const ACCOUNT_AUTH_ERROR_TYPES = new Set([
+  "authentication_error",
+  "permission_error",
+]);
+
+export function isAnthropicAccountAuthError(input: {
+  status: number;
+  catalogId: string | null | undefined;
+  providerFmt?: string | null;
+  body: string;
+}): boolean {
+  if (input.status !== 400) return false;
+  if (input.catalogId !== "anthropic" && input.providerFmt !== "messages")
+    return false;
+
+  try {
+    const parsed = JSON.parse(input.body) as {
+      error?: { type?: unknown };
+    };
+    const type = parsed.error?.type;
+    return typeof type === "string" && ACCOUNT_AUTH_ERROR_TYPES.has(type);
   } catch {
     return false;
   }

@@ -6,14 +6,24 @@ import os from "os";
 import path from "path";
 import { openDatabase, closeDatabase } from "../../db";
 import { createProvider, getProvider } from "../../repo/providers";
-import { listProviderKeys } from "../../repo/provider-keys";
-import { createProviderOAuth } from "../../repo/provider-oauth";
+import {
+  createProviderOAuth,
+  listProviderOAuthViews,
+  setProviderOAuthEnabled,
+} from "../../repo/provider-oauth";
 import { upsertUnifiedUsage } from "../../repo/provider-key-usage";
 import { ProviderAuthCrypto } from "../../services/provider-auth/crypto";
 import { ProviderCredentialService } from "../../services/provider-credentials";
 import { buildUsageReport } from "./usage-report";
 
-test("Claude Code report hides untried and disabled keys", async () => {
+// claude-code is a managed-auth (import-only) provider - credentials live as
+// OAuth accounts in provider_oauth_credentials, NOT plain provider_keys rows
+// (see services/provider-auth/integrations/claude-code.ts). This mirrors the
+// "openai-codex report lists OAuth accounts..." test below for the OAuth
+// setup, while keeping this test's own point: claude-code's visibility
+// filter in buildUsageReport hides untried and disabled accounts.
+test("Claude Code report hides untried and disabled accounts", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "usage-report-cc-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
@@ -21,16 +31,34 @@ test("Claude Code report hides untried and disabled keys", async () => {
       name: "Claude Code",
       baseUrl: "https://api.anthropic.com",
       catalogId: "claude-code",
-      apiKeys: ["sk-ant-tried", "sk-ant-untried", "sk-ant-disabled"],
     });
-    const keys = listProviderKeys(db, "cc");
-    db.prepare("UPDATE provider_keys SET enabled = 0 WHERE id = ?").run(
-      keys[2].id,
-    );
+    const crypto = new ProviderAuthCrypto(db, dir);
+    const tried = createProviderOAuth(db, crypto, "cc", {
+      integrationId: "claude-code",
+      secrets: { accessToken: "sk-ant-tried" },
+      expiresAt: Date.now() + 60 * 60_000,
+      account: { accountId: "acct-tried", tokenKind: "long_lived", authKind: "api_key" },
+    });
+    createProviderOAuth(db, crypto, "cc", {
+      integrationId: "claude-code",
+      secrets: { accessToken: "sk-ant-untried" },
+      expiresAt: Date.now() + 60 * 60_000,
+      account: { accountId: "acct-untried", tokenKind: "long_lived", authKind: "api_key" },
+    });
+    const disabled = createProviderOAuth(db, crypto, "cc", {
+      integrationId: "claude-code",
+      secrets: { accessToken: "sk-ant-disabled" },
+      expiresAt: Date.now() + 60 * 60_000,
+      account: { accountId: "acct-disabled", tokenKind: "long_lived", authKind: "api_key" },
+    });
+    setProviderOAuthEnabled(db, "cc", disabled.id, false);
+
+    const views = listProviderOAuthViews(db, "cc");
+    const triedView = views.find((v) => v.id === tried.id)!;
     upsertUnifiedUsage(
       db,
       "cc",
-      keys[0].credHash,
+      triedView.credHash,
       {
         "anthropic-ratelimit-unified-5h-status": "allowed",
         "anthropic-ratelimit-unified-5h-utilization": "0.33",
@@ -38,7 +66,11 @@ test("Claude Code report hides untried and disabled keys", async () => {
       200,
     );
 
-    const report = await buildUsageReport(getProvider(db, "cc")!, db);
+    const report = await buildUsageReport(
+      getProvider(db, "cc")!,
+      db,
+      new ProviderCredentialService(db, crypto),
+    );
     assert.equal(report.supported, true);
     assert.equal(report.keys.length, 1);
     assert.equal(report.keys[0].unavailable, undefined);
@@ -46,6 +78,7 @@ test("Claude Code report hides untried and disabled keys", async () => {
     assert.equal(report.keys[0].windows[0].used, 33);
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 

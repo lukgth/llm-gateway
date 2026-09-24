@@ -19,12 +19,14 @@ import type {
   ProviderAuthIntegration,
   ProviderAuthPollResult,
 } from "../types";
+import { NEVER_EXPIRES, ProviderReauthRequiredError } from "../types";
 import type { ProviderTestProbe } from "../../../types/provider-auth";
 import {
   CODEX_CLIENT_ID,
   CODEX_CLIENT_VERSION,
   CODEX_MODELS_URL,
   OPENAI_TOKEN_URL,
+  OPENAI_WHOAMI_URL,
   codexRequestHeaders,
   parseCodexModels,
 } from "../../../providers/codex";
@@ -90,6 +92,7 @@ function credentialFromPayload(
     allowCookieExpiry?: boolean;
     fallbackRefreshToken?: string;
     fallbackIdToken?: string;
+    fallbackAccountId?: string;
   },
 ): ProviderAuthCredential {
   const accessToken = stringOrUndefined(payload.accessToken) ??
@@ -107,12 +110,64 @@ function credentialFromPayload(
     accessToken,
     expiresAt,
     context: opts.context,
+    hintAccountId: opts.fallbackAccountId,
   });
   if (opts.fallbackRefreshToken && !credential.secrets.refreshToken)
     credential.secrets.refreshToken = opts.fallbackRefreshToken;
   if (opts.fallbackIdToken && !credential.secrets.idToken)
     credential.secrets.idToken = opts.fallbackIdToken;
   return credential;
+}
+
+// codex-rs PersonalAccessTokenMetadata shape (auth/personal_access_token.rs).
+interface WhoamiMetadata {
+  email?: unknown;
+  chatgpt_user_id?: unknown;
+  chatgpt_account_id?: unknown;
+  chatgpt_plan_type?: unknown;
+}
+
+// A Codex personal access token (codex-rs AuthMode::PersonalAccessToken) is a
+// long-lived bearer token with no JWT structure to decode - identity comes
+// from a whoami call instead, mirroring PersonalAccessTokenAuth::load().
+// Never refreshes (no refresh_token exists for this mode at all).
+async function credentialFromPersonalAccessToken(
+  fetchImpl: typeof fetch,
+  accessToken: string,
+): Promise<ProviderAuthCredential> {
+  let res: Response;
+  try {
+    res = await boundedFetch(fetchImpl, OPENAI_WHOAMI_URL, {
+      method: "GET",
+      headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" },
+    });
+  } catch (error) {
+    throw normalizeNetworkError(error, "Codex personal access token lookup failed");
+  }
+  if (!res.ok) {
+    const detail = await upstreamErrorDetail(res);
+    throw new Error(
+      `Codex personal access token was rejected (${res.status}${detail ? `: ${detail}` : ""})`,
+    );
+  }
+  const payload = await readJsonLimited(res);
+  const meta = payload as WhoamiMetadata;
+  const accountId = stringOrUndefined(meta.chatgpt_account_id);
+  if (!accountId)
+    throw new Error("Codex personal access token lacks a ChatGPT account id");
+  return {
+    integrationId: "codex",
+    secrets: { accessToken },
+    expiresAt: NEVER_EXPIRES,
+    account: {
+      accountId,
+      email: stringOrUndefined(meta.email),
+      label: stringOrUndefined(meta.chatgpt_plan_type),
+      tokenKind: "long_lived",
+      authKind: "oauth_token",
+      subscriptionType: stringOrUndefined(meta.chatgpt_plan_type),
+    },
+  };
 }
 
 // --- JWT helpers (payload decode only) -------------------------------------
@@ -208,21 +263,27 @@ function firstOrganizationId(value: unknown): string | undefined {
   return stringOrUndefined((first as Record<string, unknown>).id);
 }
 
+// Fixed priority, NOT "first string wins": an explicit account_id field beats
+// both claim sets, but a JWT claim always beats the caller-supplied fallback.
+// The fallback exists solely for refresh() - the OAuth refresh grant commonly
+// omits id_token, and when it does the response carries no account info at
+// all, so we carry forward the account id already on file (mirrors codex-rs
+// persist_tokens(), which leaves account_id untouched when refresh doesn't
+// return one). If the fallback were allowed to outrank a claim, a refresh
+// response that DID include a fresh id_token but omitted a top-level
+// account_id field would incorrectly prefer the stale fallback.
 function resolveAccountId(
-  ...sources: Array<Record<string, unknown> | string | undefined>
+  idClaims: Record<string, unknown>,
+  accessClaims: Record<string, unknown>,
+  explicitAccountId: string | undefined,
+  fallbackAccountId: string | undefined,
 ): string | undefined {
-  const explicit = sources.find(
-    (source): source is string =>
-      typeof source === "string" && !!source.trim(),
+  return (
+    stringOrUndefined(explicitAccountId) ??
+    claimAccountId(idClaims) ??
+    claimAccountId(accessClaims) ??
+    stringOrUndefined(fallbackAccountId)
   );
-  if (explicit) return explicit;
-  for (const source of sources) {
-    if (source && typeof source === "object") {
-      const found = claimAccountId(source);
-      if (found) return found;
-    }
-  }
-  return undefined;
 }
 
 // --- bounded HTTP plumbing ----------------------------------------------------
@@ -277,6 +338,41 @@ async function upstreamErrorDetail(
   }
 }
 
+// OAuth token endpoint error shape: {"error": "invalid_grant", "error_description": "..."}.
+// codex-rs's classify_refresh_token_failure() reads the same "error" code -
+// see refresh_token_expired/reused/invalidated in codex-rs/login/src/auth/manager.rs.
+function refreshErrorCode(payload: Record<string, unknown>): string | undefined {
+  return stringOrUndefined(payload.error)?.toLowerCase();
+}
+
+function refreshErrorDetail(payload: Record<string, unknown>): string | undefined {
+  const description = stringOrUndefined(payload.error_description);
+  if (description) return description.slice(0, 160);
+  const code = stringOrUndefined(payload.error);
+  return code?.slice(0, 160);
+}
+
+// A refresh token that is dead and cannot be retried into working: OpenAI's
+// classified expiry/reuse/revocation codes, a bare invalid_grant, or a 401
+// (the token endpoint's generic "this credential is bad" signal). Everything
+// else - 5xx, network errors, unexpected bodies, rate limiting - is treated
+// as transient so a temporary hiccup at the auth server doesn't strand a
+// working account behind a manual reconnect.
+function isPermanentRefreshFailure(
+  status: number,
+  payload: Record<string, unknown>,
+): boolean {
+  if (status === 401) return true;
+  const code = refreshErrorCode(payload);
+  if (!code) return false;
+  return (
+    code === "invalid_grant" ||
+    code === "refresh_token_expired" ||
+    code === "refresh_token_reused" ||
+    code === "refresh_token_invalidated"
+  );
+}
+
 function normalizeNetworkError(error: unknown, context: string): Error {
   if (
     error instanceof TypeError ||
@@ -311,9 +407,15 @@ class CodexAuthIntegration implements ProviderAuthIntegration {
   async refresh(
     credential: ProviderAuthCredential,
   ): Promise<ProviderAuthCredential> {
+    // Personal access tokens never expire and have no refresh grant at all
+    // (codex-rs never calls the refresh endpoint for AuthMode::
+    // PersonalAccessToken) - resolveManaged() shouldn't schedule this given
+    // NEVER_EXPIRES, but guard defensively since refresh() can still be
+    // invoked directly (e.g. testManaged's force-refresh path).
+    if (credential.account.tokenKind === "long_lived") return credential;
     const refreshToken = credential.secrets.refreshToken;
     if (!refreshToken)
-      throw new Error(
+      throw new ProviderReauthRequiredError(
         "This Codex session has no refresh token; re-import the session",
       );
     let payload: Record<string, unknown>;
@@ -328,16 +430,33 @@ class CodexAuthIntegration implements ProviderAuthIntegration {
         }),
       });
       payload = await readJsonLimited(res);
-      if (!res.ok)
-        throw new Error(`Codex token refresh failed (${res.status})`);
+      if (!res.ok) {
+        const detail = refreshErrorDetail(payload);
+        if (isPermanentRefreshFailure(res.status, payload))
+          throw new ProviderReauthRequiredError(
+            `Codex refresh token is no longer valid (${res.status}${detail ? `: ${detail}` : ""}); re-import the session`,
+          );
+        throw new Error(
+          `Codex token refresh failed (${res.status}${detail ? `: ${detail}` : ""})`,
+        );
+      }
     } catch (error) {
+      if (error instanceof ProviderReauthRequiredError) throw error;
       throw normalizeNetworkError(error, "Codex token refresh failed");
     }
-    return credentialFromPayload(payload, {
+    const refreshed = credentialFromPayload(payload, {
       fallbackRefreshToken: refreshToken,
       fallbackIdToken: credential.secrets.idToken,
+      fallbackAccountId: credential.account.accountId,
       context: "Codex refresh response",
     });
+    // credentialFromPayload builds a fresh `account`, dropping the
+    // classification fields set at import time (rotateProviderOAuth replaces
+    // the whole row, so anything not carried forward here is lost on every
+    // refresh cycle).
+    refreshed.account.tokenKind = "oauth";
+    refreshed.account.authKind = "oauth_token";
+    return refreshed;
   }
 
   runtimeCredential(credential: ProviderAuthCredential): string {
@@ -413,6 +532,20 @@ class CodexAuthIntegration implements ProviderAuthIntegration {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
       throw new Error("Codex auth JSON must be a single object");
     const root = parsed as Record<string, unknown>;
+
+    // Personal access token mode (codex-rs AuthDotJson.personal_access_token,
+    // resolved_mode(): explicit auth_mode wins, else the field's presence
+    // implies AuthMode::PersonalAccessToken). Mutually exclusive with the
+    // `tokens` JWT pair - check first and return early, no JWT parsing at all.
+    const explicitPat = stringOrUndefined(root.personal_access_token) ??
+      stringOrUndefined(root.personalAccessToken);
+    if (explicitPat)
+      return credentialFromPersonalAccessToken(this.fetchImpl, explicitPat);
+    if (root.auth_mode === "personalAccessToken" || root.authMode === "personalAccessToken")
+      throw new Error(
+        "Codex auth JSON declares personalAccessToken mode but has no personal_access_token value",
+      );
+
     const tokensRaw =
       root.tokens && typeof root.tokens === "object" && !Array.isArray(root.tokens)
         ? root.tokens
@@ -440,13 +573,16 @@ class CodexAuthIntegration implements ProviderAuthIntegration {
     const hintEmail =
       stringOrUndefined(userObject.email) ?? stringOrUndefined(userObject.name);
 
-    return credentialFromTokens(tokens, {
+    const credential = credentialFromTokens(tokens, {
       accessToken,
       expiresAt,
       context: "Codex auth JSON",
       hintAccountId,
       hintEmail,
     });
+    credential.account.tokenKind = "oauth";
+    credential.account.authKind = "oauth_token";
+    return credential;
   }
 }
 

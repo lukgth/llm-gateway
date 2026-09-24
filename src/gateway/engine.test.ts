@@ -151,6 +151,40 @@ function ctxFor(
   };
 }
 
+// claude-code is a managed-auth (import-only) provider - the engine reads
+// its key pool from provider_oauth_credentials, never from plain apiKeys
+// (see services/provider-auth/integrations/claude-code.ts and
+// requiresManagedAuth in engine.ts). This creates N long-lived, non-refreshing
+// OAuth accounts whose access token is EXACTLY the given raw string, so every
+// existing assertion on the literal `Bearer key-1`-style header, or on
+// KeyHealthStore keyed by that literal candidate string, keeps working
+// unchanged - only the health-key IDENTITY changes, from the raw key itself
+// to `oauth:<accountId>`. Returns the health keys in the SAME order as
+// `rawKeys`, matching listActiveProviderOAuthHealthKeys's stable
+// created_at/rowid ordering (accounts are created sequentially here).
+function createClaudeCodeOAuthKeys(
+  db: ReturnType<typeof openDatabase>,
+  dir: string,
+  providerId: string,
+  rawKeys: string[],
+): { crypto: InstanceType<typeof ProviderAuthCrypto>; healthKeys: string[] } {
+  const crypto = new ProviderAuthCrypto(db, dir);
+  const healthKeys = rawKeys.map((rawKey, i) => {
+    const view = createProviderOAuth(db, crypto, providerId, {
+      integrationId: "claude-code",
+      secrets: { accessToken: rawKey },
+      expiresAt: Date.now() + 60 * 60_000,
+      account: {
+        accountId: `acct-${i}`,
+        tokenKind: "long_lived",
+        authKind: "api_key",
+      },
+    });
+    return `oauth:${view.id}`;
+  });
+  return { crypto, healthKeys };
+}
+
 test("forward() resolves with 502 when request serialization throws (no escape)", async () => {
   const db = openDatabase(":memory:");
   try {
@@ -624,26 +658,39 @@ test("Claude Code captures unified usage headers for the selected key", async ()
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as AddressInfo).port;
+  // claude-code is a managed-auth (import-only) provider - credentials live
+  // as OAuth accounts in provider_oauth_credentials, not plain apiKeys (see
+  // services/provider-auth/integrations/claude-code.ts). Mirrors the
+  // openai-codex managed-credential test setup elsewhere in this file.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-claude-code-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
       id: "cc",
       name: "Claude Code",
       baseUrl: `http://127.0.0.1:${port}`,
-      apiKeys: ["sk-ant-captured"],
       catalogId: "claude-code",
       retryAttempts: 1,
       tlsVerify: false,
+    });
+    const crypto = new ProviderAuthCrypto(db, dir);
+    const oauth = createProviderOAuth(db, crypto, "cc", {
+      integrationId: "claude-code",
+      secrets: { accessToken: "sk-ant-captured" },
+      expiresAt: Date.now() + 60 * 60_000,
+      account: { tokenKind: "long_lived", authKind: "api_key" },
     });
     const created = createModel(db, {
       alias: "claude-test",
       providers: [{ providerId: "cc", upstreamModel: "claude-opus-4-6" }],
     });
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
     const engine = new ForwardingEngine(
       db,
       quietLogger(),
       new ThinkingConverter(),
       0,
+      providerCredentials,
     );
     const { res, state } = mockRes();
     await engine.forward(
@@ -659,7 +706,7 @@ test("Claude Code captures unified usage headers for the selected key", async ()
         "/v1/messages",
       ),
     );
-    const snapshot = getUnifiedUsage(db, "cc", credHash("sk-ant-captured"));
+    const snapshot = getUnifiedUsage(db, "cc", oauth.credHash);
     assert.equal(state.headers["content-type"], "application/json");
     assert.equal(state.headers["content-length"] !== undefined, true);
     assert.equal(state.headers["request-id"], undefined);
@@ -675,6 +722,7 @@ test("Claude Code captures unified usage headers for the selected key", async ()
     assert.equal(snapshot?.headers["request-id"], undefined);
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
@@ -695,26 +743,35 @@ test("Claude Code captures unified usage headers from 429 responses", async () =
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as AddressInfo).port;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-claude-code-429-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
       id: "cc",
       name: "Claude Code",
       baseUrl: `http://127.0.0.1:${port}`,
-      apiKeys: ["sk-ant-limited"],
       catalogId: "claude-code",
       retryAttempts: 1,
       tlsVerify: false,
+    });
+    const crypto = new ProviderAuthCrypto(db, dir);
+    const oauth = createProviderOAuth(db, crypto, "cc", {
+      integrationId: "claude-code",
+      secrets: { accessToken: "sk-ant-limited" },
+      expiresAt: Date.now() + 60 * 60_000,
+      account: { tokenKind: "long_lived", authKind: "api_key" },
     });
     const created = createModel(db, {
       alias: "claude-test",
       providers: [{ providerId: "cc", upstreamModel: "claude-opus-4-6" }],
     });
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
     const engine = new ForwardingEngine(
       db,
       quietLogger(),
       new ThinkingConverter(),
       0,
+      providerCredentials,
     );
     const { res } = mockRes();
     await engine.forward(
@@ -730,7 +787,7 @@ test("Claude Code captures unified usage headers from 429 responses", async () =
         "/v1/messages",
       ),
     );
-    const snapshot = getUnifiedUsage(db, "cc", credHash("sk-ant-limited"));
+    const snapshot = getUnifiedUsage(db, "cc", oauth.credHash);
     assert.equal(snapshot?.httpStatus, 429);
     assert.equal(
       snapshot?.headers["anthropic-ratelimit-unified-status"],
@@ -738,6 +795,7 @@ test("Claude Code captures unified usage headers from 429 responses", async () =
     );
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
@@ -1177,17 +1235,18 @@ test("Claude Code streaming responses expose only bare SSE headers", async () =>
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as AddressInfo).port;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-cc-stream-headers-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
       id: "cc-stream-headers",
       name: "Claude Code",
       baseUrl: `http://127.0.0.1:${port}`,
-      apiKeys: ["key"],
       catalogId: "claude-code",
       authScheme: "bearer",
       retryAttempts: 1,
     });
+    const { crypto } = createClaudeCodeOAuthKeys(db, dir, "cc-stream-headers", ["key"]);
     const created = createModel(db, {
       alias: "claude-stream",
       type: "anthropic",
@@ -1198,11 +1257,13 @@ test("Claude Code streaming responses expose only bare SSE headers", async () =>
         },
       ],
     });
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
     const engine = new ForwardingEngine(
       db,
       quietLogger(),
       new ThinkingConverter(),
       0,
+      providerCredentials,
     );
     const { res, state } = streamRes();
     await engine.forward(
@@ -1239,6 +1300,7 @@ test("Claude Code streaming responses expose only bare SSE headers", async () =>
     assert.equal(state.headers["set-cookie"], undefined);
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
@@ -2156,18 +2218,22 @@ test("Claude Code rotates immediately past a key without long-context usage cred
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as AddressInfo).port;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-cc-credits-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
       id: "cc-credits",
       name: "Claude Code",
       baseUrl: `http://127.0.0.1:${port}`,
-      apiKeys: ["key-1", "key-2"],
       catalogId: "claude-code",
       authScheme: "bearer",
       retryAttempts: 1,
       retryIntervalMs: 5_000,
     });
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc-credits", [
+      "key-1",
+      "key-2",
+    ]);
     const created = createModel(db, {
       alias: "claude-sonnet",
       type: "anthropic",
@@ -2182,7 +2248,14 @@ test("Claude Code rotates immediately past a key without long-context usage cred
     logger.upstreamError = () => {
       upstreamErrors++;
     };
-    const engine = new ForwardingEngine(db, logger, new ThinkingConverter(), 0);
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
+    const engine = new ForwardingEngine(
+      db,
+      logger,
+      new ThinkingConverter(),
+      0,
+      providerCredentials,
+    );
     const { res, state } = mockRes();
     const started = Date.now();
     await engine.forward(
@@ -2206,7 +2279,7 @@ test("Claude Code rotates immediately past a key without long-context usage cred
     assert.equal(
       new KeyHealthStore(db).usableCount(
         "cc-credits",
-        ["key-1", "key-2"],
+        healthKeys,
         "claude-sonnet-4-6",
       ),
       2,
@@ -2219,6 +2292,7 @@ test("Claude Code rotates immediately past a key without long-context usage cred
     assert.equal(state.headers["x-ratelimit-remaining"], undefined);
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
@@ -2256,18 +2330,22 @@ test("Claude Code rotates past a key without premium-model (Fable) credits, no p
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as AddressInfo).port;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-cc-modelcred-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
       id: "cc-modelcred",
       name: "Claude Code",
       baseUrl: `http://127.0.0.1:${port}`,
-      apiKeys: ["key-1", "key-2"],
       catalogId: "claude-code",
       authScheme: "bearer",
       retryAttempts: 1,
       retryIntervalMs: 5_000,
     });
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc-modelcred", [
+      "key-1",
+      "key-2",
+    ]);
     const created = createModel(db, {
       alias: "fable",
       type: "anthropic",
@@ -2282,7 +2360,14 @@ test("Claude Code rotates past a key without premium-model (Fable) credits, no p
     logger.upstreamError = () => {
       upstreamErrors++;
     };
-    const engine = new ForwardingEngine(db, logger, new ThinkingConverter(), 0);
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
+    const engine = new ForwardingEngine(
+      db,
+      logger,
+      new ThinkingConverter(),
+      0,
+      providerCredentials,
+    );
     const { res, state } = mockRes();
     const started = Date.now();
     await engine.forward(
@@ -2307,16 +2392,17 @@ test("Claude Code rotates past a key without premium-model (Fable) credits, no p
     const health = new KeyHealthStore(db);
     // Both keys stay fully usable for base models - key-1 wasn't penalized…
     assert.equal(
-      health.usableCount("cc-modelcred", ["key-1", "key-2"], "claude-opus-4-8"),
+      health.usableCount("cc-modelcred", healthKeys, "claude-opus-4-8"),
       2,
     );
     // …and its long-context credit proof was never touched (still unproven).
     assert.equal(
-      health.isCreditProven("cc-modelcred", credHash("key-1")),
+      health.isCreditProven("cc-modelcred", hashKey(healthKeys[0])),
       false,
     );
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
@@ -2352,18 +2438,22 @@ test("Claude Code fails a fully premium-credit-less provider over to the next ho
   await new Promise<void>((r) => fallback.listen(0, "127.0.0.1", r));
   const pPort = (primary.address() as AddressInfo).port;
   const fPort = (fallback.address() as AddressInfo).port;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-cc-prem-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
       id: "cc-prem",
       name: "Claude Code",
       baseUrl: `http://127.0.0.1:${pPort}`,
-      apiKeys: ["key-1", "key-2"],
       catalogId: "claude-code",
       authScheme: "bearer",
       retryAttempts: 1,
       retryIntervalMs: 1,
     });
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc-prem", [
+      "key-1",
+      "key-2",
+    ]);
     createProvider(db, {
       id: "fb",
       name: "Anthropic",
@@ -2381,11 +2471,13 @@ test("Claude Code fails a fully premium-credit-less provider over to the next ho
         { providerId: "fb", upstreamModel: "claude-fable-5" },
       ],
     });
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
     const engine = new ForwardingEngine(
       db,
       quietLogger(),
       new ThinkingConverter(),
       0,
+      providerCredentials,
     );
     const { res, state } = mockRes();
     await engine.forward(
@@ -2407,13 +2499,14 @@ test("Claude Code fails a fully premium-credit-less provider over to the next ho
     assert.equal(
       new KeyHealthStore(db).usableCount(
         "cc-prem",
-        ["key-1", "key-2"],
+        healthKeys,
         "claude-opus-4-8",
       ),
       2,
     );
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((r) => primary.close(() => r()));
     await new Promise<void>((r) => fallback.close(() => r()));
   }
@@ -2443,18 +2536,22 @@ test("Claude Code bounds all-keys-without-credits retries without logging or coo
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as AddressInfo).port;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-cc-no-credits-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
       id: "cc-no-credits",
       name: "Claude Code",
       baseUrl: `http://127.0.0.1:${port}`,
-      apiKeys: ["key-1", "key-2"],
       catalogId: "claude-code",
       authScheme: "bearer",
       retryAttempts: 1,
       retryIntervalMs: 5_000,
     });
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc-no-credits", [
+      "key-1",
+      "key-2",
+    ]);
     const created = createModel(db, {
       alias: "claude-sonnet",
       type: "anthropic",
@@ -2472,7 +2569,14 @@ test("Claude Code bounds all-keys-without-credits retries without logging or coo
     logger.upstreamError = () => {
       upstreamErrors++;
     };
-    const engine = new ForwardingEngine(db, logger, new ThinkingConverter(), 0);
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
+    const engine = new ForwardingEngine(
+      db,
+      logger,
+      new ThinkingConverter(),
+      0,
+      providerCredentials,
+    );
     const { res, state } = mockRes();
     const started = Date.now();
     await engine.forward(
@@ -2496,13 +2600,14 @@ test("Claude Code bounds all-keys-without-credits retries without logging or coo
     assert.equal(
       new KeyHealthStore(db).usableCount(
         "cc-no-credits",
-        ["key-1", "key-2"],
+        healthKeys,
         "claude-sonnet-4-6",
       ),
       2,
     );
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
@@ -2536,28 +2641,34 @@ test("credit rotation marks the surviving key credit-proven and prefers it next 
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as AddressInfo).port;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-cc-proven-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
       id: "cc",
       name: "Claude Code",
       baseUrl: `http://127.0.0.1:${port}`,
-      apiKeys: ["key-1", "key-2"],
       catalogId: "claude-code",
       authScheme: "bearer",
       retryAttempts: 1,
       retryIntervalMs: 1,
     });
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc", [
+      "key-1",
+      "key-2",
+    ]);
     const created = createModel(db, {
       alias: "claude-sonnet",
       type: "anthropic",
       providers: [{ providerId: "cc", upstreamModel: "claude-sonnet-4-6" }],
     });
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
     const engine = new ForwardingEngine(
       db,
       quietLogger(),
       new ThinkingConverter(),
       0,
+      providerCredentials,
     );
     const model = getModel(db, created.id)!;
     const body = {
@@ -2576,7 +2687,7 @@ test("credit rotation marks the surviving key credit-proven and prefers it next 
     assert.deepEqual(seenKeys, ["Bearer key-1", "Bearer key-2"]);
     // key-2 is now credit-proven and persisted.
     assert.equal(
-      new KeyHealthStore(db).isCreditProven("cc", credHash("key-2")),
+      new KeyHealthStore(db).isCreditProven("cc", hashKey(healthKeys[1])),
       true,
     );
 
@@ -2592,6 +2703,7 @@ test("credit rotation marks the surviving key credit-proven and prefers it next 
     assert.deepEqual(seenKeys, ["Bearer key-2"]);
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
@@ -2630,18 +2742,22 @@ test("all-keys-credit-less fails over to the next provider with no key issues", 
   await new Promise<void>((r) => server2.listen(0, "127.0.0.1", r));
   const port1 = (server1.address() as AddressInfo).port;
   const port2 = (server2.address() as AddressInfo).port;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-cc-allcredless-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
       id: "cc",
       name: "Claude Code",
       baseUrl: `http://127.0.0.1:${port1}`,
-      apiKeys: ["key-1", "key-2"],
       catalogId: "claude-code",
       authScheme: "bearer",
       retryAttempts: 1,
       retryIntervalMs: 5_000,
     });
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc", [
+      "key-1",
+      "key-2",
+    ]);
     createProvider(db, {
       id: "an",
       name: "Anthropic",
@@ -2659,11 +2775,13 @@ test("all-keys-credit-less fails over to the next provider with no key issues", 
         { providerId: "an", upstreamModel: "claude-sonnet-4-6" },
       ],
     });
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
     const engine = new ForwardingEngine(
       db,
       quietLogger(),
       new ThinkingConverter(),
       0,
+      providerCredentials,
     );
     const { res, state } = mockRes();
     const started = Date.now();
@@ -2690,13 +2808,14 @@ test("all-keys-credit-less fails over to the next provider with no key issues", 
     assert.equal(
       new KeyHealthStore(db).usableCount(
         "cc",
-        ["key-1", "key-2"],
+        healthKeys,
         "claude-sonnet-4-6",
       ),
       2,
     );
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((r) => server1.close(() => r()));
     await new Promise<void>((r) => server2.close(() => r()));
   }
@@ -2733,17 +2852,20 @@ test("Sonnet 4.6 count_tokens gate skips claude-code when input exceeds the 200k
   await new Promise<void>((r) => fb.server.listen(0, "127.0.0.1", r));
   const ccPort = (cc.server.address() as AddressInfo).port;
   const fbPort = (fb.server.address() as AddressInfo).port;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-cc-countgate-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
       id: "cc",
       name: "Claude Code",
       baseUrl: `http://127.0.0.1:${ccPort}`,
-      apiKeys: ["sk-ant-cc"],
       catalogId: "claude-code",
       endpoints: [WireKind.Messages],
       retryAttempts: 3, // prove a skip doesn't retry keys
     });
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc", [
+      "sk-ant-cc",
+    ]);
     createProvider(db, {
       id: "fb",
       name: "Anthropic",
@@ -2761,11 +2883,13 @@ test("Sonnet 4.6 count_tokens gate skips claude-code when input exceeds the 200k
         { providerId: "fb", upstreamModel: "claude-sonnet-4-6" },
       ],
     });
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
     const engine = new ForwardingEngine(
       db,
       quietLogger(),
       new ThinkingConverter(),
       0,
+      providerCredentials,
     );
     const keyHealth = (engine as unknown as { keyHealth: KeyHealthStore })
       .keyHealth;
@@ -2794,11 +2918,12 @@ test("Sonnet 4.6 count_tokens gate skips claude-code when input exceeds the 200k
     assert.equal(state.statusCode || 200, 200);
     assert.equal(fb.seen.messagesPath, true);
     assert.equal(
-      keyHealth.usableCount("cc", ["sk-ant-cc"], "claude-sonnet-4-6"),
+      keyHealth.usableCount("cc", healthKeys, "claude-sonnet-4-6"),
       1,
     );
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((r) => cc.server.close(() => r()));
     await new Promise<void>((r) => fb.server.close(() => r()));
   }
@@ -2808,27 +2933,30 @@ test("Sonnet 4.6 count_tokens gate proceeds when input is within the 200k window
   const cc = countGateServer(100_000); // under 200k → proceed
   await new Promise<void>((r) => cc.server.listen(0, "127.0.0.1", r));
   const ccPort = (cc.server.address() as AddressInfo).port;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-cc-countgate2-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
       id: "cc",
       name: "Claude Code",
       baseUrl: `http://127.0.0.1:${ccPort}`,
-      apiKeys: ["sk-ant-cc"],
       catalogId: "claude-code",
       endpoints: [WireKind.Messages],
       retryAttempts: 1,
     });
+    const { crypto } = createClaudeCodeOAuthKeys(db, dir, "cc", ["sk-ant-cc"]);
     const created = createModel(db, {
       alias: "sonnet",
       type: "anthropic",
       providers: [{ providerId: "cc", upstreamModel: "claude-sonnet-4-6" }],
     });
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
     const engine = new ForwardingEngine(
       db,
       quietLogger(),
       new ThinkingConverter(),
       0,
+      providerCredentials,
     );
     const { res, state } = mockRes();
     await engine.forward(
@@ -2850,6 +2978,7 @@ test("Sonnet 4.6 count_tokens gate proceeds when input is within the 200k window
     assert.equal(state.statusCode || 200, 200);
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((r) => cc.server.close(() => r()));
   }
 });
@@ -2858,27 +2987,30 @@ test("count_tokens gate does not fire for a non-Sonnet-4-6 model (Opus 4.6 1M)",
   const cc = countGateServer(250_000); // would exceed IF it were checked
   await new Promise<void>((r) => cc.server.listen(0, "127.0.0.1", r));
   const ccPort = (cc.server.address() as AddressInfo).port;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-cc-countgate3-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
       id: "cc",
       name: "Claude Code",
       baseUrl: `http://127.0.0.1:${ccPort}`,
-      apiKeys: ["sk-ant-cc"],
       catalogId: "claude-code",
       endpoints: [WireKind.Messages],
       retryAttempts: 1,
     });
+    const { crypto } = createClaudeCodeOAuthKeys(db, dir, "cc", ["sk-ant-cc"]);
     const created = createModel(db, {
       alias: "opus",
       type: "anthropic",
       providers: [{ providerId: "cc", upstreamModel: "claude-opus-4-6" }],
     });
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
     const engine = new ForwardingEngine(
       db,
       quietLogger(),
       new ThinkingConverter(),
       0,
+      providerCredentials,
     );
     const { res, state } = mockRes();
     await engine.forward(
@@ -2900,6 +3032,7 @@ test("count_tokens gate does not fire for a non-Sonnet-4-6 model (Opus 4.6 1M)",
     assert.equal(state.statusCode || 200, 200);
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((r) => cc.server.close(() => r()));
   }
 });
@@ -2941,18 +3074,21 @@ test("Claude Code 7d_oi exhaustion cools a key for Fable without blocking Opus",
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as AddressInfo).port;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-cc-scope-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
       id: "cc-scope",
       name: "cc-scope",
       baseUrl: `http://127.0.0.1:${port}`,
-      apiKeys: ["key-1"],
       catalogId: "claude-code",
       authScheme: "bearer",
       retryAttempts: 1,
       retryIntervalMs: 1,
     });
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc-scope", [
+      "key-1",
+    ]);
     const fable = createModel(db, {
       alias: "fable-client",
       type: "anthropic",
@@ -2963,11 +3099,13 @@ test("Claude Code 7d_oi exhaustion cools a key for Fable without blocking Opus",
       type: "anthropic",
       providers: [{ providerId: "cc-scope", upstreamModel: "claude-opus-4-8" }],
     });
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
     const engine = new ForwardingEngine(
       db,
       quietLogger(),
       new ThinkingConverter(),
       0,
+      providerCredentials,
     );
 
     const fableRes = mockRes();
@@ -2991,11 +3129,11 @@ test("Claude Code 7d_oi exhaustion cools a key for Fable without blocking Opus",
 
     const health = new KeyHealthStore(db);
     assert.equal(
-      health.usableCount("cc-scope", ["key-1"], "claude-fable-5"),
+      health.usableCount("cc-scope", healthKeys, "claude-fable-5"),
       0,
     );
     assert.equal(
-      health.usableCount("cc-scope", ["key-1"], "claude-opus-4-8"),
+      health.usableCount("cc-scope", healthKeys, "claude-opus-4-8"),
       1,
     );
 
@@ -3012,6 +3150,7 @@ test("Claude Code 7d_oi exhaustion cools a key for Fable without blocking Opus",
     assert.equal(opusHits, 1);
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
@@ -3045,28 +3184,33 @@ test("base + Fable both exhausted: base cools on the 5h clock, Fable on 7d_oi", 
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as AddressInfo).port;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-cc-dual-"));
   const db = openDatabase(":memory:");
   try {
     createProvider(db, {
       id: "cc-dual",
       name: "cc-dual",
       baseUrl: `http://127.0.0.1:${port}`,
-      apiKeys: ["key-1"],
       catalogId: "claude-code",
       authScheme: "bearer",
       retryAttempts: 1,
       retryIntervalMs: 1,
     });
+    const { crypto, healthKeys } = createClaudeCodeOAuthKeys(db, dir, "cc-dual", [
+      "key-1",
+    ]);
     const opus = createModel(db, {
       alias: "opus-client",
       type: "anthropic",
       providers: [{ providerId: "cc-dual", upstreamModel: "claude-opus-4-8" }],
     });
+    const providerCredentials = new RealProviderCredentialService(db, crypto);
     const engine = new ForwardingEngine(
       db,
       quietLogger(),
       new ThinkingConverter(),
       0,
+      providerCredentials,
     );
     // Drive an OPUS (base) request that trips the dual-exhaustion 429.
     const opusRes = mockRes();
@@ -3083,7 +3227,7 @@ test("base + Fable both exhausted: base cools on the 5h clock, Fable on 7d_oi", 
     // Base (Opus) is cooling only to the 5h reset - NOT the 3d 7d_oi reset.
     const opusReadyAt = health.nextReadyAt(
       "cc-dual",
-      ["key-1"],
+      healthKeys,
       "claude-opus-4-8",
     )!;
     assert.ok(
@@ -3094,7 +3238,7 @@ test("base + Fable both exhausted: base cools on the 5h clock, Fable on 7d_oi", 
     // Fable is cooling to the long 7d_oi reset (a separate, layered cooldown).
     const fableReadyAt = health.nextReadyAt(
       "cc-dual",
-      ["key-1"],
+      healthKeys,
       "claude-fable-5",
     )!;
     assert.ok(
@@ -3109,6 +3253,7 @@ test("base + Fable both exhausted: base cools on the 5h clock, Fable on 7d_oi", 
     );
   } finally {
     closeDatabase(db);
+    fs.rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((r) => server.close(() => r()));
   }
 });

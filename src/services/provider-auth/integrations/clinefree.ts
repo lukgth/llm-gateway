@@ -14,6 +14,7 @@ import type {
   ProviderAuthIntegration,
   ProviderAuthPollResult,
 } from "../types";
+import { ProviderReauthRequiredError } from "../types";
 
 const WORKOS_CLIENT_ID = "client_01K3A541FN8TA3EPPHTD2325AR";
 const WORKOS_DEVICE_URL = "https://api.workos.com/user_management/authorize/device";
@@ -233,8 +234,17 @@ export const clinefreeAuth: ProviderAuthIntegration = {
       }),
     });
     const payload = await readJsonLimited(res);
-    if (!res.ok || payload.success !== true)
+    if (!res.ok || payload.success !== true) {
+      // A 401/403 means the refresh token itself is dead - no retry can help,
+      // the account must be reconnected. Anything else (5xx, malformed body,
+      // a transient upstream hiccup) is left as a plain error so the caller
+      // retries on the next call instead of forcing reconnection.
+      if (res.status === 401 || res.status === 403)
+        throw new ProviderReauthRequiredError(
+          `Cline token refresh rejected (${res.status}); reconnect the account`,
+        );
       throw new Error(`Cline token refresh failed (${res.status})`);
+    }
     return clineCredential(payload);
   },
 

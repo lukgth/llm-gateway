@@ -27,6 +27,12 @@ import { toOpenAIEffort, budgetToLevel } from "../../hooks/openai-reasoning";
 interface ChatMessage {
   role: string;
   content?: unknown;
+  // A client replaying its own prior assistant turn (multi-turn history)
+  // sends this back exactly as it received it from a real OpenAI response -
+  // see ChatMessage.refusal in wire/openai-chat.ts. Anthropic has no refusal
+  // field; chatRequestToMessages below folds it into a plain text block
+  // (history replay only needs the text, not the "this was declined" fact).
+  refusal?: string | null;
   tool_calls?: Array<{
     id: string;
     type: string;
@@ -284,6 +290,12 @@ export function chatRequestToMessages(
     }
     const role = m.role === "assistant" ? "assistant" : "user";
     const blocks: AnthropicBlock[] = [];
+    // A replayed refusal (see ChatMessage.refusal) has content:null - fold
+    // the refusal text into a plain text block instead of the normal content
+    // path, which would otherwise see null and contribute nothing.
+    if (role === "assistant" && typeof m.refusal === "string" && m.refusal) {
+      blocks.push({ type: "text", text: m.refusal });
+    }
     // Content parts first (text/images, and any Anthropic-shaped tool_use blocks
     // a hybrid client already embedded), then OpenAI tool_calls as tool_use.
     blocks.push(...chatContentToAnthropic(m.content));

@@ -1,10 +1,12 @@
 import { clinefreeAuth } from "./integrations/clinefree";
 import { codexAuth } from "./integrations/codex";
+import { claudeCodeAuth } from "./integrations/claude-code";
 import type { ProviderAuthIntegration } from "./types";
 
 const INTEGRATIONS = new Map<string, ProviderAuthIntegration>([
   [clinefreeAuth.catalogId, clinefreeAuth],
   [codexAuth.catalogId, codexAuth],
+  [claudeCodeAuth.catalogId, claudeCodeAuth],
 ]);
 
 export function providerAuthIntegration(

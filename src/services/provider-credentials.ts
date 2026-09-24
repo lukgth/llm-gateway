@@ -12,7 +12,11 @@ import {
 } from "../repo/provider-oauth";
 import type { ProviderAuthCrypto } from "./provider-auth/crypto";
 import { providerAuthIntegrationById } from "./provider-auth/registry";
-import type { ProviderAuthIntegration } from "./provider-auth/types";
+import {
+  ProviderReauthRequiredError,
+  type ProviderAuthAccount,
+  type ProviderAuthIntegration,
+} from "./provider-auth/types";
 
 export interface ProviderCredentialHandle {
   source: "api-key" | "oauth";
@@ -24,6 +28,43 @@ export interface ProviderCredentialHandle {
 
 function accountIdFromHealthKey(healthKey: string): string | null {
   return healthKey.startsWith("oauth:") ? healthKey.slice("oauth:".length) : null;
+}
+
+// The flat string-keyed keyMetadata a managed-auth credential's account
+// resolves to - the ONE place this mapping is defined. Consumed by
+// ProviderCredentialService.handle() (the live request path) AND
+// admin/routes/usage-report.ts (the usage-dashboard report path), which
+// need the identical shape: an adapter's keyUsage()/messages() override
+// reads the same ctx.keyMetadata keys regardless of which path built them.
+// Before this was factored out, usage-report.ts built its own narrower
+// object by hand and silently drifted from handle()'s - a report request
+// would see a metadata shape missing tokenKind/authKind/scopes/etc. that a
+// live gateway request would see, so an adapter's keyUsage() eligibility
+// check (e.g. claude-code.ts's canQueryUsage) could pass on the request
+// path and silently fail on the report path, or vice versa.
+export function managedCredentialMetadata(
+  integrationId: string,
+  account: ProviderAuthAccount,
+): Record<string, string> {
+  return {
+    integrationId,
+    accountId: account.accountId ?? "",
+    email: account.email ?? "",
+    // account_uuid: claude-code's normalize-device-id request transform
+    // (formats/anthropic/subscription/index.ts) reads this exact key off
+    // ctx.keyMetadata to stamp the real account identity instead of the
+    // gateway's default placeholder - same value as accountId, just under
+    // the name that transform already looks for.
+    ...(account.accountId ? { account_uuid: account.accountId } : {}),
+    ...(account.tokenKind ? { tokenKind: account.tokenKind } : {}),
+    ...(account.authKind ? { authKind: account.authKind } : {}),
+    // keyMetadata values are flat strings (Record<string, string>) - scopes
+    // is joined here and split back apart by claude-code.ts's keyUsage(),
+    // its only consumer.
+    ...(account.scopes?.length ? { scopes: account.scopes.join(",") } : {}),
+    ...(account.subscriptionType ? { subscriptionType: account.subscriptionType } : {}),
+    ...(account.rateLimitTier ? { rateLimitTier: account.rateLimitTier } : {}),
+  };
 }
 
 export class ProviderCredentialService {
@@ -160,11 +201,12 @@ export class ProviderCredentialService {
       throw new Error("Unknown provider authentication integration");
     try {
       // Cookie-derived credentials (no refresh token) cannot be refreshed -
-      // fail fast inside the try so the expired-refresh failure path below
-      // marks the row reauth_required and the operator knows to re-import.
+      // fail fast with the same "must reconnect" signal integration.refresh()
+      // uses, so the catch block below marks the row reauth_required exactly
+      // once, in one place.
       if (!stored.credential.secrets.refreshToken)
-        throw new Error(
-          "Provider authentication cannot be refreshed; please re-import the Codex session",
+        throw new ProviderReauthRequiredError(
+          "Provider authentication cannot be refreshed; please re-import the session",
         );
       const fresh = await integration.refresh(stored.credential);
       if (!rotateProviderOAuth(this.db, this.crypto, stored, fresh)) {
@@ -185,10 +227,14 @@ export class ProviderCredentialService {
       )!;
       return this.handle(latest);
     } catch (error) {
-      if (
-        !stored.credential.expiresAt ||
-        stored.credential.expiresAt <= Date.now()
-      )
+      // Only a refresh token classified as genuinely dead (expired, revoked,
+      // reused, or an explicit invalid_grant/401) forces reconnection. Any
+      // other failure - a network blip, a 5xx from the auth server, a
+      // timeout - is transient: the stored credential is left as-is so the
+      // next call retries the refresh instead of stranding a working account
+      // behind a manual reconnect. This mirrors how the Codex CLI itself
+      // only forces re-login on a classified-permanent refresh failure.
+      if (error instanceof ProviderReauthRequiredError)
         markProviderOAuthReauthRequired(
           this.db,
           stored.providerId,
@@ -209,11 +255,7 @@ export class ProviderCredentialService {
       value: integration.runtimeCredential(stored.credential),
       healthKey: `oauth:${stored.id}`,
       mask: stored.account.email || stored.account.label || "Connected account",
-      metadata: {
-        integrationId: stored.integrationId,
-        accountId: stored.account.accountId ?? "",
-        email: stored.account.email ?? "",
-      },
+      metadata: managedCredentialMetadata(stored.integrationId, stored.account),
     };
   }
 }

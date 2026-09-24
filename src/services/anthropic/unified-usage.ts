@@ -115,6 +115,108 @@ export function parseUnifiedRateLimitHeaders(
   };
 }
 
+// --- standard (non-unified) anthropic-ratelimit-* headers -------------------
+//
+// Every plain Anthropic API response (any key, not just Claude Code
+// subscription auth) carries these on every request, per
+// https://platform.claude.com/docs/en/api/rate-limits: the requests/tokens
+// limit for the current window, plus separate input/output token buckets.
+// Distinct from (and simpler than) the "unified" scheme above, which is
+// specific to Claude Code's subscription billing - a plain pay-as-you-go key
+// never sends anthropic-ratelimit-unified-* at all, only these.
+
+const STANDARD_PREFIX = "anthropic-ratelimit-";
+const STANDARD_BUCKETS = [
+  "requests",
+  "tokens",
+  "input-tokens",
+  "output-tokens",
+] as const;
+type StandardBucket = (typeof STANDARD_BUCKETS)[number];
+
+export interface StandardRateLimitWindow {
+  bucket: StandardBucket;
+  limit?: number;
+  remaining?: number;
+  /** ISO timestamp - the header is RFC 3339, already ISO-compatible. */
+  resetsAt?: string;
+}
+
+export function filterStandardRateLimitHeaders(
+  headers: HeaderTable | undefined,
+): Record<string, string> {
+  const filtered: Record<string, string> = {};
+  if (!headers) return filtered;
+  for (const [rawName, rawValue] of Object.entries(headers)) {
+    const name = rawName.toLowerCase();
+    // Excludes the unified-* and priority-* families explicitly - both start
+    // with "anthropic-ratelimit-" too but are parsed by their own logic
+    // (unified above) or aren't modeled at all (priority tier, rare).
+    if (
+      !name.startsWith(STANDARD_PREFIX) ||
+      name.startsWith(`${STANDARD_PREFIX}unified-`) ||
+      name.startsWith("anthropic-priority-")
+    )
+      continue;
+    const value = first(rawValue);
+    if (value !== undefined) filtered[name] = value;
+  }
+  return filtered;
+}
+
+function parseIsoOrUndefined(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : undefined;
+}
+
+// Parses the standard bucket headers into one entry per bucket that's
+// actually present (a request-only response, for instance, has no
+// input/output-tokens headers at all - only Anthropic's own request mix
+// decides which buckets appear). Returns [] when none are present.
+export function parseStandardRateLimitHeaders(
+  headers: HeaderTable | undefined,
+): StandardRateLimitWindow[] {
+  const normalized = filterStandardRateLimitHeaders(headers);
+  const out: StandardRateLimitWindow[] = [];
+  for (const bucket of STANDARD_BUCKETS) {
+    const limit = number(normalized[`${STANDARD_PREFIX}${bucket}-limit`]);
+    const remaining = number(normalized[`${STANDARD_PREFIX}${bucket}-remaining`]);
+    const resetsAt = parseIsoOrUndefined(
+      normalized[`${STANDARD_PREFIX}${bucket}-reset`],
+    );
+    if (limit === undefined && remaining === undefined && resetsAt === undefined)
+      continue;
+    out.push({ bucket, limit, remaining, resetsAt });
+  }
+  return out;
+}
+
+const STANDARD_BUCKET_LABELS: Record<StandardBucket, string> = {
+  requests: "Requests (per-minute)",
+  tokens: "Tokens (most restrictive)",
+  "input-tokens": "Input tokens",
+  "output-tokens": "Output tokens",
+};
+
+// Standard windows report REMAINING/LIMIT (a countdown), the inverse of the
+// unified scheme's used-percentage - convert to the same used/limit/percent
+// convention every other ProviderKeyUsageWindow uses for display parity.
+export function standardRateLimitToUsageWindows(
+  windows: StandardRateLimitWindow[],
+): ProviderKeyUsageWindow[] {
+  return windows
+    .filter((w) => w.limit !== undefined && w.remaining !== undefined)
+    .map((w) => ({
+      id: `standard-${w.bucket}`,
+      label: STANDARD_BUCKET_LABELS[w.bucket],
+      used: w.limit! - w.remaining!,
+      limit: w.limit!,
+      unit: w.bucket === "requests" ? "requests" : "tokens",
+      ...(w.resetsAt ? { resetsAt: w.resetsAt } : {}),
+    }));
+}
+
 function windowLabel(key: string): string {
   if (key === "5h") return "Prompts (5h)";
   if (key === "7d") return "Prompts (weekly)";

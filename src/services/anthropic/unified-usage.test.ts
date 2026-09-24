@@ -5,6 +5,9 @@ import {
   parseUnifiedRateLimitHeaders,
   unifiedRateLimitToUsageWindows,
   unifiedStatusMessage,
+  filterStandardRateLimitHeaders,
+  parseStandardRateLimitHeaders,
+  standardRateLimitToUsageWindows,
 } from "./unified-usage";
 
 const HEADERS = {
@@ -118,4 +121,96 @@ test("no unified headers returns null and output is JSON finite", () => {
   );
   assert.deepEqual(JSON.parse(JSON.stringify(windows)), windows);
   assert.ok(windows.every((window) => Number.isFinite(window.used)));
+});
+
+// --- standard (non-unified) anthropic-ratelimit-* headers -------------------
+// A plain pay-as-you-go Anthropic API key's response headers - see
+// https://platform.claude.com/docs/en/api/rate-limits.
+
+const STANDARD_HEADERS = {
+  date: "Tue, 21 Jul 2026 01:58:48 GMT",
+  "retry-after": "30",
+  "anthropic-ratelimit-requests-limit": "1000",
+  "anthropic-ratelimit-requests-remaining": "999",
+  "anthropic-ratelimit-requests-reset": "2026-07-21T02:00:00Z",
+  "anthropic-ratelimit-tokens-limit": "100000",
+  "anthropic-ratelimit-tokens-remaining": "98000",
+  "anthropic-ratelimit-tokens-reset": "2026-07-21T02:00:00Z",
+  "anthropic-ratelimit-input-tokens-limit": "80000",
+  "anthropic-ratelimit-input-tokens-remaining": "79000",
+  "anthropic-ratelimit-input-tokens-reset": "2026-07-21T02:00:00Z",
+  "anthropic-ratelimit-output-tokens-limit": "20000",
+  "anthropic-ratelimit-output-tokens-remaining": "19000",
+  "anthropic-ratelimit-output-tokens-reset": "2026-07-21T02:00:00Z",
+  // Priority tier headers exist but aren't modeled - must be excluded, not
+  // mistaken for a "priority" bucket.
+  "anthropic-priority-input-tokens-limit": "5000",
+  "anthropic-priority-input-tokens-remaining": "4000",
+  "request-id": "req_secret",
+};
+
+test("filterStandardRateLimitHeaders keeps only the standard buckets", () => {
+  const filtered = filterStandardRateLimitHeaders(STANDARD_HEADERS);
+  assert.equal(filtered.date, undefined);
+  assert.equal(filtered["retry-after"], undefined);
+  assert.equal(filtered["request-id"], undefined);
+  assert.equal(filtered["anthropic-priority-input-tokens-limit"], undefined);
+  assert.equal(filtered["anthropic-ratelimit-requests-limit"], "1000");
+  assert.equal(Object.keys(filtered).length, 12);
+});
+
+test("filterStandardRateLimitHeaders excludes the unified-* family", () => {
+  const filtered = filterStandardRateLimitHeaders(HEADERS);
+  assert.deepEqual(filtered, {});
+});
+
+test("parseStandardRateLimitHeaders parses all four buckets", () => {
+  const windows = parseStandardRateLimitHeaders(STANDARD_HEADERS);
+  assert.equal(windows.length, 4);
+  const byBucket = Object.fromEntries(windows.map((w) => [w.bucket, w]));
+  assert.equal(byBucket.requests.limit, 1000);
+  assert.equal(byBucket.requests.remaining, 999);
+  assert.equal(byBucket.requests.resetsAt, new Date("2026-07-21T02:00:00Z").toISOString());
+  assert.equal(byBucket.tokens.limit, 100000);
+  assert.equal(byBucket["input-tokens"].limit, 80000);
+  assert.equal(byBucket["output-tokens"].limit, 20000);
+});
+
+test("parseStandardRateLimitHeaders only reports buckets actually present", () => {
+  const windows = parseStandardRateLimitHeaders({
+    "anthropic-ratelimit-requests-limit": "1000",
+    "anthropic-ratelimit-requests-remaining": "999",
+  });
+  assert.equal(windows.length, 1);
+  assert.equal(windows[0].bucket, "requests");
+});
+
+test("parseStandardRateLimitHeaders returns [] when nothing is present", () => {
+  assert.deepEqual(parseStandardRateLimitHeaders({ date: "now" }), []);
+  assert.deepEqual(parseStandardRateLimitHeaders(undefined), []);
+});
+
+test("standardRateLimitToUsageWindows converts remaining/limit to used/limit", () => {
+  const windows = standardRateLimitToUsageWindows(
+    parseStandardRateLimitHeaders(STANDARD_HEADERS),
+  );
+  const byId = Object.fromEntries(windows.map((w) => [w.id, w]));
+  assert.equal(byId["standard-requests"].used, 1); // 1000 - 999
+  assert.equal(byId["standard-requests"].limit, 1000);
+  assert.equal(byId["standard-requests"].unit, "requests");
+  assert.equal(byId["standard-tokens"].used, 2000); // 100000 - 98000
+  assert.equal(byId["standard-tokens"].unit, "tokens");
+  assert.equal(
+    byId["standard-input-tokens"].resetsAt,
+    new Date("2026-07-21T02:00:00Z").toISOString(),
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(windows)), windows);
+});
+
+test("standardRateLimitToUsageWindows drops a bucket missing limit or remaining", () => {
+  const windows = standardRateLimitToUsageWindows([
+    { bucket: "requests", limit: 1000 }, // no remaining
+    { bucket: "tokens", remaining: 500 }, // no limit
+  ]);
+  assert.equal(windows.length, 0);
 });

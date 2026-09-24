@@ -1,6 +1,9 @@
 import { createHash, randomBytes } from "crypto";
 import type { Database as DB } from "better-sqlite3";
-import type { ProviderAuthCredential } from "../services/provider-auth/types";
+import type {
+  ProviderAuthAccount,
+  ProviderAuthCredential,
+} from "../services/provider-auth/types";
 import type { ProviderAuthCrypto } from "../services/provider-auth/crypto";
 import { parseJsonObject } from "./json";
 
@@ -29,7 +32,13 @@ export interface ProviderOAuthView {
   credHash: string;
   status: "active" | "disabled" | "reauth_required";
   expiresAt: string;
-  account: { accountId?: string; email?: string; label?: string };
+  // Reuses the same shape ProviderAuthCredential.account carries, since this
+  // is literally that object's PUBLIC half round-tripped through
+  // public_metadata (JSON.stringify(credential.account) on write,
+  // parseJsonObject(row.public_metadata, {}) on read below) - one shape for
+  // a credential's non-secret identity/classification data everywhere it's
+  // seen, from import-time assembly through to the admin/session views.
+  account: ProviderAuthAccount;
   createdAt: string;
   updatedAt: string;
 }

@@ -5,8 +5,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCodexAuth } from "./codex";
-import type { ProviderAuthCredential } from "../types";
-import { CODEX_CLIENT_VERSION, CODEX_ORIGINATOR, codexUserAgent } from "../../../providers/codex";
+import { NEVER_EXPIRES, type ProviderAuthCredential } from "../types";
+import {
+  CODEX_CLIENT_ID,
+  CODEX_CLIENT_VERSION,
+  CODEX_ORIGINATOR,
+  OPENAI_TOKEN_URL,
+  codexUserAgent,
+} from "../../../providers/codex";
 
 // --- JWT fixture helpers -----------------------------------------------------
 
@@ -174,6 +180,95 @@ test("codex import rejects malformed, tokenless, expired, and identity-less inpu
   }
 });
 
+// --- personal access tokens (long-lived, codex-rs AuthMode::PersonalAccessToken) --
+
+test("codex import detects a personal access token and hydrates identity via whoami", async () => {
+  const { fetchImpl, calls } = fakeFetch((url) => {
+    assert.match(url, /\/user-auth-credential\/whoami$/);
+    return jsonRes(200, {
+      email: "pat-user@example.com",
+      chatgpt_user_id: "user-pat",
+      chatgpt_account_id: "acct-pat",
+      chatgpt_plan_type: "enterprise",
+      chatgpt_account_is_fedramp: false,
+    });
+  });
+  const codex = createCodexAuth(fetchImpl);
+  const credential = await codex.import!({
+    kind: "auth_json",
+    value: JSON.stringify({ personal_access_token: "pat-secret-value" }),
+  });
+  assert.equal(credential.secrets.accessToken, "pat-secret-value");
+  assert.equal(credential.secrets.refreshToken, undefined);
+  assert.equal(credential.account.accountId, "acct-pat");
+  assert.equal(credential.account.email, "pat-user@example.com");
+  assert.equal(credential.account.tokenKind, "long_lived");
+  assert.equal(credential.account.authKind, "oauth_token");
+  assert.equal(credential.account.subscriptionType, "enterprise");
+  assert.equal(credential.expiresAt, NEVER_EXPIRES);
+  assert.equal(calls.length, 1);
+});
+
+test("codex import accepts the camelCase personalAccessToken alias", async () => {
+  const { fetchImpl } = fakeFetch(() =>
+    jsonRes(200, {
+      chatgpt_account_id: "acct-pat-2",
+      chatgpt_user_id: "user-pat-2",
+      chatgpt_plan_type: "pro",
+      chatgpt_account_is_fedramp: false,
+    }),
+  );
+  const codex = createCodexAuth(fetchImpl);
+  const credential = await codex.import!({
+    kind: "auth_json",
+    value: JSON.stringify({ personalAccessToken: "pat-secret-2" }),
+  });
+  assert.equal(credential.account.accountId, "acct-pat-2");
+  assert.equal(credential.account.tokenKind, "long_lived");
+});
+
+test("codex import rejects a PAT the whoami endpoint refuses, without leaking the token", async () => {
+  const { fetchImpl } = fakeFetch(() => jsonRes(401, { detail: "invalid token" }));
+  const codex = createCodexAuth(fetchImpl);
+  try {
+    await codex.import!({
+      kind: "auth_json",
+      value: JSON.stringify({ personal_access_token: "pat-secret-rejected" }),
+    });
+    assert.fail("should reject");
+  } catch (error) {
+    assertNoSecrets(error, "pat-secret-rejected");
+    assert.match((error as Error).message, /401/);
+  }
+});
+
+test("codex import rejects declared personalAccessToken mode with no token value", async () => {
+  const codex = createCodexAuth();
+  await assert.rejects(
+    () =>
+      codex.import!({
+        kind: "auth_json",
+        value: JSON.stringify({ auth_mode: "personalAccessToken" }),
+      }),
+    /personal_access_token/,
+  );
+});
+
+test("codex refresh is a no-op for a long-lived personal access token", async () => {
+  const { fetchImpl, calls } = fakeFetch(() =>
+    jsonRes(200, { chatgpt_account_id: "acct-pat", chatgpt_user_id: "u" }),
+  );
+  const codex = createCodexAuth(fetchImpl);
+  const credential = await codex.import!({
+    kind: "auth_json",
+    value: JSON.stringify({ personal_access_token: "pat-secret-value" }),
+  });
+  const before = calls.length;
+  const refreshed = await codex.refresh(credential);
+  assert.equal(refreshed, credential); // literally unchanged, not just equal
+  assert.equal(calls.length, before); // no extra network call
+});
+
 // --- refresh -----------------------------------------------------------------
 
 test("codex refresh posts the exact OAuth body and preserves unrotated tokens", async () => {
@@ -194,7 +289,7 @@ test("codex refresh posts the exact OAuth body and preserves unrotated tokens", 
   });
   const refreshed = await codex.refresh(original);
 
-  assert.equal(calls[0].url, "https://auth.openai.com/oauth/token");
+  assert.equal(calls[0].url, OPENAI_TOKEN_URL);
   assert.equal(calls[0].init.method, "POST");
   assert.equal(
     (calls[0].init.headers as Record<string, string>)["content-type"],
@@ -204,7 +299,7 @@ test("codex refresh posts the exact OAuth body and preserves unrotated tokens", 
   assert.deepEqual(body, {
     grant_type: "refresh_token",
     refresh_token: REFRESH_SECRET,
-    client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+    client_id: CODEX_CLIENT_ID,
   });
   assert.equal(refreshed.secrets.refreshToken, REFRESH_SECRET); // preserved
   assert.equal(refreshed.secrets.idToken, ID_TOKEN); // retained

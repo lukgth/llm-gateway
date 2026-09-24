@@ -20,6 +20,7 @@ import {
   ProviderAuthCrypto,
   migrateProviderAuthIdentifiers,
 } from "./services/provider-auth/crypto";
+import { migrateClaudeCodePlainKeysToManagedAuth } from "./db/migrate-claude-code-oauth";
 import { ProviderAuthService } from "./services/provider-auth/service";
 import { ProviderCredentialService } from "./services/provider-credentials";
 
@@ -57,6 +58,7 @@ function main(): void {
 
   const providerAuthCrypto = new ProviderAuthCrypto(db, bootstrap.dataDir);
   migrateProviderAuthIdentifiers(db, providerAuthCrypto);
+  migrateClaudeCodePlainKeysToManagedAuth(db, providerAuthCrypto);
   const providerCredentials = new ProviderCredentialService(
     db,
     providerAuthCrypto,

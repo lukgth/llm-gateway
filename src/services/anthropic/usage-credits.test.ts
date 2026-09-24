@@ -4,6 +4,7 @@ import {
   isClaudeCodeUsageCreditsError,
   isClaudeCodeModelCreditsError,
   isAnthropicCreditBalanceError,
+  isAnthropicAccountAuthError,
   LONG_CONTEXT_USAGE_CREDITS_MESSAGE,
   MODEL_USAGE_CREDITS_MESSAGE,
 } from "./usage-credits";
@@ -264,4 +265,106 @@ test("credit-balance rejects other statuses/providers/types", () => {
     false,
   );
   assert.equal(creditBalanceMatches({ body: "not json" }), false);
+});
+
+test("credit-balance ALSO matches a non-'anthropic' catalog speaking the messages providerFmt", () => {
+  // A differently-named Anthropic-compatible catalog entry (or a generic
+  // template pointed at an Anthropic-compatible backend) must rotate on the
+  // identical body instead of hard-failing just because its catalogId isn't
+  // literally "anthropic".
+  assert.equal(
+    creditBalanceMatches({ catalogId: "my-anthropic-proxy", providerFmt: "messages" }),
+    true,
+  );
+  // Without providerFmt supplied at all, the old catalogId-only gate still
+  // applies (existing callers that haven't been updated keep working as before).
+  assert.equal(creditBalanceMatches({ catalogId: "my-anthropic-proxy" }), false);
+  // A non-messages-format provider never matches even if somehow mislabeled.
+  assert.equal(
+    creditBalanceMatches({ catalogId: "openai", providerFmt: "chat" }),
+    false,
+  );
+});
+
+// --- account auth error (400 posing as 401/403) ---------------------------
+
+function accountAuthMatches(
+  overrides: Partial<Parameters<typeof isAnthropicAccountAuthError>[0]> = {},
+): boolean {
+  return isAnthropicAccountAuthError({
+    status: 400,
+    catalogId: "anthropic",
+    body: JSON.stringify({
+      type: "error",
+      error: { type: "authentication_error", message: "invalid x-api-key" },
+    }),
+    ...overrides,
+  });
+}
+
+test("matches a 400 carrying an authentication_error envelope", () => {
+  assert.equal(accountAuthMatches(), true);
+});
+
+test("matches a 400 carrying a permission_error envelope", () => {
+  assert.equal(
+    accountAuthMatches({
+      body: JSON.stringify({
+        error: { type: "permission_error", message: "not authorized" },
+      }),
+    }),
+    true,
+  );
+});
+
+test("account auth error also matches a non-'anthropic' catalog speaking messages", () => {
+  assert.equal(
+    accountAuthMatches({ catalogId: "my-anthropic-proxy", providerFmt: "messages" }),
+    true,
+  );
+  assert.equal(accountAuthMatches({ catalogId: "my-anthropic-proxy" }), false);
+});
+
+test("account auth error rejects other statuses/types and malformed bodies", () => {
+  assert.equal(accountAuthMatches({ status: 401 }), false); // real 401s use AUTH_FAIL_STATUS instead
+  assert.equal(
+    accountAuthMatches({
+      body: JSON.stringify({ error: { type: "invalid_request_error", message: "x" } }),
+    }),
+    false,
+  );
+  assert.equal(accountAuthMatches({ body: "not json" }), false);
+  assert.equal(accountAuthMatches({ body: "{}" }), false);
+});
+
+// The credit-balance and account-auth-error detectors must stay mutually
+// exclusive so a credit-balance 400 never ALSO triggers a key-disabling auth
+// failure (that would defeat the point of the gentler credit-balance
+// cooldown-instead-of-disable handling).
+test("credit-balance and account-auth-error detectors are mutually exclusive", () => {
+  const creditBody = JSON.stringify({
+    error: {
+      type: "invalid_request_error",
+      message: "Your credit balance is too low to access the Anthropic API.",
+    },
+  });
+  assert.equal(
+    isAnthropicCreditBalanceError({ status: 400, catalogId: "anthropic", body: creditBody }),
+    true,
+  );
+  assert.equal(
+    isAnthropicAccountAuthError({ status: 400, catalogId: "anthropic", body: creditBody }),
+    false,
+  );
+  const authBody = JSON.stringify({
+    error: { type: "authentication_error", message: "invalid x-api-key" },
+  });
+  assert.equal(
+    isAnthropicCreditBalanceError({ status: 400, catalogId: "anthropic", body: authBody }),
+    false,
+  );
+  assert.equal(
+    isAnthropicAccountAuthError({ status: 400, catalogId: "anthropic", body: authBody }),
+    true,
+  );
 });
