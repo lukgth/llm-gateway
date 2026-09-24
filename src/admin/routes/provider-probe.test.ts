@@ -24,9 +24,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import type { Request, Response } from "express";
 import { openDatabase } from "../../db";
 import { saveSettings } from "../../repo/settings";
 import { createProvider } from "../../repo/providers";
+import type { RouteCtx } from "./types";
+import { registerProviderRoutes } from "./providers";
 import {
   testProviderModel,
   makeLogStage,
@@ -366,6 +369,122 @@ test("rawRequest: a deterministic non-2xx is NOT retried", async () => {
     // A 401 is a real answer - retrying only doubles the wait for the same result.
     assert.equal(result.status, 401);
     assert.equal(attempts, 1);
+  } finally {
+    await close();
+  }
+});
+
+// --- managed-auth catalog probe guard ------------------------------------
+
+type CatalogTestHandler = (
+  req: Request,
+  res: Response,
+) => unknown | Promise<unknown>;
+
+function registerCatalogTestRoute(): CatalogTestHandler {
+  let handler: CatalogTestHandler | undefined;
+  const r = {
+    get: () => {},
+    put: () => {},
+    delete: () => {},
+    post: (path: string, ...middleware: unknown[]) => {
+      if (path === "/provider-catalog/test") {
+        handler = middleware[middleware.length - 1] as CatalogTestHandler;
+      }
+    },
+  };
+  const ctx = {
+    db: freshDb(),
+    logger: new Logger(),
+    router: { reload: () => {} },
+    r,
+    requireAdmin: (_req: unknown, _res: unknown, next: () => void) => next(),
+    broadcast: () => {},
+    bootstrap: {},
+    providerAuth: {},
+    providerCredentials: {},
+  } as unknown as RouteCtx;
+  registerProviderRoutes(ctx);
+  assert.ok(handler, "provider catalog test route must be registered");
+  return handler;
+}
+
+async function callCatalogTest(
+  handler: CatalogTestHandler,
+  body: unknown,
+): Promise<unknown> {
+  let payload: unknown;
+  const res = {
+    status() {
+      return {
+        json(value: unknown) {
+          payload = value;
+        },
+      };
+    },
+    json(value: unknown) {
+      payload = value;
+    },
+  } as unknown as Response;
+  await handler({ body } as Request, res);
+  return payload;
+}
+
+const MANAGED_AUTH_PROBE_ERROR =
+  "This provider uses managed authentication. Create the provider, import credentials on its provider page, then use Test connection there.";
+
+test("provider catalog test: managed Codex short-circuits before any upstream request", async () => {
+  let requestCount = 0;
+  const { origin, close } = await withServer((_req, res) => {
+    requestCount++;
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ data: [{ id: "gpt-5" }] }));
+  });
+  try {
+    const response = await callCatalogTest(registerCatalogTestRoute(), {
+      catalogId: "openai-codex",
+      baseUrl: origin,
+      apiKey: "",
+    });
+    assert.deepEqual(response, {
+      ok: false,
+      status: null,
+      ms: 0,
+      error: MANAGED_AUTH_PROBE_ERROR,
+      models: [],
+    });
+    assert.equal(requestCount, 0);
+  } finally {
+    await close();
+  }
+});
+
+test("provider catalog test: non-OAuth ad-hoc OpenAI payload still probes and discovers models", async () => {
+  const seenAuth: string[] = [];
+  let requestCount = 0;
+  const { origin, close } = await withServer((req, res) => {
+    requestCount++;
+    seenAuth.push(req.headers.authorization ?? "");
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ data: [{ id: "gpt-test" }] }));
+  });
+  try {
+    const response = (await callCatalogTest(registerCatalogTestRoute(), {
+      catalogId: "openai",
+      baseUrl: origin,
+      modelsPath: "/v1/models",
+      apiKey: "sk-test",
+      format: "openai",
+    })) as {
+      ok: boolean;
+      status: number | null;
+      models: Array<{ id: string }>;
+    };
+    assert.equal(response.ok, true);
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.models.map((model) => model.id), ["gpt-test"]);
+    assert.equal(requestCount, 2, "connectivity probe plus model discovery");
+    assert.deepEqual(seenAuth, ["Bearer sk-test", "Bearer sk-test"]);
   } finally {
     await close();
   }

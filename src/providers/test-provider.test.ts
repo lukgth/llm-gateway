@@ -17,6 +17,12 @@ import {
   type AdapterHttpResponse,
 } from "./base";
 import type { Provider } from "../types";
+import { openaiCodex } from "./catalog/openai-codex";
+import {
+  CODEX_CLIENT_VERSION,
+  CODEX_ORIGINATOR,
+  codexUserAgent,
+} from "./codex";
 
 const provider = (): Provider =>
   ({
@@ -128,4 +134,78 @@ test("a bespoke testProvider() override replaces the default and never calls ctx
   assert.equal(calls.length, 0); // the override never touched ctx.request
   assert.equal(result.ok, true);
   assert.equal(result.sample, "synthetic OK");
+});
+
+test("Codex testProvider GETs the versioned models endpoint with full identity", async () => {
+  const calls: Array<{
+    url: string;
+    init: {
+      method?: "GET" | "POST";
+      headers: Record<string, string>;
+      body?: unknown;
+      signal?: AbortSignal;
+    };
+  }> = [];
+  const codexProvider = {
+    ...provider(),
+    id: "codex",
+    catalogId: "openai-codex",
+    baseUrl: "https://chatgpt.com",
+    basePath: "/backend-api/codex",
+    modelsPath: "/models",
+    endpoints: ["responses"],
+  } as unknown as Provider;
+  const resolve = (target?: string) =>
+    composeUrl(codexProvider.baseUrl, codexProvider.basePath ?? "", target ?? "/models");
+  const ctx: TestProviderCtx = {
+    provider: codexProvider,
+    baseUrl: codexProvider.baseUrl,
+    basePath: codexProvider.basePath ?? "",
+    resolve,
+    url: resolve(),
+    headers: {
+      authorization: "Bearer stale-bearer",
+      Originator: "stale-originator",
+      VERSION: "0.0.0",
+      "user-agent": "stale-agent",
+      "chatgpt-account-id": "stale-account",
+      "x-custom": "keep-me",
+    },
+    apiKey: "codex-access-token",
+    keyMetadata: { accountId: "acct-123" },
+    request: async (url, init) => {
+      calls.push({ url, init });
+      return {
+        status: 401,
+        ok: false,
+        ms: 7,
+        text: "unauthorized",
+        json: () => ({}),
+      };
+    },
+  };
+
+  const result = await openaiCodex.testProvider(ctx);
+
+  assert.equal(calls.length, 1);
+  const url = new URL(calls[0].url);
+  assert.equal(url.protocol, "https:");
+  assert.equal(url.host, "chatgpt.com");
+  assert.equal(url.pathname, "/backend-api/codex/models");
+  assert.equal(url.searchParams.get("client_version"), CODEX_CLIENT_VERSION);
+  assert.equal(calls[0].init.method, "GET");
+  const headers = calls[0].init.headers;
+  assert.equal(headers["originator"], CODEX_ORIGINATOR);
+  assert.equal(headers["version"], CODEX_CLIENT_VERSION);
+  assert.equal(headers["user-agent"], codexUserAgent());
+  assert.equal(headers["authorization"], "Bearer codex-access-token");
+  assert.equal(headers["chatgpt-account-id"], "acct-123");
+  assert.equal(headers["accept"], "application/json");
+  assert.equal(headers["x-custom"], "keep-me");
+  assert.equal(headers["Originator"], undefined);
+  assert.equal(headers["VERSION"], undefined);
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 401);
+  assert.equal(result.ms, 7);
+  assert.equal(result.sample, "unauthorized");
 });

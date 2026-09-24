@@ -21,6 +21,8 @@ import {
   type BuiltRequest,
   type KeyUsageResult,
   type ModelsCtx,
+  type TestProviderCtx,
+  type TestProviderResult,
   type UsageCtx,
 } from "../base";
 import { WireKind, type ProviderKeyUsageWindow } from "../../types";
@@ -58,6 +60,10 @@ function windowIdentity(
 }
 
 class OpenAICodexAdapter extends OpenAICompatibleAdapter {
+  protected get nativeFmt(): WireKind {
+    return WireKind.Responses;
+  }
+
   // The Codex backend speaks Responses natively for every model; per-link
   // endpoint pins still win via routeFor (preferredEndpoint is skipped when
   // one is set).
@@ -101,12 +107,8 @@ class OpenAICodexAdapter extends OpenAICompatibleAdapter {
     return { url: ctx.url, headers: ctx.headers, body: ctx.body };
   }
 
-  override chatCompletions(ctx: BuildCtx): BuiltRequest {
-    return this.codexBuild(ctx);
-  }
-
-  override responses(ctx: BuildCtx): BuiltRequest {
-    // The CLI always sends store:false with a non-empty instructions field;
+  private codexResponsesBody(ctx: BuildCtx): void {
+    // The CLI always sends store:false with a string instructions field;
     // subscription-backed requests reject stored responses.
     ctx.body["store"] = false;
     if (typeof ctx.body["instructions"] !== "string")
@@ -122,14 +124,14 @@ class OpenAICodexAdapter extends OpenAICompatibleAdapter {
       ];
     }
     ctx.body["stream"] = true;
-    return this.codexBuild(ctx);
   }
 
-  // GET /models?client_version=… through the supplied proxy/TLS-aware
-  // transport, with full Codex identity + account headers (the backend lists
-  // only the authenticated subscription's models).
-  override async fetchModels(ctx: ModelsCtx): Promise<UpstreamModel[]> {
-    if (!ctx.transport) throw new Error("No model-list transport configured");
+  private codexModelRequest(ctx: {
+    resolve: ModelsCtx["resolve"];
+    headers: Record<string, string>;
+    apiKey: string | null;
+    keyMetadata?: Readonly<Record<string, string>>;
+  }): { url: string; headers: Record<string, string> } {
     const headers: Record<string, string> = { ...ctx.headers };
     this.stripConflicting(headers);
     Object.assign(headers, codexIdentityHeaders(), {
@@ -138,19 +140,56 @@ class OpenAICodexAdapter extends OpenAICompatibleAdapter {
     if (ctx.apiKey) headers["authorization"] = `Bearer ${ctx.apiKey}`;
     const accountId = ctx.keyMetadata?.accountId;
     if (accountId) headers["chatgpt-account-id"] = accountId;
+    return {
+      url: ctx.resolve(`/models?client_version=${CODEX_CLIENT_VERSION}`),
+      headers,
+    };
+  }
 
-    const response = await ctx.transport(
-      `${ctx.resolve(`/models?client_version=${CODEX_CLIENT_VERSION}`)}`,
-      {
-        headers,
-        ...(ctx.signal ? { signal: ctx.signal } : {}),
-      },
-    );
+  override chatCompletions(ctx: BuildCtx): BuiltRequest {
+    this.codexResponsesBody(ctx);
+    return this.codexBuild(ctx);
+  }
+
+  override responses(ctx: BuildCtx): BuiltRequest {
+    this.codexResponsesBody(ctx);
+    return this.codexBuild(ctx);
+  }
+
+  // GET /models?client_version=… through the supplied proxy/TLS-aware
+  // transport, with full Codex identity + account headers (the backend lists
+  // only the authenticated subscription's models).
+  override async fetchModels(ctx: ModelsCtx): Promise<UpstreamModel[]> {
+    if (!ctx.transport) throw new Error("No model-list transport configured");
+    const request = this.codexModelRequest(ctx);
+
+    const response = await ctx.transport(request.url, {
+      headers: request.headers,
+      ...(ctx.signal ? { signal: ctx.signal } : {}),
+    });
+
     if (!response.ok)
       throw new Error(`Model discovery failed (${response.status})`);
     const models = parseCodexModels(await response.json());
     if (!models.length) throw new Error("Codex returned no usable models");
     return models;
+  }
+
+  override async testProvider(
+    ctx: TestProviderCtx,
+  ): Promise<TestProviderResult> {
+    const request = this.codexModelRequest(ctx);
+    const response = await ctx.request(request.url, {
+      method: "GET",
+      headers: request.headers,
+      signal: ctx.signal,
+    });
+    return {
+      ok: response.status >= 200 && response.status < 400,
+      status: response.status,
+      ms: response.ms,
+      sample: response.text ? response.text.slice(0, 240) : undefined,
+    };
   }
 
   // GET /backend-api/wham/usage — sibling of the codex base path, not under
@@ -335,7 +374,7 @@ export const openaiCodex = new OpenAICodexAdapter({
     baseUrl: "https://chatgpt.com",
     basePath: "/backend-api/codex",
     modelsPath: "/models",
-    endpoints: [WireKind.Responses, WireKind.Chat],
+    endpoints: [WireKind.Responses],
     authScheme: "bearer",
     nativeConversion: false,
   },

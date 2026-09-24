@@ -38,6 +38,7 @@ import {
   testSavedProvider,
   testProviderModel,
   fetchProviderModels,
+  catalogUsesManagedAuthentication,
   fetchUpstreamModels,
 } from "./provider-probe";
 import { resolveProviderTransforms } from "./resolved-transforms";
@@ -362,6 +363,16 @@ export function registerProviderRoutes(ctx: RouteCtx): void {
   // same probe helpers as the saved-provider test.
   r.post("/provider-catalog/test", requireAdmin, async (req, res) => {
     const b = (req.body || {}) as Record<string, unknown>;
+    if (catalogUsesManagedAuthentication(b.catalogId)) {
+      return res.json({
+        ok: false,
+        status: null,
+        ms: 0,
+        error:
+          "This provider uses managed authentication. Create the provider, import credentials on its provider page, then use Test connection there.",
+        models: [],
+      });
+    }
     const baseUrl = str(b.baseUrl);
     if (!baseUrl)
       return res

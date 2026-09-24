@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCodexAuth } from "./codex";
 import type { ProviderAuthCredential } from "../types";
+import { CODEX_CLIENT_VERSION, CODEX_ORIGINATOR, codexUserAgent } from "../../../providers/codex";
 
 // --- JWT fixture helpers -----------------------------------------------------
 
@@ -256,13 +257,18 @@ test("codex test probes models with Codex identity headers and filters public en
   const probe = await codex.test(credential);
   assert.equal(probe.ok, true);
   assert.deepEqual(probe.models.map((m) => m.id), ["gpt-5-codex", "plain"]);
+  assert.equal(calls.length, 1);
   const headers = calls[0].init.headers as Record<string, string>;
-  assert.equal(headers.originator, "codex_cli_rs");
-  assert.equal(headers.version, "0.149.0");
-  assert.match(headers["user-agent"], /^codex_cli_rs\/0\.149\.0 \(.+\) reqwest\//);
+  assert.equal(headers.originator, CODEX_ORIGINATOR);
+  assert.equal(headers.version, CODEX_CLIENT_VERSION);
+  assert.equal(headers["user-agent"], codexUserAgent());
   assert.equal(headers.authorization, `Bearer ${credential.secrets.accessToken}`);
   assert.equal(headers["chatgpt-account-id"], credential.account.accountId);
-  assert.match(calls[0].url, /client_version=0\.149\.0$/);
+  const url = new URL(calls[0].url);
+  assert.equal(url.protocol, "https:");
+  assert.equal(url.host, "chatgpt.com");
+  assert.equal(url.pathname, "/backend-api/codex/models");
+  assert.equal(url.searchParams.get("client_version"), CODEX_CLIENT_VERSION);
 });
 
 test("codex test fails closed on network errors, non-2xx, malformed, and empty model lists", async () => {

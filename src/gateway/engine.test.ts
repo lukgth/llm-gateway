@@ -29,6 +29,7 @@ import type { ProviderCredentialService } from "../services/provider-credentials
 import { ProviderCredentialService as RealProviderCredentialService } from "../services/provider-credentials";
 import { ProviderAuthCrypto } from "../services/provider-auth/crypto";
 import { createProviderOAuth } from "../repo/provider-oauth";
+import { CODEX_CLIENT_VERSION, CODEX_ORIGINATOR, codexUserAgent } from "../providers/codex";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -3513,9 +3514,9 @@ test("Codex managed account reaches the backend with the pinned CLI identity", a
     assert.equal(captured.path, "/backend-api/codex/responses");
     assert.equal(captured.auth, "Bearer synthetic-codex-bearer");
     assert.equal(captured.accountId, "acct-e2e");
-    assert.equal(captured.originator, "codex_cli_rs");
-    assert.equal(captured.version, "0.149.0");
-    assert.match(captured.userAgent ?? "", /^codex_cli_rs\/0\.149\.0 \(.+\) reqwest\//);
+    assert.equal(captured.originator, CODEX_ORIGINATOR);
+    assert.equal(captured.version, CODEX_CLIENT_VERSION);
+    assert.equal(captured.userAgent, codexUserAgent());
     assert.equal(captured.body?.store, false);
     assert.equal(typeof captured.body?.instructions, "string");
   } finally {
