@@ -554,6 +554,7 @@ export interface UpstreamModel {
 export interface Model {
   id: string;
   alias: string;
+  aliases: string[];
   displayName: string | null;
   contextWindow: number | null;
   maxOutputTokens: number | null;
@@ -789,6 +790,7 @@ export interface ProviderInput {
 
 export interface ModelInput {
   alias: string;
+  aliases?: string[] | null;
   displayName?: string | null;
   contextWindow?: number | null;
   maxOutputTokens?: number | null;

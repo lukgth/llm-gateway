@@ -122,6 +122,12 @@ export function parseModelInput(
   if (requireCreate && !str(b.alias)) throw new Error("alias is required");
   return {
     alias: str(b.alias) as string,
+    aliases:
+      b.aliases === undefined
+        ? undefined
+        : Array.isArray(b.aliases)
+          ? (b.aliases as unknown[]).map((a) => str(a) ?? "").filter(Boolean)
+          : [],
     displayName:
       b.displayName === undefined
         ? undefined

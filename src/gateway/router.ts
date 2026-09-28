@@ -170,7 +170,12 @@ export class GatewayRouter {
     app.get("/v1/models/:id", (req, res) => {
       const apiKey = (req as GatewayRequest).__apiKey ?? null;
       const r = this.registry.resolveModel(req.params.id, apiKey);
-      if (!r.model) {
+      // Extra aliases are callable but must never surface in the model
+      // endpoints, so only the primary alias is served here.
+      if (
+        !r.model ||
+        this.registry.aliasFromExposed(req.params.id) !== r.model.alias
+      ) {
         return res.status(404).json({
           error: {
             type: "not_found",

@@ -142,7 +142,9 @@ export class ModelRegistry {
       return { error: 404 };
     }
     const alias = this.aliasFromExposed(clientModel);
-    const model = this.models.find((m) => m.alias === alias);
+    const model = this.models.find(
+      (m) => m.alias === alias || m.aliases.includes(alias),
+    );
     if (model)
       return this.canAccess(apiKey, model) ? { model } : { error: 404 };
     if (this.settings.allowUnknown && (!apiKey || apiKey.accessAllModels)) {
@@ -153,6 +155,7 @@ export class ModelRegistry {
         model: {
           id: "unknown",
           alias,
+          aliases: [],
           displayName: null,
           contextWindow: null,
           maxOutputTokens: null,
@@ -243,6 +246,8 @@ export class ModelRegistry {
     return entry;
   }
 
+  // Extra aliases are callable but never advertised: both listings expose one
+  // entry per model, under its primary alias only.
   listOpenAI(apiKey: ApiKey | null = null): OpenAIListModelResponse {
     return {
       object: "list",

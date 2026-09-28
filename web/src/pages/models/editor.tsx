@@ -73,6 +73,7 @@ export default function ModelEditor() {
 
   // form state
   const [alias, setAlias] = useState("");
+  const [extraAliases, setExtraAliases] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [contextWindow, setContextWindow] = useState("");
   const [maxOutputTokens, setMaxOutputTokens] = useState("");
@@ -103,6 +104,7 @@ export default function ModelEditor() {
   const hydrate = useCallback((m: Model | null) => {
     setModel(m);
     setAlias(m?.alias ?? "");
+    setExtraAliases((m?.aliases ?? []).join(", "));
     setDisplayName(m?.displayName ?? "");
     setContextWindow(m?.contextWindow?.toString() ?? "");
     setMaxOutputTokens(m?.maxOutputTokens?.toString() ?? "");
@@ -318,6 +320,10 @@ export default function ModelEditor() {
     setSaving(true);
     const payload: ModelInput = {
       alias: alias.trim(),
+      aliases: extraAliases
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
       displayName: displayName.trim() || null,
       contextWindow: contextWindow ? Number(contextWindow) : null,
       maxOutputTokens: maxOutputTokens ? Number(maxOutputTokens) : null,
@@ -443,7 +449,10 @@ export default function ModelEditor() {
                 </span>
               </label>
             </Field>
-            <Field label="Type">
+            <Field
+              label="Type"
+              hint="Wire format this model speaks."
+            >
               <Select value={modelType} onValueChange={setModelType}>
                 <SelectTrigger>
                   <SelectValue />
@@ -454,18 +463,32 @@ export default function ModelEditor() {
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Context window (tokens)">
+            <Field
+              label="Context window (tokens)"
+              hint="Advertised max input tokens."
+            >
               <Input
                 type="number"
                 value={contextWindow}
                 onChange={(e) => setContextWindow(e.target.value)}
               />
             </Field>
-            <Field label="Max output tokens">
+            <Field label="Max output tokens" hint="Max tokens per completion.">
               <Input
                 type="number"
                 value={maxOutputTokens}
                 onChange={(e) => setMaxOutputTokens(e.target.value)}
+              />
+            </Field>
+            <Field
+              label="Extra aliases"
+              hint="Comma-separated. Every alias here resolves to this model."
+              className="sm:col-span-2 lg:col-span-3"
+            >
+              <Input
+                value={extraAliases}
+                onChange={(e) => setExtraAliases(e.target.value)}
+                placeholder="deepseek-01, deepseek-alt"
               />
             </Field>
           </div>

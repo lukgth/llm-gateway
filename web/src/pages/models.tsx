@@ -61,7 +61,8 @@ export default function Models() {
     return (items ?? []).filter(
       (m) =>
         m.alias.toLowerCase().includes(q) ||
-        (m.displayName ?? "").toLowerCase().includes(q),
+        (m.displayName ?? "").toLowerCase().includes(q) ||
+        m.aliases.some((a) => a.toLowerCase().includes(q)),
     );
   }, [items, filter]);
 
@@ -211,6 +212,20 @@ const ModelRow = memo(function ModelRow({
             {m.alias}
           </span>
         </span>
+        {m.aliases.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {m.aliases.map((a) => (
+              <Badge
+                key={a}
+                variant="secondary"
+                className="px-1.5 py-0 text-[0.65rem] font-mono"
+                title="Extra alias"
+              >
+                {a}
+              </Badge>
+            ))}
+          </div>
+        )}
       </TableCell>
       <TableCell>
         <Badge variant="secondary">

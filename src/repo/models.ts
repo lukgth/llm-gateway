@@ -35,6 +35,12 @@ interface ModelRow {
   pricing_cache_write_per_1m?: number | null;
 }
 
+interface AliasRow {
+  model_id: string;
+  alias: string;
+  created_at: string;
+}
+
 interface LinkRow {
   model_id: string;
   provider_id: string;
@@ -58,7 +64,11 @@ function parseCapabilities(raw: string): ModelCapabilities {
   return parsed ? { ...DEFAULT_CAPABILITIES, ...parsed } : DEFAULT_CAPABILITIES;
 }
 
-function mapModel(r: ModelRow, links: LinkJoinedRow[]): Model {
+function mapModel(
+  r: ModelRow,
+  links: LinkJoinedRow[],
+  aliases: string[] = [],
+): Model {
   // Claude aliases always carry the official Anthropic capabilities (thinking
   // types, effort levels, etc.) — the stock entry is authoritative and takes
   // priority over whatever was saved in the DB, so the admin UI, admin API,
@@ -67,6 +77,7 @@ function mapModel(r: ModelRow, links: LinkJoinedRow[]): Model {
   return {
     id: r.id,
     alias: r.alias,
+    aliases,
     displayName: r.display_name,
     contextWindow: r.context_window,
     maxOutputTokens: r.max_output_tokens,
@@ -121,7 +132,16 @@ export function listModels(db: DB, includeDisabled = true): Model[] {
     )
     .all() as ModelRow[];
   const links = db.prepare(LINK_JOIN).all() as LinkJoinedRow[];
-  const all = rows.map((r) => mapModel(r, links));
+  const aliases = db
+    .prepare("SELECT * FROM model_aliases ORDER BY created_at, alias")
+    .all() as AliasRow[];
+  const aliasesByModel = new Map<string, string[]>();
+  for (const row of aliases) {
+    const list = aliasesByModel.get(row.model_id) ?? [];
+    list.push(row.alias);
+    aliasesByModel.set(row.model_id, list);
+  }
+  const all = rows.map((r) => mapModel(r, links, aliasesByModel.get(r.id) ?? []));
   return includeDisabled ? all : all.filter((m) => m.enabled);
 }
 
@@ -140,7 +160,12 @@ export function getModel(db: DB, id: string): Model | null {
   const links = db
     .prepare(`${LINK_JOIN} WHERE mp.model_id = ?`)
     .all(id) as LinkJoinedRow[];
-  return mapModel(row, links);
+  const aliases = db
+    .prepare(
+      "SELECT alias FROM model_aliases WHERE model_id = ? ORDER BY created_at, alias",
+    )
+    .all(id) as Array<{ alias: string }>;
+  return mapModel(row, links, aliases.map((a) => a.alias));
 }
 
 export function getModelByAlias(db: DB, alias: string): Model | null {
@@ -150,9 +175,54 @@ export function getModelByAlias(db: DB, alias: string): Model | null {
   return getModel(db, row.id);
 }
 
+function aliasInUse(db: DB, alias: string, excludeModelId?: string): boolean {
+  const row = db
+    .prepare(
+      `SELECT alias FROM models
+       WHERE alias = ? AND (? IS NULL OR id != ?)
+       UNION SELECT alias FROM model_aliases
+       WHERE alias = ? AND (? IS NULL OR model_id != ?)
+       LIMIT 1`,
+    )
+    .get(
+      alias,
+      excludeModelId ?? null,
+      excludeModelId ?? null,
+      alias,
+      excludeModelId ?? null,
+      excludeModelId ?? null,
+    );
+  return !!row;
+}
+
+function normalizeAliases(
+  aliases: string[] | null | undefined,
+  primary: string,
+): string[] {
+  if (aliases == null) return [];
+  const normalized = aliases.map((alias) => alias.trim());
+  const seen = new Set<string>();
+  for (const alias of normalized) {
+    if (!alias) throw new Error("Model aliases must not be empty");
+    if (alias === primary)
+      throw new Error(`Model alias '${alias}' is already in use`);
+    if (seen.has(alias)) throw new Error(`Duplicate alias '${alias}'`);
+    seen.add(alias);
+  }
+  return normalized;
+}
+
+function validateAliases(db: DB, aliases: string[], modelId?: string): void {
+  for (const alias of aliases) {
+    if (aliasInUse(db, alias, modelId))
+      throw new Error(`Model alias '${alias}' is already in use`);
+  }
+}
+
 export interface ModelInput {
   id?: string;
   alias: string;
+  aliases?: string[] | null;
   displayName?: string | null;
   contextWindow?: number | null;
   maxOutputTokens?: number | null;
@@ -179,12 +249,15 @@ export interface ModelInput {
 export function createModel(db: DB, input: ModelInput): Model {
   const now = new Date().toISOString();
   const id = input.id || slugify(input.alias) || `model-${Date.now()}`;
+  const aliases = normalizeAliases(input.aliases, input.alias);
   if (getModel(db, id)) throw new Error(`Model '${id}' already exists`);
-  if (getModelByAlias(db, input.alias))
+  if (aliasInUse(db, input.alias))
     throw new Error(`Model alias '${input.alias}' is already in use`);
+  validateAliases(db, aliases);
 
   const tx = db.transaction(() => {
     writeModel(db, "insert", id, now, now, input);
+    insertAliases(db, id, aliases, now);
 
     const providers = input.providers ?? [];
     let priority = 0;
@@ -237,12 +310,23 @@ export function updateModel(
     capabilities: input.capabilities ?? existing.capabilities,
   };
   // Alias uniqueness check on change.
-  if (merged.alias !== existing.alias && getModelByAlias(db, merged.alias)) {
+  if (merged.alias !== existing.alias && aliasInUse(db, merged.alias, id)) {
     throw new Error(`Model alias '${merged.alias}' is already in use`);
   }
+  // undefined = leave existing extras untouched; null/[] = clear.
+  const aliases =
+    input.aliases !== undefined
+      ? normalizeAliases(input.aliases, merged.alias)
+      : undefined;
+  if (aliases) validateAliases(db, aliases, id);
 
   const tx = db.transaction(() => {
     writeModel(db, "update", id, existing.createdAt, now, merged);
+
+    if (aliases !== undefined) {
+      db.prepare("DELETE FROM model_aliases WHERE model_id = ?").run(id);
+      insertAliases(db, id, aliases, now);
+    }
 
     if (input.providers) {
       db.prepare("DELETE FROM model_providers WHERE model_id = ?").run(id);
@@ -317,6 +401,18 @@ function writeModel(
        WHERE id=@id`,
     ).run(params);
   }
+}
+
+function insertAliases(
+  db: DB,
+  modelId: string,
+  aliases: string[],
+  createdAt: string,
+): void {
+  const insert = db.prepare(
+    "INSERT INTO model_aliases (model_id, alias, created_at) VALUES (?, ?, ?)",
+  );
+  for (const alias of aliases) insert.run(modelId, alias, createdAt);
 }
 
 export type ModelLinkInput = NonNullable<ModelInput["providers"]>[number];

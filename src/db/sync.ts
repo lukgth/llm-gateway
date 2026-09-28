@@ -34,6 +34,7 @@ import { DEFAULT_CAPABILITIES, type ModelCapabilities } from "../types";
 interface ConfigMapping {
   upstream: string;
   displayName?: string;
+  aliases?: string[];
   contextWindow?: number;
   maxOutputTokens?: number;
   enabled?: boolean;
@@ -214,6 +215,7 @@ export function syncFromConfig(db: DB, cfg: ConfigJson): SyncResult {
           : (rawMapping as ConfigMapping);
       const input: ModelInput = {
         alias,
+        aliases: mapping.aliases ?? [],
         displayName: mapping.displayName ?? null,
         contextWindow: mapping.contextWindow ?? null,
         maxOutputTokens: mapping.maxOutputTokens ?? null,

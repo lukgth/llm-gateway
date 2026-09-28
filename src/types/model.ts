@@ -24,6 +24,8 @@ export interface ModelProviderLink {
 export interface Model {
   id: string;
   alias: string;
+  /** Extra aliases beyond the primary; all resolve to this model. */
+  aliases: string[];
   displayName: string | null;
   contextWindow: number | null;
   maxOutputTokens: number | null;

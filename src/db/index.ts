@@ -72,6 +72,13 @@ CREATE TABLE IF NOT EXISTS model_providers (
 );
 CREATE INDEX IF NOT EXISTS idx_model_providers_model    ON model_providers(model_id);
 CREATE INDEX IF NOT EXISTS idx_model_providers_provider ON model_providers(provider_id);
+CREATE TABLE IF NOT EXISTS model_aliases (
+  model_id   TEXT NOT NULL REFERENCES models(id) ON DELETE CASCADE,
+  alias      TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_model_aliases_model ON model_aliases(model_id);
+
 
 -- Per-provider catalog of imported upstream models. These are NOT exposed on
 -- /v1/models; they are the building blocks a user references (by upstream_id)
@@ -537,6 +544,13 @@ function migrate(db: DB): void {
     updated_at TEXT NOT NULL
   );`);
   addColumnIfMissing(db, "model_pricing", "cache_write_per_1m", "REAL");
+  // ponytail: keep extra model aliases available on fresh and legacy databases.
+  db.exec(`CREATE TABLE IF NOT EXISTS model_aliases (
+    model_id   TEXT NOT NULL REFERENCES models(id) ON DELETE CASCADE,
+    alias      TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_model_aliases_model ON model_aliases(model_id);`);
   migrateProviderKeysToTable(db);
   migrateApiKeysDropFull(db);
 }
