@@ -45,6 +45,15 @@ function resetCadence(value: unknown): string | null {
   return reset || null;
 }
 
+interface OpenRouterCreditsData {
+  total_credits?: number;
+  total_usage?: number;
+}
+
+interface OpenRouterCreditsResponse {
+  data?: OpenRouterCreditsData;
+}
+
 // Select the counter matching the key's reset cadence. OpenRouter reports BYOK
 // separately, so include it only when the key says BYOK spend counts toward its
 // limit. `limit_remaining`, when present, remains the authoritative source.
@@ -112,6 +121,52 @@ class OpenRouterAdapter extends OpenAICompatibleAdapter {
       };
     }
 
+    // Keep account-wide spend to explain a zero-balance result without drawing a 0/0 bar.
+    let zeroBalanceUsage: number | null = null;
+
+    try {
+      const creditsRes = await ctx.request(ctx.resolve("/v1/credits"), {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${ctx.apiKey}`,
+          accept: "application/json",
+        },
+        signal: ctx.signal,
+      });
+      if (creditsRes.ok) {
+        try {
+          const credits = creditsRes.json() as OpenRouterCreditsResponse;
+          const totalCredits = credits?.data?.total_credits;
+          const totalUsage = credits?.data?.total_usage;
+          if (
+            typeof totalCredits === "number" &&
+            Number.isFinite(totalCredits) &&
+            typeof totalUsage === "number" &&
+            Number.isFinite(totalUsage)
+          ) {
+            if (totalCredits > 0) {
+              return {
+                windows: [
+                  {
+                    id: "openrouter-balance",
+                    label: "Balance",
+                    used: Math.max(0, Math.min(totalUsage, totalCredits)),
+                    limit: totalCredits,
+                    unit: "dollars",
+                  },
+                ],
+              };
+            }
+            if (totalCredits === 0) zeroBalanceUsage = Math.max(0, totalUsage);
+          }
+        } catch {
+          // A credits response failure must not hide the existing key limit.
+        }
+      }
+    } catch {
+      // Fall through to the existing per-key spending-limit query.
+    }
+
     let res;
     try {
       res = await ctx.request(ctx.resolve("/v1/key"), {
@@ -172,11 +227,12 @@ class OpenRouterAdapter extends OpenAICompatibleAdapter {
           message: "Usage endpoint returned invalid usage data.",
         };
       }
-      const tier = data.is_free_tier === true ? "Free tier · " : "";
       const expiresAt = expiryIso(data.expires_at);
       return {
         windows: [],
-        message: `${tier}$${allTimeUsage.toFixed(2)} used all time · No key spending limit`,
+        message: zeroBalanceUsage === null
+          ? `${data.is_free_tier === true ? "Free tier · " : ""}$${allTimeUsage.toFixed(2)} used all time · No key spending limit`
+          : `${data.is_free_tier === true ? "Free tier · " : ""}$${zeroBalanceUsage.toFixed(2)} spent · $0.00 credit balance`,
         ...(expiresAt ? { expiresAt } : {}),
       };
     } else {
@@ -189,6 +245,22 @@ class OpenRouterAdapter extends OpenAICompatibleAdapter {
         };
       }
       limit = cappedLimit;
+      if (cappedLimit === 0) {
+        if (zeroBalanceUsage !== null) {
+          const tier = data.is_free_tier === true ? "Free tier · " : "";
+          const expiresAt = expiryIso(data.expires_at);
+          return {
+            windows: [],
+            message: `${tier}$${zeroBalanceUsage.toFixed(2)} spent · $0.00 credit balance`,
+            ...(expiresAt ? { expiresAt } : {}),
+          };
+        }
+        return {
+          windows: [],
+          unavailable: true,
+          message: "Key spending limit is zero.",
+        };
+      }
 
       const remaining = amount(data.limit_remaining);
       if (remaining !== null) {

@@ -490,6 +490,159 @@ test("openrouter.keyUsage: GET /api/v1/key with Bearer auth, capped monthly usag
   assert.equal(w.resetsAt, undefined);
 });
 
+test("openrouter.keyUsage: queries /v1/credits with the key itself and shows the account balance bar", async () => {
+  const p = prov({ catalogId: "openrouter", baseUrl: "https://openrouter.ai/api" });
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async (url, init) => {
+      assert.equal(url, "https://openrouter.ai/api/v1/credits");
+      assert.equal(init.headers.authorization, "Bearer sk-or-secret");
+      return jsonResponse(200, {
+        data: { total_credits: 100.5, total_usage: 25.75 },
+      });
+    }),
+  );
+  assert.equal(res.unavailable, undefined);
+  assert.equal(res.windows.length, 1);
+  const w = res.windows[0];
+  assert.equal(w.id, "openrouter-balance");
+  assert.equal(w.label, "Balance");
+  assert.equal(w.used, 25.75);
+  assert.equal(w.limit, 100.5);
+  assert.equal(w.unit, "dollars");
+  assert.equal(w.resetsAt, undefined);
+});
+
+test("openrouter.keyUsage: failing credits query falls back to the /v1/key spending-limit bar", async () => {
+  const p = prov({ catalogId: "openrouter", baseUrl: "https://openrouter.ai/api" });
+  let keyRequested = false;
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async (url) => {
+      if (url.endsWith("/v1/credits")) {
+        return jsonResponse(403, {
+          error: { code: 403, message: "Only management keys can perform this operation" },
+        });
+      }
+      assert.equal(url, "https://openrouter.ai/api/v1/key");
+      keyRequested = true;
+      return jsonResponse(200, {
+        data: { limit: 100, limit_remaining: 74.5 },
+      });
+    }),
+  );
+  assert.equal(keyRequested, true);
+  assert.equal(res.unavailable, undefined);
+  assert.equal(res.windows.length, 1);
+  assert.equal(res.windows[0].id, "openrouter-credits");
+  assert.equal(res.windows[0].used, 25.5);
+});
+
+test("openrouter.keyUsage: malformed credits data falls back to the /v1/key endpoint", async () => {
+  const p = prov({ catalogId: "openrouter", baseUrl: "https://openrouter.ai/api" });
+  let calls = 0;
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async () => {
+      calls += 1;
+      return calls === 1
+        ? jsonResponse(200, { data: {} })
+        : jsonResponse(200, {
+            data: { limit: 100, limit_remaining: 74.5 },
+          });
+    }),
+  );
+  assert.equal(calls, 2);
+  assert.equal(res.unavailable, undefined);
+  assert.equal(res.windows[0].id, "openrouter-credits");
+  assert.equal(res.windows[0].used, 25.5);
+});
+
+test("openrouter.keyUsage: zero /v1/credits balance with free-tier key -> no Balance bar, free tier + total spend surfaced", async () => {
+  const p = prov({ catalogId: "openrouter", baseUrl: "https://openrouter.ai/api" });
+  let calls = 0;
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async (url) => {
+      calls += 1;
+      if (calls === 1) {
+        assert.equal(url, "https://openrouter.ai/api/v1/credits");
+        return jsonResponse(200, { data: { total_credits: 0, total_usage: 4.25 } });
+      }
+      assert.equal(url, "https://openrouter.ai/api/v1/key");
+      return jsonResponse(200, {
+        data: {
+          limit: null,
+          limit_remaining: null,
+          limit_reset: null,
+          usage: 4.25,
+          is_free_tier: true,
+        },
+      });
+    }),
+  );
+  assert.equal(calls, 2);
+  assert.equal(res.unavailable, undefined);
+  // No 0/0 Balance bar: only the key's own spending-limit view (or none).
+  assert.deepEqual(
+    res.windows.filter((w) => w.id === "openrouter-balance"),
+    [],
+  );
+  assert.deepEqual(res.windows, []);
+  assert.equal(res.message, "Free tier · $4.25 spent · $0.00 credit balance");
+});
+
+test("openrouter.keyUsage: zero /v1/credits balance with non-free key -> no Balance bar, total spend surfaced without tier label", async () => {
+  const p = prov({ catalogId: "openrouter", baseUrl: "https://openrouter.ai/api" });
+  let calls = 0;
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async (url) => {
+      calls += 1;
+      if (calls === 1) {
+        assert.equal(url, "https://openrouter.ai/api/v1/credits");
+        return jsonResponse(200, { data: { total_credits: 0, total_usage: 583.21 } });
+      }
+      assert.equal(url, "https://openrouter.ai/api/v1/key");
+      return jsonResponse(200, {
+        data: {
+          limit: null,
+          limit_remaining: null,
+          limit_reset: null,
+          usage: 583.21,
+          is_free_tier: false,
+        },
+      });
+    }),
+  );
+  assert.equal(calls, 2);
+  assert.equal(res.unavailable, undefined);
+  assert.deepEqual(
+    res.windows.filter((w) => w.id === "openrouter-balance"),
+    [],
+  );
+  assert.deepEqual(res.windows, []);
+  assert.equal(res.message, "$583.21 spent · $0.00 credit balance");
+});
+
+test("openrouter.keyUsage: zero /v1/credits balance falls back to the /v1/key spending-limit bar", async () => {
+  const p = prov({ catalogId: "openrouter", baseUrl: "https://openrouter.ai/api" });
+  let calls = 0;
+  const res = await openrouter.keyUsage(
+    openrouterCtx(p, async (url) => {
+      calls += 1;
+      if (calls === 1) {
+        assert.equal(url, "https://openrouter.ai/api/v1/credits");
+        return jsonResponse(200, { data: { total_credits: 0, total_usage: 0 } });
+      }
+      assert.equal(url, "https://openrouter.ai/api/v1/key");
+      return jsonResponse(200, {
+        data: { limit: 100, limit_remaining: 74.5 },
+      });
+    }),
+  );
+  assert.equal(calls, 2);
+  assert.equal(res.unavailable, undefined);
+  assert.equal(res.windows.length, 1);
+  assert.equal(res.windows[0].id, "openrouter-credits");
+  assert.equal(res.windows[0].used, 25.5);
+});
+
 test("openrouter.keyUsage: missing remaining falls back to reset counter and included BYOK usage", async () => {
   const p = prov({ catalogId: "openrouter" });
   const res = await openrouter.keyUsage(
