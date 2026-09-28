@@ -80,6 +80,17 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     cacheWritePer1m: 12.5,
   },
   {
+    // Anthropic's 5-minute cache-write tier; the 1-hour tier is $8/MTok.
+    // https://platform.claude.com/docs/en/about-claude/pricing
+    id: "claude-opus-5-5",
+    label: "Claude Opus 5.5",
+    brand: "anthropic",
+    promptPer1m: 4,
+    completionPer1m: 20,
+    cachedPer1m: 0.2,
+    cacheWritePer1m: 5,
+  },
+  {
     id: "claude-opus-5",
     label: "Claude Opus 5",
     brand: "anthropic",
@@ -180,6 +191,30 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     cacheWritePer1m: 12.5,
   },
   {
+    // Standard short-context tier; long-context (>272K) rates are higher.
+    // Batch, Flex, and Fast mode have separate prices.
+    // https://developers.openai.com/api/docs/pricing
+    id: "gpt-6-sol",
+    label: "GPT-6 Sol",
+    brand: "openai",
+    promptPer1m: 2,
+    completionPer1m: 10,
+    cachedPer1m: 0.2,
+    cacheWritePer1m: 2.5,
+  },
+  {
+    // Standard short-context tier; long-context (>272K) rates are higher.
+    // Batch, Flex, and Fast mode have separate prices.
+    // https://developers.openai.com/api/docs/pricing
+    id: "gpt-6-luna",
+    label: "GPT-6 Luna",
+    brand: "openai",
+    promptPer1m: 0.1,
+    completionPer1m: 0.5,
+    cachedPer1m: 0.01,
+    cacheWritePer1m: 0.125,
+  },
+  {
     // Promotional $4/$20 pricing (at least through Nov 21 2026); the table
     // tracks the live rate, not the pre-promo $5/$30.
     // https://developers.openai.com/api/docs/pricing
@@ -212,6 +247,17 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     completionPer1m: 1.2,
     cachedPer1m: 0.02,
     cacheWritePer1m: 0.25,
+  },
+  {
+    // Standard short-context rate; the official table lists this Cyber model.
+    // https://developers.openai.com/api/docs/pricing
+    id: "gpt-5.6-cyber",
+    label: "GPT-5.6 Cyber",
+    brand: "openai",
+    promptPer1m: 12.5,
+    completionPer1m: 75,
+    cachedPer1m: 1.25,
+    cacheWritePer1m: 15.625,
   },
   {
     id: "gpt-5.5",
@@ -343,12 +389,36 @@ export const DEFAULT_MODEL_PRICING: DefaultModelPricing[] = [
     completionPer1m: 0.5,
     cachedPer1m: 0.03,
   },
+  {
+    // https://docs.z.ai/guides/overview/pricing
+    id: "glm-5.3-flashx",
+    label: "GLM-5.3-FlashX",
+    brand: "zai",
+    promptPer1m: 0.37,
+    completionPer1m: 1.25,
+    cachedPer1m: 0.075,
+  },
+  {
+    // https://docs.z.ai/guides/overview/pricing
+    id: "glm-5.1",
+    label: "GLM-5.1",
+    brand: "zai",
+    promptPer1m: 1.4,
+    completionPer1m: 4.4,
+    cachedPer1m: 0.26,
+  },
 
   // --- xAI / Grok -----------------------------------------------------------
-  // https://docs.x.ai/developers/models (short-context tier; the >=200k-gram
-  // prompt-token tier is higher and cannot be represented by this scalar
-  // table's single tier - we keep the short-context rates and won't invent a
-  // blended average).
+  // https://docs.x.ai/developers/models. Rates below use the <200k prompt
+  // tier; requests at or above 200k prompt tokens use higher rates.
+  {
+    id: "grok-4.7",
+    label: "Grok 4.7",
+    brand: "xai",
+    promptPer1m: 2,
+    completionPer1m: 6,
+    cachedPer1m: 0.5,
+  },
   {
     id: "grok-4.5",
     label: "Grok 4.5",

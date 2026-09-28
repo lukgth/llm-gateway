@@ -127,6 +127,85 @@ test("responses build forces stream/store, normalizes instructions, and sets ide
   assert.equal(built.headers["user-agent"], codexUserAgent());
   assert.equal(built.headers["authorization"], "Bearer codex-access-token");
   assert.equal(built.headers["chatgpt-account-id"], "acct-123");
+  // Cache affinity: derived key lands in both the body and the session-id
+  // header (same value), mirroring the CLI's always-sent pair.
+  const cacheKey = built.body["prompt_cache_key"];
+  assert.equal(typeof cacheKey, "string");
+  assert.match(cacheKey as string, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.equal(built.headers["session-id"], cacheKey);
+});
+
+test("prompt_cache_key is stable across turns and distinct across conversations", () => {
+  const instructions = "You are a coding agent.";
+  const firstTurn = {
+    model: "gpt-5-codex",
+    instructions,
+    input: [
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "first question" }],
+      },
+    ],
+  };
+  // A later turn of the SAME conversation: history grows (prefix preserved).
+  const laterTurn = {
+    ...firstTurn,
+    input: [
+      ...(firstTurn.input as unknown[]),
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "answer" }],
+      },
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "follow-up" }],
+      },
+    ],
+  };
+  const builtFirst = openaiCodex.responses(
+    buildCtx({ body: { ...firstTurn } }),
+  );
+  const builtLater = openaiCodex.responses(
+    buildCtx({ body: { ...laterTurn } }),
+  );
+  assert.equal(builtFirst.body["prompt_cache_key"], builtLater.body["prompt_cache_key"]);
+  assert.equal(builtFirst.headers["session-id"], builtLater.headers["session-id"]);
+
+  // A DIFFERENT conversation (different first item) gets a different key.
+  const other = openaiCodex.responses(
+    buildCtx({
+      body: {
+        ...firstTurn,
+        input: [
+          {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "different question" }],
+          },
+        ],
+      },
+    }),
+  );
+  assert.notEqual(other.body["prompt_cache_key"], builtFirst.body["prompt_cache_key"]);
+});
+
+test("client-supplied session-id header pins prompt_cache_key", () => {
+  const ctx = buildCtx({
+    body: { model: "gpt-5-codex", input: "hi" },
+    headers: { "session-id": "0e2b1c3a-0000-4000-8000-abcdefabcdef" },
+  });
+  const built = openaiCodex.responses(ctx);
+  assert.equal(
+    built.body["prompt_cache_key"],
+    "0e2b1c3a-0000-4000-8000-abcdefabcdef",
+  );
+  assert.equal(
+    built.headers["session-id"],
+    "0e2b1c3a-0000-4000-8000-abcdefabcdef",
+  );
 });
 
 test("responses build wraps bare-string input in a Responses message list", () => {

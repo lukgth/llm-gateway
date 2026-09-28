@@ -31,6 +31,7 @@ import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 import {
   CODEX_CLIENT_VERSION,
   codexIdentityHeaders,
+  codexPromptCacheKey,
   parseCodexModels,
 } from "../codex";
 
@@ -123,6 +124,20 @@ class OpenAICodexAdapter extends OpenAICompatibleAdapter {
           content: [{ type: "input_text", text: input }],
         },
       ];
+    }
+    // Cache affinity: the backend keys prompt-cache routing off
+    // prompt_cache_key (body) + session-id (header) - the CLI sends both on
+    // every request (core/src/client.rs + codex-api responses.rs). Without
+    // them each turn lands on a random cache shard. A client-supplied
+    // session-id wins (it identifies the client's conversation); otherwise
+    // derive a stable key from the conversation's fixed prefix.
+    const sessionId = ctx.headers["session-id"];
+    if (typeof sessionId === "string" && sessionId.trim()) {
+      ctx.body["prompt_cache_key"] = sessionId.trim();
+    } else {
+      const cacheKey = codexPromptCacheKey(ctx.body);
+      ctx.body["prompt_cache_key"] = cacheKey;
+      ctx.headers["session-id"] = cacheKey;
     }
     ctx.body["stream"] = true;
   }

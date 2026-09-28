@@ -1,11 +1,5 @@
-// Deterministic end-to-end verification (plan Verification steps 3 + 4):
-//   1. Import a synthetic unexpired auth.json through the real route,
-//      create the openai-codex provider from its ready session, send a
-//      non-streaming Responses request through the REAL engine, and assert
-//      Codex receives stream=true while the client gets buffered JSON.
-//   2. Cookie scenario: inject a fake ChatGPT session fetch, submit only a
-//      cookie value, and assert the exact cookie header + ready session +
-//      absence of cookie/token in views and errors.
+// End-to-end verification that a non-streaming Responses request is sent to
+// Codex as a stream and buffered back into a JSON response for the client.
 
 import http from "http";
 import { test } from "node:test";
@@ -16,23 +10,23 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { Writable } from "stream";
-import { openDatabase, closeDatabase } from "./db";
-import { createProvider } from "./repo/providers";
-import { createModel, getModel } from "./repo/models";
-import { listProviderOAuthViews } from "./repo/provider-oauth";
-import { ProviderAuthCrypto } from "./services/provider-auth/crypto";
-import { ProviderAuthService } from "./services/provider-auth/service";
-import { codexAuth } from "./services/provider-auth/integrations/codex";
-import { ProviderCredentialService as RealProviderCredentialService } from "./services/provider-credentials";
-import { ForwardingEngine } from "./gateway/engine";
-import { ThinkingConverter } from "./formats/thinking";
-import { Logger } from "./logger";
-import { WireKind } from "./types";
+import { openDatabase, closeDatabase } from "../../db";
+import { createProvider } from "../../repo/providers";
+import { createModel, getModel } from "../../repo/models";
+import { listProviderOAuthViews } from "../../repo/provider-oauth";
+import { ProviderAuthCrypto } from "./crypto";
+import { ProviderAuthService } from "./service";
+import { codexAuth } from "./integrations/codex";
+import { ProviderCredentialService as RealProviderCredentialService } from "../../services/provider-credentials";
+import { ForwardingEngine } from "../../gateway/engine";
+import { ThinkingConverter } from "../../formats/thinking";
+import { Logger } from "../../logger";
+import { WireKind } from "../../types";
 import {
   CODEX_CLIENT_VERSION,
   CODEX_ORIGINATOR,
   codexUserAgent,
-} from "./providers/codex";
+} from "../../providers/codex";
 
 function b64url(payload: object): string {
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
@@ -160,14 +154,12 @@ test("E2E: a non-stream Responses request uses Codex streaming upstream and retu
       catalogId: "openai-codex",
       retryAttempts: 1,
     });
-    const authDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-e2e-auth-"));
     const authService = new ProviderAuthService(db, crypto);
     const view = await authService.import(
       "openai-codex",
       { kind: "auth_json", value: AUTH_JSON },
       "owner-e2e",
     );
-    void authDir;
     authService.adoptForNewProvider(
       view.id,
       "owner-e2e",
