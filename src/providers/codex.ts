@@ -13,6 +13,7 @@
 //   - endpoint/models.rs     : GET /models?client_version=...
 
 import os from "os";
+import { createHash } from "crypto";
 import type { UpstreamModel } from "../formats/wire/models";
 
 export const CODEX_API_BASE_URL = "https://chatgpt.com";
@@ -152,6 +153,42 @@ export function codexRequestHeaders(
 // other rate-limit header rides along on this response at all).
 export function isCodexUsageLimitError(body: string): boolean {
   return body.includes("usage_limit_reached");
+}
+
+// Derive the Codex prompt-cache affinity key for a request body.
+//
+// The ChatGPT Codex backend routes cache affinity off the request's
+// `prompt_cache_key` (body) / `session-id` (header) pair - the official CLI
+// always sends one (codex-rs core/src/client.rs: prompt_cache_key is Some(...)
+// on every ResponsesApiRequest, and for root sessions the session-id header
+// carries the SAME value). Without it each request lands on a random cache
+// shard and multi-turn conversations re-pay the full uncached input price -
+// the CLI-equivalent traffic shows ~80%+ cached tokens once the key sticks.
+//
+// The gateway has no CLI session, so the key is derived deterministically from
+// the stable prefix of the conversation: the instructions plus the FIRST input
+// item. That pair is identical across the turns of one conversation (history
+// only ever appends) and differs across conversations, which is exactly the
+// affinity grouping wanted. Formatted as a UUID so it is indistinguishable
+// from the CLI's session-id-shaped keys.
+export function codexPromptCacheKey(body: {
+  instructions?: unknown;
+  input?: unknown;
+}): string {
+  const first = Array.isArray(body.input) ? body.input[0] : undefined;
+  const seed = JSON.stringify([
+    typeof body.instructions === "string" ? body.instructions : "",
+    first ?? null,
+  ]);
+  const digest = createHash("sha256").update(seed).digest("hex");
+  return [
+    digest.slice(0, 8),
+    digest.slice(8, 12),
+    `4${digest.slice(13, 16)}`,
+    // RFC 4122 variant: force the top nibble to 8.
+    `8${digest.slice(17, 20)}`,
+    digest.slice(20, 32),
+  ].join("-");
 }
 
 // Extract the account-quota reset delay straight from the JSON body -
