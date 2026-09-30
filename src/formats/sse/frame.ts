@@ -21,17 +21,20 @@ export class SseFrameReader {
   private buf = Buffer.alloc(0);
 
   // Feed one incoming chunk; returns every complete event block it completed
-  // (possibly none). Invisible characters are stripped as the bytes arrive.
+  // (possibly none). Invisible characters are stripped from complete blocks.
+  //
+  // The buffer holds RAW BYTES and only complete `\n\n`-terminated blocks are
+  // decoded: a chunk boundary can land mid multi-byte UTF-8 sequence (an em
+  // dash or ’ is 3 bytes), and decoding such a partial sequence per chunk would
+  // bake U+FFFD replacement chars into the stream. `\n` (0x0A) never occurs
+  // inside a multi-byte sequence, so framing on raw bytes is safe.
   feed(chunk: Buffer): string[] {
-    this.buf = Buffer.concat([
-      this.buf,
-      Buffer.from(stripInvisible(chunk.toString("utf8")), "utf8"),
-    ]);
+    this.buf = Buffer.concat([this.buf, chunk]);
     const events: string[] = [];
     while (true) {
       const idx = this.buf.indexOf("\n\n");
       if (idx === -1) break;
-      events.push(this.buf.slice(0, idx).toString("utf8"));
+      events.push(stripInvisible(this.buf.slice(0, idx).toString("utf8")));
       this.buf = this.buf.slice(idx + 2);
     }
     return events;
@@ -41,7 +44,7 @@ export class SseFrameReader {
   // cleared. Returns null when the buffer is empty. Call from `_flush`.
   flush(): string | null {
     if (this.buf.length === 0) return null;
-    const raw = this.buf.toString("utf8");
+    const raw = stripInvisible(this.buf.toString("utf8"));
     this.buf = Buffer.alloc(0);
     return raw;
   }

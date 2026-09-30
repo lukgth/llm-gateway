@@ -30,7 +30,7 @@ const CAPTURE_TEXT_CAP = 4_000;
 const CAPTURE_ARG_CAP = 4_000;
 
 export class SseUsageObserver extends Transform {
-  private tail = "";
+  private rawTail = Buffer.alloc(0);
   private seenInput: number | null = null;
   private seenOutput: number | null = null;
   private seenCached: number | null = null;
@@ -97,7 +97,7 @@ export class SseUsageObserver extends Transform {
 
   _flush(cb: TransformCallback): void {
     try {
-      if (this.tail) this.scan(Buffer.from("\n", "utf8"));
+      if (this.rawTail.length > 0) this.scan(Buffer.from("\n", "utf8"));
     } catch {
       /* observation must never disrupt the stream */
     }
@@ -105,11 +105,20 @@ export class SseUsageObserver extends Transform {
   }
 
   private scan(chunk: Buffer): void {
-    const text = this.tail + chunk.toString("utf8");
-    const lines = text.split("\n");
-    // Keep the last (possibly partial) line buffered for the next chunk.
-    this.tail = lines.pop() ?? "";
-    for (const line of lines) {
+    // Buffer RAW bytes and split on `\n` before decoding: a chunk boundary can
+    // land mid multi-byte UTF-8 sequence, and decoding that partial sequence
+    // per chunk would corrupt the observed payload (U+FFFD). `\n` (0x0A) never
+    // occurs inside a multi-byte sequence, so byte-level line framing is safe.
+    this.rawTail = Buffer.concat([this.rawTail, chunk]);
+    const lines: Buffer[] = [];
+    while (true) {
+      const idx = this.rawTail.indexOf("\n");
+      if (idx === -1) break;
+      lines.push(this.rawTail.slice(0, idx));
+      this.rawTail = this.rawTail.slice(idx + 1);
+    }
+    for (const lineBuf of lines) {
+      const line = lineBuf.toString("utf8");
       const trimmed = line.trimStart();
       if (!trimmed.startsWith("data:")) continue;
       const payload = trimmed.slice(5).trim();
