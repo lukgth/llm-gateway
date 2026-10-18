@@ -101,6 +101,15 @@ test("zen chat build emits cli client + body-derived session and preserves heade
   );
   assert.match(built.headers["x-opencode-session"], OPENCODE_ID_RE);
   assert.ok(built.headers["x-opencode-session"]);
+  // The CLI identifies the same session under all of its current header
+  // names, not just the legacy `x-opencode-session`.
+  for (const key of [
+    "x-opencode-session-id",
+    "x-session-affinity",
+    "x-session-id",
+  ]) {
+    assert.equal(built.headers[key], built.headers["x-opencode-session"]);
+  }
   // Deterministic per-conversation request id, same shape as the session
   // (stability across rebuilds is asserted in the buildFor seam test).
   assert.match(built.headers["x-opencode-request"], OPENCODE_ID_RE);
@@ -166,6 +175,39 @@ test("conflicting case variants are canonicalized and invalid caller ids are re-
   assert.equal(built.headers["x-opencode-client"], "cli");
   assert.equal(built.headers["x-opencode-project"], "global");
   assert.equal(built.headers["x-custom"], "keep-me");
+});
+
+test("derived session ids carry a recent descending timestamp", () => {
+  const id = openCodeSessionFromBody({ model: "m", user: "session-a" });
+  assert.ok(id);
+  const head = BigInt(`0x${id.slice(4, 16)}`);
+  const minted = Number(((~head) & ((1n << 48n) - 1n)) >> 12n);
+  const now = Number(BigInt(Date.now()) % (1n << 36n));
+  const age = now >= minted ? now - minted : now - minted + 2 ** 36;
+  // The gate refuses a fabricated head; the generator deliberately sits a few
+  // minutes in the past to absorb clock skew.
+  assert.ok(age >= 0 && age < 10 * 60 * 1000, `id timestamp age ${age}ms`);
+});
+
+test("a stale caller session id is re-derived, never forwarded", () => {
+  const stale = "ses_9f86d081884cAbCdEfGhIjKlMn";
+  const ctx = buildCtx({
+    body: { model: "m", user: "session-a" },
+    headers: {
+      authorization: "Bearer zen-key",
+      "x-opencode-session": stale,
+      "x-opencode-request": "msg_9f86d081884cAbCdEfGhIjKlMn",
+      "content-type": "application/json",
+    },
+  });
+  const built = opencode.chatCompletions(ctx);
+  assert.notEqual(built.headers["x-opencode-session"], stale);
+  assert.equal(
+    built.headers["x-opencode-session"],
+    openCodeSessionFromBody(ctx.body),
+  );
+  assert.match(built.headers["x-opencode-session"], OPENCODE_ID_RE);
+  assert.match(built.headers["x-opencode-request"], OPENCODE_ID_RE);
 });
 
 test("missing identity falls back to the stable gateway session, never empty", () => {
@@ -441,29 +483,30 @@ test("anonymous free-tier chat body gains stream + the CLI's required tools", ()
     upstreamModel: FREE_MODEL,
   });
   assert.equal(out.stream, true);
-  // `bash` and `read` are the names the live gate requires; glob/grep ride
-  // along as the CLI's other read-only tools.
-  assert.deepEqual(chatToolNames(out), ["bash", "glob", "grep", "read"]);
+  // `read` is the name the live gate requires; glob/grep/shell ride along as
+  // the CLI's other read-only tools, in the CLI's sorted order.
+  assert.deepEqual(chatToolNames(out), ["glob", "grep", "read", "shell"]);
   for (const tool of out.tools as Record<string, unknown>[]) {
     assert.equal(tool.type, "function");
     assertInjectedCliDefinition(tool.function as Record<string, unknown>);
+    assert.equal((tool.function as Record<string, unknown>).strict, false);
   }
   // The old "do not call this" stand-in is gone from the wire body entirely.
   assert.ok(!JSON.stringify(out).includes("must never be invoked"));
-  // Spot-check one entry against the CLI's captured schema: `bash` carries the
+  // Spot-check one entry against the CLI's captured schema: `shell` carries the
   // `command` property and requires it.
-  const bashSchema = cliToolDefinition("bash").parameters as {
+  const shellSchema = cliToolDefinition("shell").parameters as {
     properties?: Record<string, unknown>;
     required?: unknown[];
   };
   assert.ok(
-    bashSchema.properties !== undefined && "command" in bashSchema.properties,
-    "bash must carry the CLI's own `command` property",
+    shellSchema.properties !== undefined && "command" in shellSchema.properties,
+    "shell must carry the CLI's own `command` property",
   );
   assert.ok(
-    Array.isArray(bashSchema.required) &&
-      bashSchema.required.includes("command"),
-    "bash must require `command`",
+    Array.isArray(shellSchema.required) &&
+      shellSchema.required.includes("command"),
+    "shell must require `command`",
   );
   // The CLI asks for usage on the stream it forces.
   assert.deepEqual(out.stream_options, { include_usage: true });
@@ -480,13 +523,20 @@ test("a null key (no key configured) is the same anonymous caller", () => {
     upstreamModel: FREE_MODEL,
   });
   assert.equal(out.stream, true);
-  assert.deepEqual(chatToolNames(out), ["bash", "glob", "grep", "read"]);
+  assert.deepEqual(chatToolNames(out), ["glob", "grep", "read", "shell"]);
 });
 
 test("caller tools are kept verbatim and only the missing names are merged in", () => {
   const tools = [
     { type: "function", function: { name: "read_file", parameters: {} } },
-    { type: "function", function: { name: "bash", parameters: { marker: 1 } } },
+    {
+      type: "function",
+      function: {
+        name: "bash",
+        description: "Runs commands.",
+        parameters: { marker: 1 },
+      },
+    },
   ];
   const out = runStage({ model: "big-pickle", tools }, WireKind.Chat, {
     apiKey: "public",
@@ -503,18 +553,22 @@ test("caller tools are kept verbatim and only the missing names are merged in", 
     "glob",
     "grep",
     "read",
+    "shell",
   ]);
   // The appended entries are the CLI's real definitions (the caller's own
-  // entries above stay untouched).
-  for (const tool of merged.slice(2)) {
+  // entries above stay untouched); `shell` aliases the caller's `bash`.
+  for (const tool of merged.slice(2, 5)) {
     assertInjectedCliDefinition(tool.function as Record<string, unknown>);
   }
+  const shell = injectedFunction(out, "shell");
+  assert.deepEqual(shell.description, clientFunction(tools[1]).description);
+  assert.deepEqual(shell.parameters, clientFunction(tools[1]).parameters);
   // An empty array is refused upstream exactly like a missing one.
   const empty = runStage({ model: FREE_MODEL, tools: [] }, WireKind.Chat, {
     apiKey: "public",
     upstreamModel: FREE_MODEL,
   });
-  assert.deepEqual(chatToolNames(empty), ["bash", "glob", "grep", "read"]);
+  assert.deepEqual(chatToolNames(empty), ["glob", "grep", "read", "shell"]);
   // A caller that brought its own tools keeps its own tool_choice (never
   // pinned to "none").
   const callerChoice = runStage(
@@ -548,10 +602,11 @@ test("anonymous free-tier responses body gains flat placeholder tools", () => {
   const tools = out.tools as Record<string, unknown>[];
   assert.deepEqual(
     tools.map((t) => t.name),
-    ["bash", "glob", "grep", "read"],
+    ["glob", "grep", "read", "shell"],
   );
   for (const tool of tools) {
     assert.equal(tool.type, "function");
+    assert.equal(tool.strict, false);
     // Responses puts the definition flat on the entry, not under `function`.
     assert.equal("function" in tool, false);
     assertInjectedCliDefinition(tool);
@@ -605,10 +660,10 @@ test("free-tier model detection covers the suffix and the unsuffixed roster", ()
 
 test("placeholder names are operator-overridable, invalid entries dropped", () => {
   assert.deepEqual(openCodeFreeTierPlaceholderTools({}), [
-    "bash",
     "glob",
     "grep",
     "read",
+    "shell",
   ]);
   assert.deepEqual(
     openCodeFreeTierPlaceholderTools({
@@ -616,31 +671,31 @@ test("placeholder names are operator-overridable, invalid entries dropped", () =
     }),
     ["read", "bash"],
   );
-  // An override can never drop the names the gate requires by name.
+  // An override can never drop the name the gate requires by name.
   assert.deepEqual(
     openCodeFreeTierPlaceholderTools({
       [OPENCODE_PLACEHOLDER_TOOLS_ENV]: "custom_tool",
     }),
-    ["bash", "read", "custom_tool"],
+    ["read", "custom_tool"],
   );
   // An all-invalid override must never yield a tool-less (refused) body.
   assert.deepEqual(
     openCodeFreeTierPlaceholderTools({
       [OPENCODE_PLACEHOLDER_TOOLS_ENV]: "  9bad, ",
     }),
-    ["bash", "glob", "grep", "read"],
+    ["glob", "grep", "read", "shell"],
   );
 
   // ...and the body builder reads the override off the environment.
   const previous = process.env[OPENCODE_PLACEHOLDER_TOOLS_ENV];
-  process.env[OPENCODE_PLACEHOLDER_TOOLS_ENV] = "bash,glob";
+  process.env[OPENCODE_PLACEHOLDER_TOOLS_ENV] = "shell,glob";
   try {
     const body: Record<string, unknown> = { model: FREE_MODEL };
     ensureOpenCodeFreeTierBody(body, "chat");
-    // The required pair is prepended to the override, never replaced by it.
-    assert.deepEqual(chatToolNames(body), ["read", "bash", "glob"]);
+    // The required name is prepended to the override, never replaced by it.
+    assert.deepEqual(chatToolNames(body), ["read", "shell", "glob"]);
     // A configured CLI name still resolves to its CLI definition in a mixed
-    // list (here the `bash` entry, second in the injected order).
+    // list (here the `shell` entry, second in the injected order).
     assertInjectedCliDefinition(
       (body.tools as Record<string, unknown>[])[1].function as Record<
         string,
@@ -653,7 +708,7 @@ test("placeholder names are operator-overridable, invalid entries dropped", () =
     process.env[OPENCODE_PLACEHOLDER_TOOLS_ENV] = "custom_tool";
     const custom: Record<string, unknown> = { model: FREE_MODEL };
     ensureOpenCodeFreeTierBody(custom, "chat");
-    assert.deepEqual(chatToolNames(custom), ["bash", "read", "custom_tool"]);
+    assert.deepEqual(chatToolNames(custom), ["read", "custom_tool"]);
     const injected = (custom.tools as Record<string, unknown>[]).find(
       (tool) =>
         (tool.function as Record<string, unknown>).name === "custom_tool",
@@ -920,26 +975,30 @@ test("an injected name aliases the client's own tool instead of the CLI's", () =
   assert.deepEqual(chatToolNames(body), [
     "Bash",
     "Read",
-    "bash",
     "glob",
     "grep",
     "read",
+    "shell",
   ]);
 
   // `read` stands in for the caller's `Read`, so it carries the CLIENT's
   // description and parameter schema - a call the model makes against it is
-  // already valid for the tool the client will actually run.
+  // already valid for the tool the client will actually run. `shell` does the
+  // same for the caller's legacy `Bash`.
   const read = injectedFunction(body, "read");
   assert.deepEqual(read.description, clientFunction(CLIENT_READ).description);
   assert.deepEqual(read.parameters, clientFunction(CLIENT_READ).parameters);
-  const bash = injectedFunction(body, "bash");
-  assert.deepEqual(bash.description, clientFunction(CLIENT_BASH).description);
-  assert.deepEqual(bash.parameters, clientFunction(CLIENT_BASH).parameters);
+  const shell = injectedFunction(body, "shell");
+  assert.deepEqual(
+    shell.description,
+    clientFunction(CLIENT_BASH).description,
+  );
+  assert.deepEqual(shell.parameters, clientFunction(CLIENT_BASH).parameters);
 
   // The plan names the client tool each injected name stands in for, which is
   // what lets the response side rename a call back.
-  assert.deepEqual(plan.injected, ["bash", "glob", "grep", "read"]);
-  assert.deepEqual(plan.aliases, { bash: "Bash", read: "Read" });
+  assert.deepEqual(plan.injected, ["glob", "grep", "read", "shell"]);
+  assert.deepEqual(plan.aliases, { read: "Read", shell: "Bash" });
   assert.deepEqual(plan.foreign, { glob: true, grep: true });
 });
 
@@ -954,8 +1013,8 @@ test("an injected name with no client counterpart keeps the CLI's captured defin
   // the model is handed the CLI's own definitions for them - and a call to one
   // has no client tool to be delivered as.
   assert.deepEqual(plan.aliases, { read: "Read" });
-  assert.deepEqual(plan.foreign, { bash: true, glob: true, grep: true });
-  for (const name of ["bash", "glob", "grep"]) {
+  assert.deepEqual(plan.foreign, { glob: true, grep: true, shell: true });
+  for (const name of ["glob", "grep", "shell"]) {
     assertInjectedCliDefinition(injectedFunction(body, name));
   }
 });
@@ -977,10 +1036,10 @@ test("two case-insensitively equal client tools leave the alias ambiguous, never
   // route, so the CLI's own definition is forwarded and the call is dropped.
   assert.deepEqual(plan.aliases, {});
   assert.deepEqual(plan.foreign, {
-    bash: true,
     glob: true,
     grep: true,
     read: true,
+    shell: true,
   });
   assertInjectedCliDefinition(injectedFunction(body, "read"));
   // Neither of the caller's own entries is touched.
@@ -1007,18 +1066,18 @@ test("the chat request stage records the injected-tool plan for the response sid
   const plan = opencodeToolPlanFrom(state);
   assert.ok(plan, "the stage must hand the response side what it injected");
   assert.deepEqual(plan, {
-    injected: ["bash", "glob", "grep", "read"],
-    aliases: { bash: "Bash", read: "Read" },
+    injected: ["glob", "grep", "read", "shell"],
+    aliases: { read: "Read", shell: "Bash" },
     foreign: { glob: true, grep: true },
   });
   // ...and the recorded plan describes the body the stage actually produced.
   assert.deepEqual(chatToolNames(out), [
     "Bash",
     "Read",
-    "bash",
     "glob",
     "grep",
     "read",
+    "shell",
   ]);
 });
 
@@ -1259,7 +1318,7 @@ test("an empty plan is a pass-through on both sides", () => {
   // A caller that already declares every name the free tier injects - an
   // OpenCode-shaped client - gets nothing injected, so there is nothing to
   // rename or drop.
-  const own = ["bash", "glob", "grep", "read"].map((name) =>
+  const own = ["glob", "grep", "read", "shell"].map((name) =>
     clientTool(name, `The client's own ${name}.`, { arg: { type: "string" } }, [
       "arg",
     ]),
@@ -1267,7 +1326,7 @@ test("an empty plan is a pass-through on both sides", () => {
   const plan = toolPlan(own);
   assert.deepEqual(plan, { injected: [], aliases: {}, foreign: {} });
 
-  const body = chatTurn([chatCall("a", "read"), chatCall("b", "bash")]);
+  const body = chatTurn([chatCall("a", "read"), chatCall("b", "shell")]);
   const before = JSON.stringify(body);
   guardOpenCodeInjectedToolCalls(body, "chat", plan);
   assert.equal(JSON.stringify(body), before);

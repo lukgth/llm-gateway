@@ -3,39 +3,39 @@
 //
 // Zen's free tier (anonymous caller, i.e. `Authorization: Bearer public`) is
 // gated: a request that does not look like the OpenCode CLI gets
-// `403 {"type":"error","error":{"type":"FreeTierError","message":"Error from
-// provider (Console): OpenCode's free tier can only be used from within
-// OpenCode"}}` from Zen's upstream inference service. The gate was pinned down
-// against the live endpoint; the CLI's own request (opencode 1.18.31,
-// packages/opencode/src/session/llm/request.ts:187-195) is:
+// `403 {"type":"error","error":{"type":"FreeTierError",...}}` from Zen's
+// inference service. The gate was pinned down against the live endpoint; the
+// CLI's own request (opencode 2.0.32,
+// packages/core/src/session/model-request.ts:279-302 and
+// packages/ai/src/protocols/openai-chat.ts:832-855) is:
 //
 //   authorization:      Bearer public (anonymous) - the CLI's own key when unauthenticated
-//   user-agent:         opencode/<version> ai-sdk/provider-utils/<v> runtime/bun/<v>
-//   x-opencode-client:  cli
-//   x-opencode-project: the CLI's workspace project id ("global" when the CLI has none)
-//   x-opencode-session: ses_ + 26-char body (12 lowercase hex + 14 base62)
-//   x-opencode-request: msg_ + the same 26-char body
-//   body:               stream: true + the CLI's tool list + stream_options
+//   user-agent:         opencode/<channel>/<version>/<artifact>
+//                       (App.useragent: `opencode/latest/2.0.32/cli`)
+//   x-opencode-session: ses_ + a 12-hex DESCENDING timestamp + 14 base62
+//   x-opencode-session-id: the same session (the CLI's real session id)
+//   x-session-affinity / X-Session-Id: the same session (parent/fork affinity)
+//   x-opencode-client:  the CLI's app name (`cli`)
+//   x-opencode-project: the CLI's workspace project id ("global" when none)
+//   body:               stream: true + tools + stream_options.include_usage
 //
 // Verified on POST https://opencode.ai/zen/v1/chat/completions with the public
-// key, each condition isolated (repeats deterministic):
-//   - `stream` omitted/`false`                 -> 403, `stream: true` -> 200
-//   - session UUID / 6-hex body / 32-char body -> 403; 12-hex + 14-base62 -> 200
-//   - request, client and project headers      -> each removable, still 200
-//   - user-agent: none or `curl/8.5.0`         -> 403 FreeTierError;
-//     `opencode/1.16.9 cli` -> 426 UpgradeRequired; `opencode/1.18.31
-//     ai-sdk/...` and `opencode/latest/2.0.6/cli` -> 200
-//   - authorization: anything but `Bearer public` (Zen's anonymous key) -> 401
-//     AuthError, so an anonymous attempt must overwrite the client's own bearer
-//   - tools: [] / [read] / [bash] / [bash,glob] / [bash,grep] / [bash,edit]
-//     -> 403; [bash,read], [bash,glob,grep,read] and any superset -> 200
-//     (`bash` and `read` are required BY NAME; extra names are free)
-//
-// So an anonymous request must satisfy all four:
-//   - CLI-shaped session + request ids  (the id shapes above);
-//   - `stream: true`;
-//   - a `tools` array containing `bash` and `read`;
-//   - a User-Agent naming a current OpenCode release.
+// key, each condition isolated:
+//   - `stream` omitted/`false` -> 403; `stream: true` -> 200
+//   - session UUID / random string / wrong length / uppercase hex -> 403
+//   - a fabricated 12-hex head (e.g. one derived from a hash) -> 403; a head
+//     from Identifier.descending() minted now, an hour, or seven days ago ->
+//     200. The head is a clock value, not opaque bytes: see openCodeId below.
+//   - tools: absent / [] -> 403; a tool named exactly `read` -> 200. `read` is
+//     the only name the gate requires; `shell`/`bash`, `strict`, extra names
+//     and any schema are free. `Read` (capitalised) does not satisfy it.
+//   - user-agent: none or `curl/8.5.0` -> 403; any `opencode/<...>` release
+//     form -> 200 (the pinned 2.0.32 value is used here).
+//   - authorization: anything but `Bearer public` -> 403.
+//   - x-opencode-session alone satisfies the session check; the other
+//     attribution headers are metrics/cache only.
+//   - x-opencode-client: every OpenCode client name (`cli`, `opencode`,
+//     `desktop`, `tui`, ...) passes.
 // A refusal is `403 FreeTierError`; see isOpencodeFreeTierRefusal - it verdicts
 // the request, never the credential.
 //
@@ -53,30 +53,29 @@
 // OpencodeToolPlan and the guard section below.
 //
 // Zen's server reads these headers for metrics and forwards them to its
-// inference providers (routes/zen/util/handler.ts:124-135 and the $request/
-// $client/$project placeholder expansion at handler.ts:235-252). x-zen-model is
-// set by Zen itself - a client never sends it.
+// inference providers. x-zen-model is set by Zen itself - a client never sends
+// it.
 //
 // Session precedence: a caller-supplied `x-opencode-session` wins ONLY when it
-// already has the CLI's shape - a UUID (what this gateway used to mint) is
-// rejected upstream, so any other value is re-derived from the body's
-// conversation identity instead of being forwarded into a 403. Otherwise the
-// session is derived from the request body's conversation identity
-// (prompt_cache_key / user / metadata.user_id) and finally falls back to one
-// static value. Derivation reads the CLIENT-shaped body: the adapters stamp the
-// header via format-tagged `opencode:session` request stages that run
-// pre-conversion, because the converters drop identity fields
-// (`messages->chat` does not map `metadata.user_id`; `responses->chat` drops
-// conversation-chain fields). When no stage stamped a value, the build phase
-// derives from whatever body it sees and otherwise applies the static fallback,
-// so retries and converted wire formats share one session instead of minting a
-// different id per hop.
+// has the CLI's shape AND a fresh clock value - a UUID, a hash-derived id (what
+// this gateway used to mint) or a stale head is rejected upstream, so any such
+// value is re-derived from the body's conversation identity instead of being
+// forwarded into a 403. Otherwise the session is derived from the request
+// body's conversation identity (prompt_cache_key / user / metadata.user_id)
+// and finally falls back to the cached fallback. Derivation reads the
+// CLIENT-shaped body: the adapters stamp the header via format-tagged
+// `opencode:session` request stages that run pre-conversion, because the
+// converters drop identity fields (`messages->chat` does not map
+// `metadata.user_id`; `responses->chat` drops conversation-chain fields). When
+// no stage stamped a value, the build phase derives from whatever body it sees
+// and otherwise applies the fallback, so retries and converted wire formats
+// share one session instead of minting a different id per hop.
 //
-// Ids are deterministic per conversation: the CLI mints a random 26-char body
-// per session, and Zen validates only the SHAPE (the 12 hex chars are a
-// creation timestamp upstream, but a year-old and a future timestamp were both
-// accepted live). Hashing keeps retries, key rotations and format hops on one
-// prompt-cache identity.
+// Ids keep the CLI's exact shape: Identifier.descending's 12-hex timestamp
+// head followed by a 14-char base62 tail. The head must be a real clock value
+// (the gate validates its freshness), so the tail is the gateway's stable part:
+// hashing the conversation seed keeps retries, key rotations and format hops
+// on one prompt-cache identity, and a day-long cache bounds the clock work.
 
 import { createHash } from "node:crypto";
 import { parseAnthropicUserId } from "../formats/session-id";
@@ -86,6 +85,9 @@ import { parseAnthropicUserId } from "../formats/session-id";
 export const OPENCODE_CLIENT = "cli";
 
 export const OPENCODE_SESSION_HEADER = "x-opencode-session";
+export const OPENCODE_SESSION_ID_HEADER = "x-opencode-session-id";
+export const OPENCODE_AFFINITY_HEADER = "x-session-affinity";
+export const OPENCODE_SESSION_ID_ALIAS_HEADER = "x-session-id";
 export const OPENCODE_REQUEST_HEADER = "x-opencode-request";
 export const OPENCODE_CLIENT_HEADER = "x-opencode-client";
 export const OPENCODE_PROJECT_HEADER = "x-opencode-project";
@@ -95,52 +97,137 @@ export const OPENCODE_PROJECT_HEADER = "x-opencode-project";
 // is what a gateway can honestly claim - Zen consumes it for metrics only.
 export const OPENCODE_DEFAULT_PROJECT = "global";
 
-// The id body the CLI mints (Identifier.create): 12 lowercase hex characters -
-// a timestamp upstream - followed by 14 base62 characters. Zen hard-gates on
-// this shape for the free tier, so it is matched here explicitly.
+// The id the CLI mints (Identifier.descending): 12 lowercase hex characters -
+// a DESCENDING timestamp - followed by 14 base62 characters. Zen hard-gates on
+// both the shape and the timestamp's freshness for the free tier. The 12-hex
+// head is `~((Date.now() * 0x1000) + counter)` truncated to 48 bits; see
+// openCodeId.
 const ID_ALPHABET =
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const ID_BODY_HEX_LENGTH = 12;
 const ID_BODY_ALPHABET_LENGTH = 14;
+const ID_HEAD_RE = /^(?:ses_|msg_)([0-9a-f]{12})/;
+const ID_HEAD_MASK = (1n << 48n) - 1n;
+const ID_TIMESTAMP_WRAP = 1n << 36n;
 
 export const OPENCODE_SESSION_ID_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 export const OPENCODE_REQUEST_ID_RE = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 
-// The LLM-path user agent of the OpenCode CLI 1.18.31, captured verbatim off
-// the wire. The trailing segments come from the ai-sdk transport the CLI uses
-// per endpoint: `@ai-sdk/openai-compatible` (chat) reports
-// provider-utils/4.0.23, `@ai-sdk/openai` (responses) reports 4.0.40. Bump all
-// three when re-capturing against a newer CLI release.
-export const OPENCODE_VERSION = "1.18.31";
-const OPENCODE_RUNTIME = "runtime/bun/1.3.14";
-export const OPENCODE_USER_AGENT = `opencode/${OPENCODE_VERSION} ai-sdk/provider-utils/4.0.23 ${OPENCODE_RUNTIME}`;
-export const OPENCODE_USER_AGENT_RESPONSES = `opencode/${OPENCODE_VERSION} ai-sdk/provider-utils/4.0.40 ${OPENCODE_RUNTIME}`;
+// A head minted now, an hour or seven days ago is accepted live; a fabricated
+// hash-derived head is refused. Keep a wide margin below the verified window so
+// a cached per-conversation id can be reused for a full day and a caller's own
+// session header is only forwarded while it still passes the same check.
+const SESSION_ID_TTL_MS = 24 * 60 * 60 * 1000;
+const SESSION_ID_MAX_AGE_MS = 6 * 24 * 60 * 60 * 1000;
+// The CLI's clock is the upstream's reference. A small past margin keeps a
+// freshly minted id on the accepted side of any clock skew.
+const SESSION_ID_CLOCK_MARGIN_MS = 5 * 60 * 1000;
 
-// Single static fallback for requests with no caller header and no body
-// identity at all (truly stateless HTTP). Shape-valid, so it survives the gate.
-export const OPENCODE_FALLBACK_SESSION_ID = deterministicOpenCodeId(
-  "ses_",
-  "gateway:opencode:fallback-session",
-);
+// The LLM-path user agent of the OpenCode CLI 2.0.32 (App.useragent:
+// `opencode/<channel>/<version>/<artifact>`). The same value is used by every
+// wire endpoint - the CLI no longer appends ai-sdk transport segments. Bump
+// when re-capturing against a newer release.
+export const OPENCODE_VERSION = "2.0.32";
+const OPENCODE_CHANNEL = "latest";
+const OPENCODE_ARTIFACT = "cli";
+export const OPENCODE_USER_AGENT = `opencode/${OPENCODE_CHANNEL}/${OPENCODE_VERSION}/${OPENCODE_ARTIFACT}`;
+export const OPENCODE_USER_AGENT_RESPONSES = OPENCODE_USER_AGENT;
+
+// Fallback seed for requests with no caller header and no body identity at all
+// (truly stateless HTTP). The exported value is built below, after the
+// generator it depends on; `withOpenCodeAttribution` re-derives it through the
+// cache so a long-lived process never forwards a stale head.
+const OPENCODE_FALLBACK_SEED = "gateway:opencode:fallback-session";
 
 const OWNED_HEADERS = [
   OPENCODE_SESSION_HEADER,
+  OPENCODE_SESSION_ID_HEADER,
+  OPENCODE_AFFINITY_HEADER,
+  OPENCODE_SESSION_ID_ALIAS_HEADER,
   OPENCODE_REQUEST_HEADER,
   OPENCODE_CLIENT_HEADER,
   OPENCODE_PROJECT_HEADER,
 ];
 
-// Deterministic id with the CLI's exact shape: sha256-derived hex head plus a
-// base62 tail from a second digest. Stable for a given seed, so a conversation
-// keeps one session/request identity across retries, hops and wire formats.
-function deterministicOpenCodeId(prefix: string, seed: string): string {
-  const head = createHash("sha256").update(seed).digest("hex");
-  const tail = createHash("sha256").update(`${seed}:chars`).digest();
-  let chars = "";
-  for (let i = 0; i < ID_BODY_ALPHABET_LENGTH; i++) {
-    chars += ID_ALPHABET[tail[i] % ID_ALPHABET.length];
+// The CLI's id head, byte for byte (Identifier.descending): the low 48 bits of
+// `~((Date.now() * 0x1000) + counter)`, rendered big-endian as 12 lowercase
+// hex. `counter` only separates ids minted within the same millisecond; it is
+// irrelevant to the tail, so two ids may share a head without colliding.
+let idCounterMs = -1;
+let idCounter = 0;
+function openCodeTimestampHead(now = Date.now()): string {
+  const ms = Math.floor(now - SESSION_ID_CLOCK_MARGIN_MS);
+  if (ms === idCounterMs && idCounter < 0xfff) idCounter += 1;
+  else {
+    idCounterMs = ms;
+    idCounter = 0;
   }
-  return prefix + head.slice(0, ID_BODY_HEX_LENGTH) + chars;
+  const value = ~(BigInt(ms) * 0x1000n + BigInt(idCounter));
+  let head = "";
+  for (let i = 0; i < ID_BODY_HEX_LENGTH / 2; i++) {
+    head += Number((value >> BigInt(40 - 8 * i)) & 0xffn)
+      .toString(16)
+      .padStart(2, "0");
+  }
+  return head;
+}
+
+// The tail is the only part a gateway may choose: 14 base62 characters derived
+// from the conversation seed, so retries, key rotations and format hops keep
+// one identity while the head stays a truthful clock value.
+function openCodeIdTail(seed: string): string {
+  const digest = createHash("sha256").update(seed).digest();
+  let tail = "";
+  for (let i = 0; i < ID_BODY_ALPHABET_LENGTH; i++) {
+    tail += ID_ALPHABET[digest[i] % ID_ALPHABET.length];
+  }
+  return tail;
+}
+
+interface CachedOpenCodeId {
+  id: string;
+  expiresAt: number;
+}
+
+// Per-seed ids are cached for a day: the gate accepts a seven-day-old head
+// (verified live), and a day keeps a cached value far from that boundary while
+// preserving prompt-cache identity across a conversation's requests.
+const openCodeIds = new Map<string, CachedOpenCodeId>();
+const OPENCODE_ID_CACHE_MAX = 4096;
+
+function openCodeId(prefix: "ses_" | "msg_", seed: string): string {
+  const key = `${prefix}${seed}`;
+  const now = Date.now();
+  const cached = openCodeIds.get(key);
+  if (cached && cached.expiresAt > now) return cached.id;
+  const id = `${prefix}${openCodeTimestampHead(now)}${openCodeIdTail(seed)}`;
+  if (!cached && openCodeIds.size >= OPENCODE_ID_CACHE_MAX) {
+    const oldest = openCodeIds.keys().next().value;
+    if (oldest !== undefined) openCodeIds.delete(oldest);
+  }
+  openCodeIds.set(key, { id, expiresAt: now + SESSION_ID_TTL_MS });
+  return id;
+}
+
+// Age of the clock value encoded in an id head, modulo the 48-bit timestamp
+// wrap. A future head wraps to a huge age, exactly like a stale one.
+function openCodeIdAgeMs(id: string): number | null {
+  const match = ID_HEAD_RE.exec(id);
+  if (!match) return null;
+  const head = BigInt(`0x${match[1]}`);
+  const minted = ((~head) & ID_HEAD_MASK) >> 12n;
+  const now = BigInt(Date.now()) % ID_TIMESTAMP_WRAP;
+  let age = now - minted;
+  if (age < 0n) age += ID_TIMESTAMP_WRAP;
+  return Number(age);
+}
+
+// A caller-supplied attribution id is forwarded only while the gate would still
+// accept it. An old/fabricated head is re-derived; a UUID or any other shape is
+// rejected by the shape test before this.
+export function isFreshOpenCodeId(id: string): boolean {
+  const age = openCodeIdAgeMs(id);
+  return age !== null && age <= SESSION_ID_MAX_AGE_MS;
 }
 
 // Derive the OpenCode session from a request body's conversation identity,
@@ -155,23 +242,30 @@ export function openCodeSessionFromBody(
   body: Record<string, unknown>,
 ): string | undefined {
   if (typeof body.prompt_cache_key === "string" && body.prompt_cache_key)
-    return deterministicOpenCodeId("ses_", body.prompt_cache_key);
+    return openCodeId("ses_", body.prompt_cache_key);
 
   if (typeof body.user === "string" && body.user)
-    return deterministicOpenCodeId("ses_", body.user);
+    return openCodeId("ses_", body.user);
 
   // `metadata` may be a non-object on Responses-shaped bodies - guard before
   // reading user_id.
   const meta = body.metadata as Record<string, unknown> | undefined;
   if (meta && typeof meta === "object") {
     const identity = parseAnthropicUserId(meta.user_id);
-    if (identity) return deterministicOpenCodeId("ses_", identity.session_id);
+    if (identity) return openCodeId("ses_", identity.session_id);
     if (typeof meta.user_id === "string" && meta.user_id)
-      return deterministicOpenCodeId("ses_", meta.user_id);
+      return openCodeId("ses_", meta.user_id);
   }
 
   return undefined;
 }
+
+// Eager value for importers/tests; the build path re-derives it through the
+// cache so a long-lived process never forwards a stale head.
+export const OPENCODE_FALLBACK_SESSION_ID = openCodeId(
+  "ses_",
+  OPENCODE_FALLBACK_SEED,
+);
 
 // Request-transform side effect: stamp the derived session onto the attempt's
 // mutable outbound header table so it survives the format conversion into the
@@ -224,13 +318,12 @@ export function forceOpenCodeFreeTierStream(
   if (isOpencodeAnonymousKey(apiKey)) body.stream = true;
 }
 
-// The free-tier gate also inspects the User-Agent: the caller must look like a
-// current OpenCode release. Verified live (the rest of the contract held
-// constant): no UA -> 403 FreeTierError, `curl/8.5.0` -> 403,
-// `opencode/1.16.9 cli` -> 426 UpgradeRequired, `opencode/1.18.31 ai-sdk/...`
-// and the channel/version/role form `opencode/latest/2.0.6/cli` -> 200. So both
-// the ai-sdk-annotated form and the `<channel>/<version>/<role>` form count;
-// anything else is replaced by this gateway's pinned CLI identity rather than
+// The free-tier gate also inspects the User-Agent: the caller must look like an
+// OpenCode release. Verified live (the rest of the contract held constant): no
+// UA or `curl/8.5.0` -> 403 FreeTierError; the current
+// `opencode/latest/2.0.32/cli`, the older ai-sdk-annotated
+// `opencode/1.18.31 ai-sdk/...`, and the channel/version/role form all pass.
+// A stale/foreign UA is replaced by this gateway's pinned identity rather than
 // forwarded into a refusal.
 const OPENCODE_UA_VERSION_RE =
   /\bopencode\/(?:[a-z][a-z0-9-]*\/)?(\d+)\.(\d+)/i;
@@ -250,129 +343,167 @@ export function satisfiesOpencodeUserAgentContract(
 }
 
 // Zen's free tier also fingerprints the TOOL LIST: a request carrying no tools
-// is refused, and so is one whose tools omit the CLI's own core pair. Verified
-// live against /v1/chat/completions with the public key (each variant isolated,
-// the rest of the contract held constant):
-//   [] / [read] / [bash] / [bash,glob] / [bash,grep] / [bash,edit] -> 403
-//   [bash,read] / [bash,glob,grep,read] / + any extra names       -> 200
-//   [Bash,Read] / [bash,Read] / [Bash,Read,Glob,Grep,Edit,Write]  -> 403
-// so the check is CASE-SENSITIVE on the literal lowercase names: `bash` and
-// `read` must be present and everything else is free choice. That is why the
-// names are injected rather than matched loosely - the capitalised `Bash`/`Read`
-// (Glob/Grep/...) that Claude Code and most coding clients send do NOT satisfy
-// it, so a case-insensitive "the caller already has these" check would forward
-// the client into a refusal.
+// is refused. Verified live against /v1/chat/completions with the public key
+// (each variant isolated, the rest of the contract held constant):
+//   absent / []                                -> 403
+//   [Read] / [Bash,Read] / [Glob,Grep,Edit]    -> 403
+//   [read] / [shell,read] / + any extra names  -> 200
+// so the check is CASE-SENSITIVE on the literal lowercase name `read`: it must
+// be present and everything else is free choice. That is why the name is
+// injected rather than matched loosely - the capitalised `Read` (Glob/Grep/
+// Bash) that Claude Code and most coding clients send does NOT satisfy it, so a
+// case-insensitive "the caller already has these" check would forward the
+// client into a refusal.
 // The entries injected for those names are not invented stand-ins: they are the
-// OpenCode CLI's OWN tool definitions - description and JSON Schema - captured
-// verbatim from a real CLI request, so an anonymous request carries the same
-// `tools` array the CLI itself sends. The default list is the CLI's four
-// read-only tools: the two names the gate requires plus the two the CLI also
-// always ships, which keeps the outbound body faithful to the CLI without
-// handing the model the mutating ones (`edit`, `write`) it might otherwise be
-// tempted to call.
-const OPENCODE_PLACEHOLDER_TOOLS = ["bash", "glob", "grep", "read"];
+// OpenCode CLI's OWN tool definitions - description and JSON Schema - taken
+// from its source (packages/core/src/tool/plugin/{shell,glob,grep,read}.ts).
+// The default list is the CLI's four read-only direct tools in its sorted
+// order, which keeps the outbound body faithful to the CLI without handing the
+// model the mutating ones (`edit`, `write`) it might otherwise be tempted to
+// call.
+const OPENCODE_PLACEHOLDER_TOOLS = ["glob", "grep", "read", "shell"];
 
-// The CLI's own definitions, keyed by tool name, taken verbatim off the wire
-// from a captured real OpenCode CLI request (Chat Completions). Descriptions
-// and schemas are byte-exact; nothing here is paraphrased or re-wrapped.
+// The CLI's own definitions, keyed by tool name. Descriptions and schemas
+// mirror the 2.0.32 source; the free-tier gate matches the `read` name only,
+// never the contents.
 export const OPENCODE_FREE_TIER_TOOL_DEFINITIONS: Record<
   string,
   { description: string; parameters: Record<string, unknown> }
 > = {
-  bash: {
+  shell: {
     description:
-      'Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.\n\nBe aware: OS: linux, Shell: bash\n\nAll commands run in the current working directory by default. Use the `workdir` parameter if you need to run a command in a different directory. AVOID using `cd <directory> && <command>` patterns - use `workdir` instead.\n\nUse `/tmp/opencode` for temporary work outside the workspace. This directory has already been created, already exists, and is pre-approved for external directory access.\n\nIMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.\n\nBefore executing the command, please follow these steps:\n\n1. Directory Verification:\n   - If the command will create new directories or files, first use `ls` to verify the parent directory exists and is the correct location\n   - For example, before running "mkdir foo/bar", first use `ls foo` to check that "foo" exists and is the intended parent directory\n\n2. Command Execution:\n   - Always quote file paths that contain spaces with double quotes (e.g., rm "path with spaces/file.txt")\n   - Examples of proper quoting:\n     - mkdir "/Users/name/My Documents" (correct)\n     - mkdir /Users/name/My Documents (incorrect - will fail)\n     - python "/path/with spaces/script.py" (correct)\n     - python /path/with spaces/script.py (incorrect - will fail)\n   - After ensuring proper quoting, execute the command.\n   - Capture the output of the command.\n\nUsage notes:\n  - The command argument is required.\n  - You can specify an optional timeout in milliseconds. If not specified, commands will time out after 120000ms.\n  - If the output exceeds 2000 lines or 51200 bytes, it will be truncated and the full output will be written to a file. You can use Read with offset/limit to read specific sections or Grep to search the full content. Do NOT use `head`, `tail`, or other truncation commands to limit output; the full output will already be captured to a file for more precise searching.\n\n  - Avoid using Bash with the `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or when these commands are truly necessary for the task. Instead, always prefer using the dedicated tools for these commands:\n    - File search: Use Glob (NOT find or ls)\n    - Content search: Use Grep (NOT grep or rg)\n    - Read files: Use Read (NOT cat/head/tail)\n    - Edit files: Use Edit (NOT sed/awk)\n    - Write files: Use Write (NOT echo >/cat <<EOF)\n    - Communication: Output text directly (NOT echo/printf)\n  - When issuing multiple commands:\n    - If the commands are independent and can run in parallel, make multiple bash tool calls in a single message. For example, if you need to run "git status" and "git diff", send a single message with two bash tool calls in parallel.\n    - If the commands depend on each other and must run sequentially, use a single Bash call with \'&&\' to chain them together (e.g., `git add . && git commit -m "message" && git push`). For instance, if one operation must complete before another starts (like mkdir before cp, Write before Bash for git operations, or git add before git commit), run these operations sequentially instead.\n    - Use \';\' only when you need to run commands sequentially but don\'t care if earlier commands fail\n    - DO NOT use newlines to separate commands (newlines are ok in quoted strings)\n  - AVOID using `cd <directory> && <command>`. Use the `workdir` parameter to change directories instead.\n    <good-example>\n    Use workdir="/foo/bar" with command: pytest tests\n    </good-example>\n    <bad-example>\n    cd /foo/bar && pytest tests\n    </bad-example>\n\n# Git and GitHub\n- Only commit, amend, push, or create PRs when explicitly requested.\n- Before committing, inspect `git status`, `git diff`, and `git log --oneline -10`; stage only intended files and never commit secrets.\n- Write a concise commit message that matches the repo style.\n- Do not update git config, skip hooks, use interactive `-i`, force-push, or create empty commits unless explicitly requested.\n- If a commit fails or hooks reject it, fix the issue and create a new commit; do not amend the failed commit.\n- Before creating a PR, inspect status, diff, remote tracking, recent commits, and the diff from the base branch.\n- Review all commits included in the PR, not just the latest commit.\n- Use `gh` for GitHub tasks, including PRs, issues, checks, and releases; return the PR URL when done.\n',
+      "Execute a shell command and return its output. Commands run on Linux using bash. Quote file paths containing spaces or special characters. Prefer dedicated tools over shell commands when possible. When output is large, the full result is saved to a file and a truncated preview is returned. Rely on automatic truncation unless filtering the output is more useful. Commands accept an optional timeout, background commands have no timeout by default. Background commands return immediately, and you will be notified when they complete.",
     parameters: {
-      $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
       properties: {
-        command: { type: "string", description: "The command to execute" },
-        timeout: {
-          minimum: -9007199254740991,
-          exclusiveMinimum: 0,
-          type: "integer",
-          maximum: 9007199254740991,
-          description: "Optional timeout in milliseconds",
+        command: {
+          type: "string",
+          description: "Shell command string to execute",
         },
         workdir: {
           type: "string",
           description:
-            "The working directory to run the command in. Defaults to the current directory. Use this instead of 'cd' commands.",
+            "Working directory to execute the command in. Defaults to the current working directory. When possible, avoid changing directories in the command and set the working directory here instead.",
+        },
+        timeout: {
+          type: "integer",
+          minimum: 0,
+          maximum: 9007199254740991,
+          description:
+            "Timeout in milliseconds. Set to 0 to disable the timeout. Defaults to 120000 for foreground commands. Background commands have no timeout by default.",
+        },
+        background: {
+          type: "boolean",
+          description:
+            "Run the command in the background and return immediately (useful for dev servers and long-running builds). You do not need to use '&' at the end of the command when using this parameter. You will be notified when it completes. DO NOT poll for completion.",
         },
       },
       required: ["command"],
+      additionalProperties: false,
     },
   },
   glob: {
     description:
-      '- Fast file pattern matching tool that works with any codebase size\n- Supports glob patterns like "**/*.js" or "src/**/*.ts"\n- Returns matching file paths\n- Use this tool when you need to find files by name patterns\n- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead\n- You have the capability to call multiple tools in a single response. It is always better to speculatively perform multiple searches as a batch that are potentially useful.\n',
+      'Search file paths using a glob pattern (examples: "**/*.ts", "src/**/*.tsx").',
     parameters: {
-      $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
       properties: {
         pattern: {
           type: "string",
-          description: "The glob pattern to match files against",
+          description: "Glob pattern to match files against",
         },
         path: {
           type: "string",
           description:
-            'The directory to search in. If not specified, the current working directory will be used. IMPORTANT: Omit this field to use the default directory. DO NOT enter "undefined" or "null" - simply omit it for the default behavior. Must be a valid directory path if provided.',
+            "Directory to search. Defaults to the current working directory.",
+        },
+        hidden: {
+          type: "boolean",
+          description:
+            "Include hidden files and directories (default: false).",
+        },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 9007199254740991,
+          description:
+            "Maximum number of matching files to return (default: 100)",
         },
       },
       required: ["pattern"],
+      additionalProperties: false,
     },
   },
   grep: {
     description:
-      '- Fast content search tool that works with any codebase size\n- Searches file contents using regular expressions\n- Supports full regex syntax (eg. "log.*Error", "function\\s+\\w+", etc.)\n- Filter files by pattern with the include parameter (eg. "*.js", "*.{ts,tsx}")\n- Returns file paths and line numbers with matching lines\n- Use this tool when you need to find files containing specific patterns\n- If you need to identify/count the number of matches within files, use the Bash tool with `rg` (ripgrep) directly. Do NOT use `grep`.\n- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead\n',
+      "Search file contents using ripgrep's regular expression syntax or literal text matching. Use it to locate specific code, symbols, or text patterns, and narrow searches with `path` or `include`. Returns matching file paths, line numbers, and line previews.",
     parameters: {
-      $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
       properties: {
         pattern: {
           type: "string",
-          description: "The regex pattern to search for in file contents",
+          minLength: 1,
+          description:
+            "Regular expression or literal text to match in file contents.",
         },
         path: {
           type: "string",
           description:
-            "The directory to search in. Defaults to the current working directory.",
+            "File or directory to search. Defaults to the current working directory.",
         },
         include: {
           type: "string",
           description:
-            'File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")',
+            'Glob pattern to filter files (for example, "*.js" or "*.{ts,tsx}")',
+        },
+        literal: {
+          type: "boolean",
+          description:
+            "Treat `pattern` as exact text instead of a regular expression (default: false).",
+        },
+        caseSensitive: {
+          type: "boolean",
+          description: "Use case-sensitive matching (default: true).",
+        },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 9007199254740991,
+          description:
+            "Maximum number of matching lines to return (default: 100)",
         },
       },
       required: ["pattern"],
+      additionalProperties: false,
     },
   },
   read: {
     description:
-      'Read a file or directory from the local filesystem. If the path does not exist, an error is returned.\n\nUsage:\n- The filePath parameter should be an absolute path.\n- By default, this tool returns up to 2000 lines from the start of the file.\n- The offset parameter is the line number to start from (1-indexed).\n- To read later sections, call this tool again with a larger offset.\n- Use the grep tool to find specific content in large files or files with long lines.\n- If you are unsure of the correct file path, use the glob tool to look up filenames by glob pattern.\n- Contents are returned with each line prefixed by its line number as `<line>: <content>`. For example, if a file has contents "foo\\n", you will receive "1: foo\\n". For directories, entries are returned one per line (without line numbers) with a trailing `/` for subdirectories.\n- Any line longer than 2000 characters is truncated.\n- Call this tool in parallel when you know there are multiple files you want to read.\n- Avoid tiny repeated slices (30 line chunks). If you need more context, read a larger window.\n- This tool can read image files and PDFs and return them as file attachments.\n',
+      "Read the contents of a file or directory. Supports text files, images, and PDFs. Images and PDFs are presented directly to the model. Each text line is prefixed by its 1-based line number as <line>: <content>. The prefix is for reference and is not part of the file content. Directory entries are returned one per line. Use offset and limit to read large files or directories in sections. Prefer one larger read over many small slices, and use grep to find specific content in large files.",
     parameters: {
-      $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
       properties: {
-        filePath: {
+        path: {
           type: "string",
-          description: "The absolute path to the file or directory to read",
+          description: "File or directory to read",
         },
         offset: {
-          minimum: 0,
           type: "integer",
+          minimum: 0,
           maximum: 9007199254740991,
-          description: "The line number to start reading from (1-indexed)",
+          description:
+            "The line or directory entry to start reading from (1-based)",
         },
         limit: {
-          minimum: 0,
           type: "integer",
+          minimum: 0,
           maximum: 9007199254740991,
-          description: "The maximum number of lines to read (defaults to 2000)",
+          description:
+            "The maximum number of lines or directory entries to read (defaults to and capped at 2000)",
         },
       },
-      required: ["filePath"],
+      required: ["path"],
+      additionalProperties: false,
     },
   },
 };
@@ -386,15 +517,15 @@ const OPENCODE_NEUTRAL_TOOL_DESCRIPTION =
 const OPENCODE_TOOL_NAME_RE = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/;
 const MAX_PLACEHOLDER_TOOLS = 32;
 
-// The names the live gate requires BY NAME (see above). They are re-added to
+// The name the live gate requires BY NAME (see above). It is re-added to
 // whatever the operator configured, so no override - and no future edit of the
-// default list - can produce a request the gate refuses.
-const OPENCODE_REQUIRED_TOOL_NAMES = ["bash", "read"];
+// default list - can produce a tool-less or read-less request the gate refuses.
+const OPENCODE_REQUIRED_TOOL_NAMES = ["read"];
 
 // Operator override for the injected tool list, comma-separated. Invalid names
 // are dropped and an override that leaves nothing valid falls back to the
-// default list; either way the required pair above is present, so a typo can
-// never produce a refused (tool-less or bash-less) request.
+// default list; either way the required name above is present, so a typo can
+// never produce a refused request.
 export const OPENCODE_PLACEHOLDER_TOOLS_ENV =
   "OPENCODE_FREE_TIER_PLACEHOLDER_TOOLS";
 
@@ -477,17 +608,29 @@ function clientToolEntries(tools: unknown[]): ClientToolEntry[] {
   return entries;
 }
 
+// The CLI renamed its shell tool from `bash` to `shell` in 2.0. A client that
+// still declares the old name (Claude Code's `Bash`, most integrations) should
+// receive the model's `shell` call under that name, with its own schema.
+const OPENCODE_TOOL_ALIASES: Record<string, string[]> = {
+  shell: ["bash"],
+};
+
 // The client tool an injected name stands in for. Case-insensitive, and only
 // when it is the ONE match: a client declaring both `Read` and `READ` is left
-// alone rather than guessed at.
+// alone rather than guessed at. An exact name wins over a legacy alias.
 function aliasTarget(
   name: string,
   entries: ClientToolEntry[],
 ): ClientToolEntry | null {
-  const matches = entries.filter(
-    (entry) => entry.name.toLowerCase() === name.toLowerCase(),
-  );
-  return matches.length === 1 ? matches[0] : null;
+  const candidates = [name, ...(OPENCODE_TOOL_ALIASES[name] ?? [])];
+  for (const candidate of candidates) {
+    const matches = entries.filter(
+      (entry) => entry.name.toLowerCase() === candidate.toLowerCase(),
+    );
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) return null;
+  }
+  return null;
 }
 
 function toolEntry(
@@ -496,7 +639,10 @@ function toolEntry(
   parameters: unknown,
   kind: FreeTierBodyKind,
 ): unknown {
-  const base = { name, description, parameters };
+  // The CLI sends `strict: false` on every definition (its OpenAI-compatible
+  // lowering always disables strict mode); the free-tier gate accepts either
+  // value but the key is part of the captured shape.
+  const base = { name, description, parameters, strict: false };
   // Chat Completions nests the definition under `function`; Responses puts it
   // flat on the tool entry.
   return kind === "chat"
@@ -538,7 +684,7 @@ function aliasedTool(
 //     request is refused (verified live: the same body with `stream` dropped is
 //     a 403);
 //   - the CLI's core tools present in `tools` - a tool-less request is refused,
-//     and so is one that carries tools without `bash` + `read` (see
+//     and so is one that omits the literal lowercase `read` (see
 //     OPENCODE_PLACEHOLDER_TOOLS), so the missing names are MERGED IN.
 // Caller entries are never removed, reordered or replaced, so a client's own
 // definition always wins. Returns the plan of what was injected (see
@@ -571,7 +717,7 @@ export function ensureOpenCodeFreeTierBody(
     body.tools = [...existing, ...injected];
   }
   // A caller with no tools of its own gets a list that is ENTIRELY ours, and a
-  // model handed the CLI's real definitions calls them - the `bash` description
+  // model handed the CLI's real definitions calls them - the `shell` description
   // is an invitation, and the models take it: measured live on the free roster
   // (4 prompts x 2 models, chat), `tool_choice: "auto"` produced a tool call in
   // 4/4 big-pickle runs (even for "capital of France?") and 2/4 mimo runs. A
@@ -882,7 +1028,8 @@ export function isOpencodeFreeTierRefusal(
   const text = bodyText.toLowerCase();
   return (
     text.includes("freetiererror") ||
-    text.includes("free tier can only be used")
+    text.includes("free tier can only be used") ||
+    text.includes("free models aren't available")
   );
 }
 
@@ -916,16 +1063,28 @@ export function withOpenCodeAttribution(
     else if (lower === OPENCODE_REQUEST_HEADER && !request) request = value;
     else if (lower === OPENCODE_PROJECT_HEADER && !project) project = value;
   }
-  // Session: a caller value is honoured only in the CLI's own shape - forwarding
-  // anything else (a UUID, say) would just be handed a FreeTierError. Otherwise
-  // derive from the body's conversation identity, else the static fallback.
-  if (!session || !OPENCODE_SESSION_ID_RE.test(session)) {
-    session = openCodeSessionFromBody(body) ?? OPENCODE_FALLBACK_SESSION_ID;
+  // Session: a caller value is honoured only when it has the CLI's shape AND a
+  // clock value the gate still accepts - forwarding a UUID or a stale head
+  // (which includes every id this gateway minted from a hash before) is a
+  // guaranteed FreeTierError. Otherwise derive from the body's conversation
+  // identity, else the cached fallback.
+  if (
+    !session ||
+    !OPENCODE_SESSION_ID_RE.test(session) ||
+    !isFreshOpenCodeId(session)
+  ) {
+    session =
+      openCodeSessionFromBody(body) ??
+      openCodeId("ses_", OPENCODE_FALLBACK_SEED);
   }
   // Request: caller value in the CLI's shape wins (the CLI puts its message id
   // here); else a deterministic per-conversation id, seeded so it never
   // collides with the session.
-  if (!request || !OPENCODE_REQUEST_ID_RE.test(request)) {
+  if (
+    !request ||
+    !OPENCODE_REQUEST_ID_RE.test(request) ||
+    !isFreshOpenCodeId(request)
+  ) {
     request = deterministicOpenCodeCodeRequestId(body, session);
   }
 
@@ -933,7 +1092,12 @@ export function withOpenCodeAttribution(
   for (const key of Object.keys(out)) {
     if (OWNED_HEADERS.includes(key.toLowerCase())) delete out[key];
   }
+  // The CLI identifies one session under four names: its real id, the affinity
+  // it shares with a parent/fork, and the two aliases older clients read.
   out[OPENCODE_SESSION_HEADER] = session;
+  out[OPENCODE_SESSION_ID_HEADER] = session;
+  out[OPENCODE_AFFINITY_HEADER] = session;
+  out[OPENCODE_SESSION_ID_ALIAS_HEADER] = session;
   out[OPENCODE_REQUEST_HEADER] = request;
   out[OPENCODE_CLIENT_HEADER] = OPENCODE_CLIENT;
   out[OPENCODE_PROJECT_HEADER] = project ?? OPENCODE_DEFAULT_PROJECT;
@@ -970,5 +1134,5 @@ function deterministicOpenCodeCodeRequestId(
   session: string,
 ): string {
   const identity = openCodeSessionFromBody(body) ?? session;
-  return deterministicOpenCodeId("msg_", `${identity}:request`);
+  return openCodeId("msg_", `${identity}:request`);
 }

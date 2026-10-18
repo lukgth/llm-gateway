@@ -8,6 +8,8 @@ import { opencodeGo } from "./opencode-go";
 import {
   OPENCODE_CLIENT,
   OPENCODE_FALLBACK_SESSION_ID,
+  OPENCODE_USER_AGENT,
+  OPENCODE_USER_AGENT_RESPONSES,
   openCodeSessionFromBody,
   withOpenCodeAttribution,
 } from "../opencode";
@@ -103,10 +105,7 @@ test("go chat build emits cli client + body-derived session and preserves header
   );
   assert.match(built.headers["x-opencode-session"], OPENCODE_ID_RE);
   assert.ok(built.headers["x-opencode-session"]);
-  assert.equal(
-    built.headers["user-agent"],
-    "opencode/1.18.31 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14",
-  );
+  assert.equal(built.headers["user-agent"], OPENCODE_USER_AGENT);
   assert.equal(built.headers["authorization"], "Bearer go-key");
   assert.equal(built.headers["x-custom"], "keep-me");
   assert.equal(built.url, `${PROVIDER.baseUrl}/chat/completions`);
@@ -141,10 +140,7 @@ test("go responses build emits the same attribution and preserves headers/body/u
     built.headers["x-opencode-session"],
     openCodeSessionFromBody(body),
   );
-  assert.equal(
-    built.headers["user-agent"],
-    "opencode/1.18.31 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14",
-  );
+  assert.equal(built.headers["user-agent"], OPENCODE_USER_AGENT_RESPONSES);
   assert.equal(built.headers["authorization"], "Bearer go-key");
   assert.equal(built.headers["x-custom"], "keep-me");
   assert.equal(built.url, `${PROVIDER.baseUrl}/responses`);
