@@ -164,9 +164,3 @@ export function adminAuthMiddleware(secret: string) {
     });
   };
 }
-
-export function rotateSigningSecret(db: DB): string {
-  const secret = crypto.randomBytes(32).toString("hex");
-  saveSettings(db, { jwtSecret: secret });
-  return secret;
-}

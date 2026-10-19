@@ -181,7 +181,11 @@ function disabledToBetweenTools(body: AnthropicMessagesRequest): void {
   // between_tools accepts no other fields (display, budget_tokens, ...).
   body.thinking = { type: "between_tools" };
   const oc = body.output_config;
-  if (oc && typeof oc === "object" && (oc.effort === "xhigh" || oc.effort === "max"))
+  if (
+    oc &&
+    typeof oc === "object" &&
+    (oc.effort === "xhigh" || oc.effort === "max")
+  )
     oc.effort = "high";
 }
 

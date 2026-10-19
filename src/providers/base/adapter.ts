@@ -513,7 +513,7 @@ export abstract class ProviderAdapter {
       // Deliberately wider than AdapterHttpResponse.ok (2xx only): a 3xx here
       // (e.g. a proxy issuing a redirect) still means "reachable and
       // responding", matching the historical connectivity-test behavior this
-      // default replaces (see provider-probe.ts's now-legacy testProvider()).
+      // default replaces.
       ok: res.status >= 200 && res.status < 400,
       status: res.status,
       ms: res.ms,

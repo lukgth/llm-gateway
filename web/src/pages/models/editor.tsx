@@ -449,10 +449,7 @@ export default function ModelEditor() {
                 </span>
               </label>
             </Field>
-            <Field
-              label="Type"
-              hint="Wire format this model speaks."
-            >
+            <Field label="Type" hint="Wire format this model speaks.">
               <Select value={modelType} onValueChange={setModelType}>
                 <SelectTrigger>
                   <SelectValue />

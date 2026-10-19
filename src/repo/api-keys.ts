@@ -104,13 +104,6 @@ export function countApiKeys(db: DB): number {
   return row.n;
 }
 
-export function countEnabledApiKeys(db: DB): number {
-  const row = db
-    .prepare("SELECT COUNT(*) AS n FROM api_keys WHERE enabled = 1")
-    .get() as { n: number };
-  return row.n;
-}
-
 export function listApiKeys(db: DB): ApiKey[] {
   const rows = db
     .prepare(`${SELECT_JOIN} ORDER BY k.created_at DESC`)

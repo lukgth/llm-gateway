@@ -98,13 +98,6 @@ function trimDecimals(n: number, places: number): string {
   return String(parseFloat(n.toFixed(places)));
 }
 
-export function fmtBytes(n: number | null | undefined): string {
-  if (n == null) return "-";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
-
 export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return "-";
   const d = new Date(iso);
@@ -114,19 +107,6 @@ export function fmtTime(iso: string | null | undefined): string {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-  });
-}
-
-export function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString("en-US", {
-    month: "short",
-    day: "2-digit",
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
   });
 }
 

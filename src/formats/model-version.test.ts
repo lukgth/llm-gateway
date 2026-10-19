@@ -4,6 +4,8 @@ import {
   isDeepSeekReasoner,
   isGlm52Plus,
   isGlmModel,
+  isModelPost45,
+  isModelSamplingStripped,
   modelClassOf,
 } from "./model-version";
 
@@ -65,4 +67,50 @@ test("isDeepSeekReasoner matches DeepSeek models that support thinking toggle", 
   assert.equal(isDeepSeekReasoner(null), false);
   assert.equal(isDeepSeekReasoner(undefined), false);
   assert.equal(isDeepSeekReasoner(42), false);
+});
+
+// --- Claude version boundaries ----------------------------------------------
+
+test("isModelPost45 starts strictly after 4.5 and includes fable/mythos", () => {
+  for (const model of [
+    "claude-sonnet-4-6",
+    "claude-opus-4-6",
+    "claude-opus-4-7",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-haiku-5",
+    "claude-fable-5",
+    "claude-mythos-5",
+  ])
+    assert.equal(isModelPost45(model), true, model);
+  for (const model of [
+    "claude-sonnet-4-5",
+    "claude-opus-4-5",
+    "claude-haiku-4-5",
+    "gpt-5.6",
+    "custom-claude-ish",
+    "",
+  ])
+    assert.equal(isModelPost45(model), false, model);
+  assert.equal(isModelPost45(null), false);
+  assert.equal(isModelPost45(42), false);
+});
+
+test("isModelSamplingStripped covers only families that reject sampling params", () => {
+  for (const model of [
+    "claude-opus-4-7",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-fable-5",
+    "claude-mythos-5",
+  ])
+    assert.equal(isModelSamplingStripped(model), true, model);
+  for (const model of [
+    "claude-sonnet-4-6",
+    "claude-opus-4-6",
+    "claude-opus-4-5",
+    "claude-haiku-4-5",
+    "gpt-5.6",
+  ])
+    assert.equal(isModelSamplingStripped(model), false, model);
 });

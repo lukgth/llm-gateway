@@ -230,9 +230,10 @@ class OpenRouterAdapter extends OpenAICompatibleAdapter {
       const expiresAt = expiryIso(data.expires_at);
       return {
         windows: [],
-        message: zeroBalanceUsage === null
-          ? `${data.is_free_tier === true ? "Free tier · " : ""}$${allTimeUsage.toFixed(2)} used all time · No key spending limit`
-          : `${data.is_free_tier === true ? "Free tier · " : ""}$${zeroBalanceUsage.toFixed(2)} spent · $0.00 credit balance`,
+        message:
+          zeroBalanceUsage === null
+            ? `${data.is_free_tier === true ? "Free tier · " : ""}$${allTimeUsage.toFixed(2)} used all time · No key spending limit`
+            : `${data.is_free_tier === true ? "Free tier · " : ""}$${zeroBalanceUsage.toFixed(2)} spent · $0.00 credit balance`,
         ...(expiresAt ? { expiresAt } : {}),
       };
     } else {

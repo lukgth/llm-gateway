@@ -181,7 +181,7 @@ test("derived session ids carry a recent descending timestamp", () => {
   const id = openCodeSessionFromBody({ model: "m", user: "session-a" });
   assert.ok(id);
   const head = BigInt(`0x${id.slice(4, 16)}`);
-  const minted = Number(((~head) & ((1n << 48n) - 1n)) >> 12n);
+  const minted = Number((~head & ((1n << 48n) - 1n)) >> 12n);
   const now = Number(BigInt(Date.now()) % (1n << 36n));
   const age = now >= minted ? now - minted : now - minted + 2 ** 36;
   // The gate refuses a fabricated head; the generator deliberately sits a few
@@ -989,10 +989,7 @@ test("an injected name aliases the client's own tool instead of the CLI's", () =
   assert.deepEqual(read.description, clientFunction(CLIENT_READ).description);
   assert.deepEqual(read.parameters, clientFunction(CLIENT_READ).parameters);
   const shell = injectedFunction(body, "shell");
-  assert.deepEqual(
-    shell.description,
-    clientFunction(CLIENT_BASH).description,
-  );
+  assert.deepEqual(shell.description, clientFunction(CLIENT_BASH).description);
   assert.deepEqual(shell.parameters, clientFunction(CLIENT_BASH).parameters);
 
   // The plan names the client tool each injected name stands in for, which is

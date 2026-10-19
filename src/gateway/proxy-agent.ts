@@ -173,12 +173,3 @@ export function dispatchAgent(
 ): Agent {
   return agentFor(proxyUrl, isHttps) ?? directAgent(isHttps);
 }
-
-// True when a proxy string looks usable (has a scheme we support). Used by the
-// admin layer to validate before saving without constructing an agent.
-export function isSupportedProxy(proxyUrl: string): boolean {
-  const s = proxyUrl.trim().toLowerCase();
-  return (
-    s.startsWith("socks") || s.startsWith("http://") || s.startsWith("https://")
-  );
-}

@@ -85,10 +85,18 @@ test("between_tools falls back on other models", () => {
 });
 
 test("forced tool_choice downgraded to auto on 5.5/5.1 models only", () => {
-  for (const m of ["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"]) {
+  for (const m of [
+    "claude-sonnet-5-5",
+    "claude-opus-5-5",
+    "claude-fable-5-1",
+  ]) {
     const b = sanitizeAnthropicRequest(
       req({
-        tool_choice: { type: "tool", name: "t", disable_parallel_tool_use: true },
+        tool_choice: {
+          type: "tool",
+          name: "t",
+          disable_parallel_tool_use: true,
+        },
       }),
       m,
     );
@@ -97,7 +105,12 @@ test("forced tool_choice downgraded to auto on 5.5/5.1 models only", () => {
       disable_parallel_tool_use: true,
     });
   }
-  for (const m of ["claude-sonnet-5", "claude-opus-5", "claude-fable-5", "claude-opus-4-8"]) {
+  for (const m of [
+    "claude-sonnet-5",
+    "claude-opus-5",
+    "claude-fable-5",
+    "claude-opus-4-8",
+  ]) {
     assert.equal(isForcedToolChoiceUnsupported(m), false, m);
   }
   const keep = sanitizeAnthropicRequest(

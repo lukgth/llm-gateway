@@ -73,17 +73,6 @@ export function writeTools(body: Body, tools: unknown[]): Body {
   return { ...body, tools };
 }
 
-// The name of a tool def in any format ("" when absent).
-export function toolDefName(fmt: WireFmt, tool: unknown): string {
-  if (!tool || typeof tool !== "object") return "";
-  const t = tool as Body;
-  if (fmt === "chat") {
-    const fn = t.function as { name?: unknown } | undefined;
-    if (fn && typeof fn.name === "string") return fn.name;
-  }
-  return typeof t.name === "string" ? t.name : "";
-}
-
 // --- tool calls ------------------------------------------------------------
 
 function parseArgs(raw: unknown): Record<string, unknown> {

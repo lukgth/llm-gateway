@@ -15,8 +15,14 @@ test("registry resolves an extra alias to its owning model", () => {
     });
     const registry = new ModelRegistry(db);
 
-    assert.equal(registry.resolveModel("deepseek-flash").model?.alias, "deepseek-flash");
-    assert.equal(registry.resolveModel("deepseek-01").model?.alias, "deepseek-flash");
+    assert.equal(
+      registry.resolveModel("deepseek-flash").model?.alias,
+      "deepseek-flash",
+    );
+    assert.equal(
+      registry.resolveModel("deepseek-01").model?.alias,
+      "deepseek-flash",
+    );
     assert.equal(registry.resolveModel("nope").model, undefined);
   } finally {
     closeDatabase(db);
@@ -36,7 +42,10 @@ test("registry listings expose only the primary alias", () => {
     const registry = new ModelRegistry(db);
 
     const openai = registry.listOpenAI().data;
-    assert.deepEqual(openai.map((e) => e.id), [registry.exposedId("deepseek-flash")]);
+    assert.deepEqual(
+      openai.map((e) => e.id),
+      [registry.exposedId("deepseek-flash")],
+    );
     assert.equal(openai[0].canonical_slug, "deepseek-flash");
     assert.equal(openai[0].context_length, 64000);
     assert.equal(openai[0].name, "DeepSeek Flash");

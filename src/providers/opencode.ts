@@ -215,7 +215,7 @@ function openCodeIdAgeMs(id: string): number | null {
   const match = ID_HEAD_RE.exec(id);
   if (!match) return null;
   const head = BigInt(`0x${match[1]}`);
-  const minted = ((~head) & ID_HEAD_MASK) >> 12n;
+  const minted = (~head & ID_HEAD_MASK) >> 12n;
   const now = BigInt(Date.now()) % ID_TIMESTAMP_WRAP;
   let age = now - minted;
   if (age < 0n) age += ID_TIMESTAMP_WRAP;
@@ -419,8 +419,7 @@ export const OPENCODE_FREE_TIER_TOOL_DEFINITIONS: Record<
         },
         hidden: {
           type: "boolean",
-          description:
-            "Include hidden files and directories (default: false).",
+          description: "Include hidden files and directories (default: false).",
         },
         limit: {
           type: "integer",

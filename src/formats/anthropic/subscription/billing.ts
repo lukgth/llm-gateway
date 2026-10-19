@@ -52,9 +52,6 @@ export const CC_ENTRYPOINT = "cli";
 /** Static fallback when the body attestation cannot run. */
 export const CCH_PLACEHOLDER = "00000";
 
-/** Mask the xxHash64 result to its lower 20 bits (= 5 hex chars). */
-export const CCH_MASK = MASK_20;
-
 const BILLING_PREFIX = "x-anthropic-billing-header:";
 
 interface SeedPair {
@@ -76,12 +73,6 @@ const SEED_CURRENT: SeedPair = { seedHigh: 0x4d659218, seedLow: 0xe32a3268 };
 function resolveSeed(version: string): SeedPair {
   if (version === "2.1.37") return SEED_2_1_37;
   return SEED_CURRENT;
-}
-
-export function isBillingText(text: unknown): boolean {
-  return (
-    typeof text === "string" && text.trimStart().startsWith(BILLING_PREFIX)
-  );
 }
 
 // -----------------------------------------------------------------------------

@@ -255,13 +255,6 @@ export function listRequestLogs(db: DB, opts: ListOpts = {}): RequestLog[] {
   return rows.map(mapLog);
 }
 
-export function countRequestLogs(db: DB): number {
-  const row = db.prepare("SELECT COUNT(*) AS c FROM request_logs").get() as {
-    c: number;
-  };
-  return row.c;
-}
-
 export function pruneOldLogs(db: DB, retentionDays: number): number {
   const r = db
     .prepare("DELETE FROM request_logs WHERE ts < date('now', ?)")

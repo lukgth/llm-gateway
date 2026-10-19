@@ -72,7 +72,9 @@ const FORCED_TOOL_CHOICE_UNSUPPORTED_RE =
 
 /** Fable/Mythos 5.1+, Opus 5.5+, Sonnet 5.5+ reject tool_choice any/tool (400). */
 export function isForcedToolChoiceUnsupported(model: unknown): boolean {
-  return typeof model === "string" && FORCED_TOOL_CHOICE_UNSUPPORTED_RE.test(model);
+  return (
+    typeof model === "string" && FORCED_TOOL_CHOICE_UNSUPPORTED_RE.test(model)
+  );
 }
 export const ADAPTIVE_UNSUPPORTED_RE = /haiku/i;
 

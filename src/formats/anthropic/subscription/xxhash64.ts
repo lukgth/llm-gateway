@@ -131,12 +131,3 @@ function xxHash64WithSeed(data: Uint8Array, seed: bigint): bigint {
   h ^= h >> 32n;
   return h;
 }
-
-/** Hex (16-char lowercase) digest form of {@link xxHash64}. */
-export function xxHash64Hex(
-  data: Uint8Array,
-  seedHigh: number,
-  seedLow: number,
-): string {
-  return xxHash64(data, seedHigh, seedLow).toString(16).padStart(16, "0");
-}

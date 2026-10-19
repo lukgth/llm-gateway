@@ -15,7 +15,9 @@
     "typecheck": "tsc --noEmit",
     "typecheck:web": "npm run typecheck --prefix web",
     "typecheck:all": "npm run typecheck && npm run typecheck:web",
-    "test": "tsx --test \"src/**/*.test.ts\""
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "engines": {
     "node": ">=18"
@@ -35,6 +37,7 @@
     "@types/ws": "^8.18.1",
     "concurrently": "^9.1.2",
     "openai": "^6.45.0",
+    "prettier": "^3.9.10",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3"
   }

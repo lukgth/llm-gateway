@@ -163,7 +163,10 @@ test("createModel stores extra aliases and rejects duplicates and collisions", (
       /must not be empty/,
     );
     // Nothing leaked from the rejected creates.
-    assert.deepEqual(listModels(db).map((m) => m.alias), ["deepseek-flash"]);
+    assert.deepEqual(
+      listModels(db).map((m) => m.alias),
+      ["deepseek-flash"],
+    );
   } finally {
     closeDatabase(db);
   }

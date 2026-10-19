@@ -19,12 +19,10 @@
 
 import type { SearchProvider } from "./backends";
 import type { WireFmt } from "../formats/pipeline";
-import { onRequest, type TaggedRequestTransform } from "../formats/pipeline";
 import {
   toWireToolDef,
   readTools,
   writeTools,
-  toolDefName,
   type NeutralToolDef,
 } from "./tool-ops";
 
@@ -164,32 +162,6 @@ export function rewriteRequest(
   const out = writeTools(body, kept);
   delete out.stream; // the loop runs non-streaming internally
   return out;
-}
-
-// The hosted-tool definition rewrite as a FORMAT-TAGGED request transform, so the
-// web-tool machinery injects tool defs through the same tagged pipeline as every
-// other transform. Detects hosted web tools in the given format's tool list and
-// swaps them for the neutral function defs rendered in that format. Used for the
-// short-circuit / non-loop paths and any hop that needs the rewrite inline.
-export function webToolRewrite(fmt: WireFmt): TaggedRequestTransform {
-  return onRequest(fmt, `web-tools:rewrite:${fmt}`, (body) => {
-    const b = body as Record<string, unknown>;
-    const present: WebToolsPresent = { search: false, fetch: false };
-    for (const t of readTools(b)) {
-      const kind = isHostedWebTool((t ?? {}) as Record<string, unknown>);
-      if (kind === "search") present.search = true;
-      if (kind === "fetch") present.fetch = true;
-    }
-    if (!present.search && !present.fetch) return body;
-    return rewriteRequest(b, present, fmt) as typeof body;
-  });
-}
-
-// True when a tool DEFINITION (any format) is a hosted web tool. Wraps the
-// format-aware name read so callers needn't know the wire shape.
-export function isHostedWebToolDef(fmt: WireFmt, tool: unknown): boolean {
-  const name = toolDefName(fmt, tool);
-  return name === WEB_SEARCH || name === WEB_FETCH;
 }
 
 // Is this tool_use name one the gateway handles server-side?

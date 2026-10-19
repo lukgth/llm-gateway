@@ -91,8 +91,7 @@ function downgradeForcedToolChoice(
   model: string,
 ): void {
   const tc = body.tool_choice as
-    | { type?: string; disable_parallel_tool_use?: boolean }
-    | undefined;
+    { type?: string; disable_parallel_tool_use?: boolean } | undefined;
   if (!tc || typeof tc !== "object") return;
   if (tc.type !== "any" && tc.type !== "tool") return;
   if (!isForcedToolChoiceUnsupported(model)) return;
@@ -102,7 +101,7 @@ function downgradeForcedToolChoice(
   body.tool_choice = next as typeof body.tool_choice;
 }
 
-const ANTHROPIC_EFFORTS =["low", "medium", "high", "xhigh", "max"] as const;
+const ANTHROPIC_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 type AnthropicEffort = (typeof ANTHROPIC_EFFORTS)[number];
 
 export function toAnthropicEffort(value: unknown): AnthropicEffort | undefined {

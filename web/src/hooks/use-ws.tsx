@@ -387,11 +387,6 @@ export function useWsStatus() {
   return { status };
 }
 
-export function useWsRequest() {
-  const { status, request } = useWsContext();
-  return { request, status };
-}
-
 export function useWsBatchTest() {
   const { status, startBatchTest } = useWsContext();
   return { startBatchTest, status };

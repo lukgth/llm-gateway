@@ -19,8 +19,6 @@ import type { UpstreamModel } from "../formats/wire/models";
 export const CODEX_API_BASE_URL = "https://chatgpt.com";
 export const CODEX_BASE_PATH = "/backend-api/codex";
 export const CODEX_MODELS_URL = `${CODEX_API_BASE_URL}${CODEX_BASE_PATH}/models`;
-// Server-side exchange of a pasted browser session cookie for OAuth tokens.
-export const CHATGPT_SESSION_URL = `${CODEX_API_BASE_URL}/api/auth/session`;
 // OAuth token endpoint used for refresh_token grants (codex-rs login manager).
 export const OPENAI_TOKEN_URL = "https://auth.openai.com/oauth/token";
 // Personal-access-token identity lookup (codex-rs auth/personal_access_token.rs
@@ -34,38 +32,6 @@ export const CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 // DEFAULT_ORIGINATOR from codex-rs default_client.rs - the originator header
 // value and user-agent prefix.
 export const CODEX_ORIGINATOR = "codex_cli_rs";
-// Browser cookie whose VALUE is exchanged at CHATGPT_SESSION_URL. Only the
-// value is ever handled server-side; the cookie itself is never stored.
-export const CHATGPT_SESSION_COOKIE_NAME = "__Secure-next-auth.session-token";
-// Codex CLI browser-login OAuth: localhost callback + issuer (see codex-rs
-// login/server.rs - DEFAULT_PORT 1455, authorize at auth.openai.com).
-export const CODEX_LOGIN_PORT = 1455;
-export const CODEX_REDIRECT_URI = `http://localhost:${CODEX_LOGIN_PORT}/auth/callback`;
-export const OPENAI_OAUTH_ISSUER = "https://auth.openai.com";
-export const CODEX_OAUTH_SCOPE = "openid profile email offline_access";
-// Browser-context User-Agent for the chatgpt.com/api/auth/session exchange.
-// That endpoint is browser-facing behind Cloudflare; a Node/server UA makes a
-// challenge near-certain even when valid clearance cookies ride along.
-export const CHATGPT_BROWSER_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
-// Cloudflare SERVICE cookies that may accompany a pasted session-cookie line
-// (allowlist mirrors codex-rs http-client/src/chatgpt_cloudflare_cookies.rs).
-// They are replayed on the exchange request because chatgpt.com serves the
-// session JSON only when prior challenge clearance rides along.
-export const CLOUDFLARE_COOKIE_NAMES: readonly string[] = [
-  "__cf_bm",
-  "__cflb",
-  "__cfruid",
-  "__cfseq",
-  "__cfwaitingroom",
-  "_cfuvid",
-  "cf_clearance",
-  "cf_ob_info",
-  "cf_use_ob",
-];
-export function isCloudflareCookieName(name: string): boolean {
-  return CLOUDFLARE_COOKIE_NAMES.includes(name) || name.startsWith("cf_chl_");
-}
 
 // Pinned to the currently published @openai/codex npm version. This is the
 // single bump point for the three CLI-version consumers: the version header,

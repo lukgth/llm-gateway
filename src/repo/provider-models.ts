@@ -63,14 +63,6 @@ export function listProviderModels(
   return rows.map(mapProviderModel);
 }
 
-// All imported models across providers (for chain-editor lookups).
-export function listAllProviderModels(db: DB): ProviderModel[] {
-  const rows = db
-    .prepare("SELECT * FROM provider_models ORDER BY provider_id, upstream_id")
-    .all() as ProviderModelRow[];
-  return rows.map(mapProviderModel);
-}
-
 // Number of imported models per provider id, in one query. Powers the provider
 // card's "N imported" badge without fetching every row.
 export function countProviderModelsByProvider(db: DB): Record<string, number> {

@@ -141,7 +141,9 @@ export function listModels(db: DB, includeDisabled = true): Model[] {
     list.push(row.alias);
     aliasesByModel.set(row.model_id, list);
   }
-  const all = rows.map((r) => mapModel(r, links, aliasesByModel.get(r.id) ?? []));
+  const all = rows.map((r) =>
+    mapModel(r, links, aliasesByModel.get(r.id) ?? []),
+  );
   return includeDisabled ? all : all.filter((m) => m.enabled);
 }
 
@@ -165,7 +167,11 @@ export function getModel(db: DB, id: string): Model | null {
       "SELECT alias FROM model_aliases WHERE model_id = ? ORDER BY created_at, alias",
     )
     .all(id) as Array<{ alias: string }>;
-  return mapModel(row, links, aliases.map((a) => a.alias));
+  return mapModel(
+    row,
+    links,
+    aliases.map((a) => a.alias),
+  );
 }
 
 export function getModelByAlias(db: DB, alias: string): Model | null {

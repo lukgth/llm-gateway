@@ -35,7 +35,7 @@ src/ws/
 web/src/
   lib/ws-types.ts   - hand-maintained frontend mirror of src/ws/schema.ts
   hooks/use-ws.tsx  - WsProvider context + useWsSubscription/useWsStatus/
-                      useWsRequest/useWsBatchTest hooks
+                      useWsBatchTest hooks
 ```
 
 `src/ws/schema.ts` and `web/src/lib/ws-types.ts` must be kept in sync by
@@ -145,8 +145,9 @@ or, on failure:
 ```
 
 `endpoint` must be one of the `WsTopic` values - `handleRequest` reuses the
-same `fetchTopic()` the push cycle uses. The frontend's `useWsRequest()`
-hook wraps this in a promise with a 10s client-side timeout.
+same `fetchTopic()` the push cycle uses. The UI reads through standing
+subscriptions rather than this one-shot form; the request/response pair
+remains available to any WS client that prefers it.
 
 ---
 

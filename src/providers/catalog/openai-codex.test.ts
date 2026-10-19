@@ -131,7 +131,10 @@ test("responses build forces stream/store, normalizes instructions, and sets ide
   // header (same value), mirroring the CLI's always-sent pair.
   const cacheKey = built.body["prompt_cache_key"];
   assert.equal(typeof cacheKey, "string");
-  assert.match(cacheKey as string, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.match(
+    cacheKey as string,
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
   assert.equal(built.headers["session-id"], cacheKey);
 });
 
@@ -171,8 +174,14 @@ test("prompt_cache_key is stable across turns and distinct across conversations"
   const builtLater = openaiCodex.responses(
     buildCtx({ body: { ...laterTurn } }),
   );
-  assert.equal(builtFirst.body["prompt_cache_key"], builtLater.body["prompt_cache_key"]);
-  assert.equal(builtFirst.headers["session-id"], builtLater.headers["session-id"]);
+  assert.equal(
+    builtFirst.body["prompt_cache_key"],
+    builtLater.body["prompt_cache_key"],
+  );
+  assert.equal(
+    builtFirst.headers["session-id"],
+    builtLater.headers["session-id"],
+  );
 
   // A DIFFERENT conversation (different first item) gets a different key.
   const other = openaiCodex.responses(
@@ -189,7 +198,10 @@ test("prompt_cache_key is stable across turns and distinct across conversations"
       },
     }),
   );
-  assert.notEqual(other.body["prompt_cache_key"], builtFirst.body["prompt_cache_key"]);
+  assert.notEqual(
+    other.body["prompt_cache_key"],
+    builtFirst.body["prompt_cache_key"],
+  );
 });
 
 test("client-supplied session-id header pins prompt_cache_key", () => {

@@ -358,24 +358,7 @@ export function UsageBlockGridSkeleton({ count = 4 }: { count?: number }) {
   );
 }
 
-// Placeholder key/value rows for the Provider Overview-style two-column list.
-export function KeyValueSkeleton({ rows = 8 }: { rows?: number }) {
-  return (
-    <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div
-          key={i}
-          className="flex items-center justify-between gap-3 border-b border-border/60 py-1.5"
-        >
-          <Skeleton className="h-3 w-24" />
-          <Skeleton className="h-3 w-16" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// Placeholder form skeleton \u2014 a handful of label+control rows, for settings
+// Placeholder form skeleton — a handful of label+control rows, for settings
 // pages / forms hydrating from an async fetch (e.g. Settings before load).
 export function FormSkeleton({ rows = 4 }: { rows?: number }) {
   return (

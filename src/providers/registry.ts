@@ -19,7 +19,7 @@
 // It appears in the wizard immediately (via .toTemplate()) and routes through
 // its adapter - no engine changes needed.
 //
-// `./catalog/` holds only the 24 stock provider entries themselves; this file
+// `./catalog/` holds only the stock provider entries themselves; this file
 // (registry.ts), base/, quirks.ts, and types.ts are infrastructure and stay
 // at the top level of providers/ - kept apart so "add a provider" always
 // means "add one file to catalog/", never touching the machinery around it.

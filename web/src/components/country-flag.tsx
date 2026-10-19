@@ -103,8 +103,3 @@ export function CountryFlag({
     </span>
   );
 }
-
-export function countryName(code: string | null | undefined): string | null {
-  if (!code) return null;
-  return NAME_BY_CODE.get(code.toUpperCase()) ?? code.toUpperCase();
-}

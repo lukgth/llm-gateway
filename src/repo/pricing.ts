@@ -42,18 +42,6 @@ export function getPricingByAlias(db: DB, alias: string): ModelPricing | null {
   return row ? mapPricing(row) : null;
 }
 
-export function pricingMapByAliases(
-  db: DB,
-  aliases: string[],
-): Map<string, ModelPricing> {
-  if (aliases.length === 0) return new Map();
-  const placeholders = aliases.map(() => "?").join(",");
-  const rows = db
-    .prepare(`SELECT * FROM model_pricing WHERE alias IN (${placeholders})`)
-    .all(...aliases) as PricingRow[];
-  return new Map(rows.map((r) => [r.alias, mapPricing(r)]));
-}
-
 export function upsertPricing(
   db: DB,
   p: Omit<ModelPricing, "updatedAt">,
@@ -116,83 +104,4 @@ export function computeCostUsd(
       output * completionPer1m) /
     1_000_000
   );
-}
-
-// --- unit smoke test ---
-
-if (process.argv[1]?.endsWith("pricing.ts")) {
-  const assert = (cond: boolean, msg: string) => {
-    if (!cond) throw new Error(`FAIL: ${msg}`);
-  };
-
-  const full: ModelPricing = {
-    alias: "test",
-    promptPer1m: 0.15,
-    completionPer1m: 0.6,
-    cachedPer1m: 0.075,
-    cacheWritePer1m: null,
-    updatedAt: "",
-  };
-  // Full pricing: 1000 input, 500 output, 200 cached
-  // inputBillable = 1000 - 200 = 800
-  // cost = (800 * 0.15 + 200 * 0.075 + 500 * 0.6) / 1e6 = (120 + 15 + 300) / 1e6 = 0.000435
-  const c1 = computeCostUsd(full, 1000, 500, 200);
-  assert(
-    c1 !== null && Math.abs(c1 - 0.000435) < 1e-9,
-    `full pricing: got ${c1}`,
-  );
-
-  // Null pricing → null
-  const c2 = computeCostUsd(null, 1000, 500, 200);
-  assert(c2 === null, "null pricing should return null");
-
-  // Partial pricing (only prompt) → null
-  const partial: ModelPricing = { ...full, completionPer1m: null };
-  const c3 = computeCostUsd(partial, 1000, 500, 200);
-  assert(c3 === null, "partial pricing should return null");
-
-  // Cache fallback: cachedPer1m null → billed at promptPer1m
-  const noCache: ModelPricing = { ...full, cachedPer1m: null };
-  const c4 = computeCostUsd(noCache, 1000, 500, 200);
-  // inputBillable = 800, cached = 200 billed at 0.15
-  // cost = (800 * 0.15 + 200 * 0.15 + 500 * 0.6) / 1e6 = (120 + 30 + 300) / 1e6 = 0.00045
-  assert(
-    c4 !== null && Math.abs(c4 - 0.00045) < 1e-9,
-    `cache fallback: got ${c4}`,
-  );
-
-  // Null tokens → 0 cost with valid pricing
-  const c5 = computeCostUsd(full, null, null, null);
-  assert(c5 === 0, `null tokens with valid pricing: got ${c5}`);
-
-  // Write fallback: cacheWritePer1m null → billed at cached rate 0.075
-  // inputBillable = 1000 - 200 - 100 = 700
-  // cost = (700 * 0.15 + 200 * 0.075 + 100 * 0.075 + 500 * 0.6) / 1e6 = 0.0004275
-  const c6 = computeCostUsd(
-    { ...full, cacheWritePer1m: null },
-    1000,
-    500,
-    200,
-    100,
-  );
-  assert(
-    c6 !== null && Math.abs(c6 - 0.0004275) < 1e-9,
-    `write fallback: got ${c6}`,
-  );
-
-  // Distinct write rate: cacheWritePer1m 0.5
-  // cost = (700 * 0.15 + 200 * 0.075 + 100 * 0.5 + 500 * 0.6) / 1e6 = 0.00047
-  const c7 = computeCostUsd(
-    { ...full, cacheWritePer1m: 0.5 },
-    1000,
-    500,
-    200,
-    100,
-  );
-  assert(
-    c7 !== null && Math.abs(c7 - 0.00047) < 1e-9,
-    `distinct write rate: got ${c7}`,
-  );
-
-  console.log("All pricing tests passed.");
 }
