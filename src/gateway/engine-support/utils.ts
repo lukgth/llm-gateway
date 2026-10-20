@@ -35,6 +35,28 @@ export const HOP_BY_HOP = new Set([
 export const RETRY_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 export const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
+/** Client-facing response header naming the provider that produced the
+ * committed response. Value is the provider's configured display name. */
+export const PROVIDER_HEADER = "x-gateway-provider";
+
+/** Encode a provider name as a valid HTTP header value. Node rejects header
+ * values outside Latin-1, and raw non-ASCII bytes would be ambiguous across
+ * clients, so anything outside printable ASCII is percent-encoded (UTF-8). */
+export function providerHeaderValue(provider: Provider): string {
+  const name = (provider.name || provider.id).replace(/[\r\n]+/g, " ").trim();
+  return /[^\t\x20-\x7e]/.test(name) ? encodeURIComponent(name) : name;
+}
+
+/** Stamp the serving provider onto a final response-header table. Returns the
+ * same table so call sites can wrap their last header-shaping step. */
+export function stampProviderHeader(
+  headers: Record<string, string | string[]>,
+  provider: Provider,
+): Record<string, string | string[]> {
+  headers[PROVIDER_HEADER] = providerHeaderValue(provider);
+  return headers;
+}
+
 export function pathFmt(p: string | undefined | null): Fmt | null {
   if (!p) return null;
   const x = p.split("?")[0];

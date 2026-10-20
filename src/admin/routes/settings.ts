@@ -57,6 +57,7 @@ export function registerSettingsRoutes(ctx: RouteCtx, auth: AdminAuth): void {
       ssePingInterval: s.ssePingInterval,
       requestLogRetentionDays: s.requestLogRetentionDays,
       debugLogging: s.debugLogging,
+      providerHeaderEnabled: s.providerHeaderEnabled,
       webToolsEnabled: s.webToolsEnabled,
       webToolsProvider: s.webToolsProvider,
       webProviderBaseUrl: s.webProviderBaseUrl,
@@ -100,6 +101,8 @@ export function registerSettingsRoutes(ctx: RouteCtx, auth: AdminAuth): void {
       patch.requestLogRetentionDays = body.requestLogRetentionDays;
     if (typeof body.debugLogging === "boolean")
       patch.debugLogging = body.debugLogging;
+    if (typeof body.providerHeaderEnabled === "boolean")
+      patch.providerHeaderEnabled = body.providerHeaderEnabled;
     if (typeof body.webToolsEnabled === "boolean")
       patch.webToolsEnabled = body.webToolsEnabled;
     if (typeof body.webToolsProvider === "string")

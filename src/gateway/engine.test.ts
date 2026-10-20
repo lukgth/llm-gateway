@@ -417,6 +417,54 @@ test("forward() sends the adapter-built request to the wire (verbatim default)",
   }
 });
 
+test("provider response header can be disabled", async () => {
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: "x", usage: {} }));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+  const db = openDatabase(":memory:");
+  try {
+    createProvider(db, {
+      id: "up",
+      name: "up",
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKeys: ["k"],
+      catalogId: "openai",
+      retryAttempts: 1,
+    });
+    const m = createModel(db, {
+      alias: "test-model",
+      providers: [{ providerId: "up", upstreamModel: "up-1" }],
+    });
+    const engine = new ForwardingEngine(
+      db,
+      quietLogger(),
+      new ThinkingConverter(),
+      0,
+    );
+    engine.setProviderHeaderEnabled(false);
+    const { res, state } = mockRes();
+    await engine.forward(
+      { method: "POST", headers: {} } as never,
+      res as never,
+      ctxFor(getModel(db, m.id)!, {
+        model: "test-model",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+    assert.equal(state.statusCode || 200, 200);
+    assert.equal(state.headers["x-gateway-provider"], undefined);
+  } finally {
+    closeDatabase(db);
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
 test("settleUsage: cached tokens are billed at a discount but excluded from the quota-debited/logged token total", async () => {
   // Upstream reports 1000 prompt tokens (600 of which were a cache hit) + 200
   // completion tokens. The daily quota counter and request_logs.tokens-equiv
@@ -711,6 +759,7 @@ test("Claude Code captures unified usage headers for the selected key", async ()
     const snapshot = getUnifiedUsage(db, "cc", oauth.credHash);
     assert.equal(state.headers["content-type"], "application/json");
     assert.equal(state.headers["content-length"] !== undefined, true);
+    assert.equal(state.headers["x-gateway-provider"], "Claude Code");
     assert.equal(state.headers["request-id"], undefined);
     assert.equal(
       state.headers["anthropic-ratelimit-unified-status"],
@@ -1294,6 +1343,7 @@ test("Claude Code streaming responses expose only bare SSE headers", async () =>
     assert.equal(state.headers["content-type"], "text/event-stream");
     assert.equal(state.headers["cache-control"], "no-cache, no-transform");
     assert.equal(state.headers["x-accel-buffering"], "no");
+    assert.equal(state.headers["x-gateway-provider"], "Claude Code");
     assert.equal(state.headers["request-id"], undefined);
     assert.equal(
       state.headers["anthropic-ratelimit-unified-status"],
@@ -1385,6 +1435,7 @@ test("pipeThrough SSE: a native event-stream that dies surfaces a terminal error
       state.text.includes("event: error"),
       "expected a terminal error event",
     );
+    assert.equal(state.headers["x-gateway-provider"], "up");
   } finally {
     closeDatabase(db);
     await new Promise<void>((r) => server.close(() => r()));

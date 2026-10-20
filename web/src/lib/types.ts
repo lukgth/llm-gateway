@@ -742,6 +742,7 @@ export interface Settings {
   ssePingInterval: number;
   requestLogRetentionDays: number;
   debugLogging: boolean;
+  providerHeaderEnabled: boolean;
   webToolsEnabled: boolean;
   webToolsProvider: string;
   webProviderBaseUrl: string;

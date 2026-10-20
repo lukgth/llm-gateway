@@ -60,10 +60,16 @@ export class GatewayRouter {
       ssePingInterval,
       providerCredentials,
     );
+    this.engine.setProviderHeaderEnabled(
+      this.registry.getSettings().providerHeaderEnabled,
+    );
   }
 
   reload(): void {
     this.registry.reload();
+    this.engine.setProviderHeaderEnabled(
+      this.registry.getSettings().providerHeaderEnabled,
+    );
   }
 
   clearAllRateLimits(): {

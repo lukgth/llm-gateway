@@ -11,6 +11,9 @@ export interface Settings {
   /** Capture distilled request/response payloads into request logs for
    *  debugging (messages, tools, tool calls, response text). */
   debugLogging: boolean;
+  /** Send `x-gateway-provider: <name>` on committed responses so clients can
+   *  tell which provider served the request. */
+  providerHeaderEnabled: boolean;
   /** Back Anthropic's hosted web_search / web_fetch tools with a web provider so
    *  they work against any upstream model (the gateway runs the tool loop). */
   webToolsEnabled: boolean;
@@ -36,6 +39,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ssePingInterval: 15000,
   requestLogRetentionDays: 30,
   debugLogging: false,
+  providerHeaderEnabled: true,
   webToolsEnabled: false,
   webToolsProvider: "firecrawl",
   webProviderBaseUrl: "",

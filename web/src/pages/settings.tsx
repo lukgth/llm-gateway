@@ -275,6 +275,17 @@ export default function Settings() {
                 />
               </SettingRow>
               <SettingRow
+                label="Provider response header"
+                hint="Send x-gateway-provider: <provider name> on committed responses so clients can tell which provider served each request."
+              >
+                <div className="sm:flex sm:justify-end">
+                  <Switch
+                    checked={s.providerHeaderEnabled}
+                    onCheckedChange={(v) => set("providerHeaderEnabled", v)}
+                  />
+                </div>
+              </SettingRow>
+              <SettingRow
                 label="Debug request logging"
                 hint="Capture the distilled request (messages, tools) and response (text, tool calls) into each log row, and print every transform stage (builtin/family/adapter/model, request+response+stream) to the backend console as it runs - for both live traffic and the Imported Models 'Test' probe. Adds storage per request and console noise; leave off in normal operation."
               >

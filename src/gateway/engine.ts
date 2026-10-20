@@ -133,6 +133,9 @@ import {
   finalizeResponseHeaders,
   seedResponseHeaders,
   bareResponseHeaders,
+  stampProviderHeader,
+  PROVIDER_HEADER,
+  providerHeaderValue,
   readErrorBody,
   decompressStream,
   sleep,
@@ -168,6 +171,9 @@ async function readBufferedSse(
 
 export class ForwardingEngine {
   private readonly keyHealth: KeyHealthStore;
+  /** Whether committed responses carry `x-gateway-provider`. Mirrors the
+   *  providerHeaderEnabled setting; kept in sync by GatewayRouter.reload(). */
+  private providerHeaderEnabled = true;
 
   constructor(
     private readonly db: DB,
@@ -183,6 +189,21 @@ export class ForwardingEngine {
   // web-tool loop, which writes a synthetic SSE response directly). 0 disables.
   get pingInterval(): number {
     return this.ssePingInterval;
+  }
+
+  /** Apply the providerHeaderEnabled setting to new responses. */
+  setProviderHeaderEnabled(enabled: boolean): void {
+    this.providerHeaderEnabled = enabled;
+  }
+
+  /** Stamp the serving provider's name onto a final response-header table,
+   *  unless the operator disabled the header in settings. */
+  private stampProvider(
+    headers: Record<string, string | string[]>,
+    provider: Provider,
+  ): Record<string, string | string[]> {
+    if (this.providerHeaderEnabled) stampProviderHeader(headers, provider);
+    return headers;
   }
 
   clearAllRateLimits(): {
@@ -1664,6 +1685,7 @@ export class ForwardingEngine {
             : seeded;
         const buf = Buffer.from(errBody, "utf8");
         out["content-length"] = String(buf.length);
+        this.stampProvider(out, provider);
         res.writeHead(status, out);
         res.end(buf);
       }
@@ -1734,6 +1756,7 @@ export class ForwardingEngine {
             : seeded;
         const buf = Buffer.from(errText, "utf8");
         out["content-length"] = String(buf.length);
+        this.stampProvider(out, provider);
         res.writeHead(status, out);
         res.end(buf);
       }
@@ -1849,6 +1872,7 @@ export class ForwardingEngine {
       status,
       effectiveHeaders,
       route.clientFmt,
+      provider,
       provider.catalogId === "claude-code",
     );
     return {
@@ -1900,6 +1924,7 @@ export class ForwardingEngine {
       contentType: route.convert ? "text/event-stream" : undefined,
       sse: true,
     });
+    this.stampProvider(out, provider);
 
     // Unsupported streaming conversion - a format bridge was required but none
     // exists. End gracefully with a clear note; settle the reservation and log
@@ -2150,7 +2175,9 @@ export class ForwardingEngine {
     } else {
       const text = await readErrorBody(upRes, MAX_BUFFER_BYTES);
       if (Buffer.byteLength(text) >= MAX_BUFFER_BYTES) {
-        if (!res.headersSent)
+        if (!res.headersSent) {
+          if (this.providerHeaderEnabled)
+            res.setHeader(PROVIDER_HEADER, providerHeaderValue(provider));
           res.status(502).json({
             error: {
               type: "upstream_error",
@@ -2158,6 +2185,7 @@ export class ForwardingEngine {
               source: "gateway",
             },
           });
+        }
         return {};
       }
 
@@ -2184,6 +2212,7 @@ export class ForwardingEngine {
           status,
           headers,
           stripped,
+          provider,
           provider.catalogId === "claude-code",
         );
         return {};
@@ -2241,6 +2270,7 @@ export class ForwardingEngine {
         status,
         headers,
         stripped,
+        provider,
         provider.catalogId === "claude-code",
       );
       return { ...actual, debugResponse };
@@ -2255,6 +2285,7 @@ export class ForwardingEngine {
       contentLength: out.length,
       contentType: route.convert ? "application/json" : undefined,
     });
+    this.stampProvider(outHeaders, provider);
     if (!res.headersSent) res.writeHead(status, outHeaders);
     res.end(out);
     return { ...actual, debugResponse };
@@ -2268,10 +2299,12 @@ export class ForwardingEngine {
     status: number,
     headers: IncomingMessage["headers"],
     clientFmt: Route["clientFmt"],
+    provider: Provider,
     bareHeaders = false,
   ): void {
     const seeded = filteredHeaders(headers);
     const out = bareHeaders ? bareResponseHeaders(seeded) : seeded;
+    this.stampProvider(out, provider);
     res.on("error", (err: Error) =>
       this.logger.warn("client_res_error", { err: err.message }),
     );
@@ -2371,6 +2404,7 @@ export class ForwardingEngine {
     status: number,
     headers: IncomingMessage["headers"],
     buf: Buffer,
+    provider: Provider,
     bareHeaders = false,
   ): void {
     if (res.headersSent) {
@@ -2384,6 +2418,7 @@ export class ForwardingEngine {
     const seeded = seedResponseHeaders(headers, { stripEncoding: true });
     const out = bareHeaders ? bareResponseHeaders(seeded) : seeded;
     out["content-length"] = String(buf.length);
+    this.stampProvider(out, provider);
     res.writeHead(status, out);
     res.end(buf);
   }
