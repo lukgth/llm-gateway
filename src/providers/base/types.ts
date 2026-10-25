@@ -77,6 +77,12 @@ export interface BuildCtx {
   url: string;
   /** Default header set (client passthrough + auth + extraHeaders). */
   headers: Record<string, string>;
+  /**
+   * The attempt's transform state bag, when the engine has one. A bespoke
+   * builder that injects something the response side must police (e.g. Zen's
+   * free-tier tool entries) records it here, exactly like a request stage does.
+   */
+  state?: Record<string, unknown>;
 }
 
 // What a build method returns - any field may be rewritten by a bespoke provider.

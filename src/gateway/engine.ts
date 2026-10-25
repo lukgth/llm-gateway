@@ -22,12 +22,12 @@ import { URL } from "url";
 import { pipeline as streamPipeline, PassThrough } from "stream";
 import { collectResponsesSse } from "../formats/sse/responses-collector";
 import { collectChatSse } from "../formats/sse/chat-collector";
-import type { IncomingMessage } from "http";
+import type { IncomingHttpHeaders, IncomingMessage } from "http";
 import type { Request, Response } from "express";
 import type { Database as DB } from "better-sqlite3";
 import type { Logger } from "../logger";
 import type { Model, Provider } from "../types";
-import { dispatchAgent } from "./proxy-agent";
+import { dispatchAgent, proxyScheme, redactedProxyUrl } from "./proxy-agent";
 import { buildUpstreamUrl, hostFromUrl } from "./url";
 import {
   adapterForProvider,
@@ -105,7 +105,18 @@ import {
   isClineFreeLimitError,
 } from "../providers/clinefree";
 import { codexRetryDelayMs, isCodexUsageLimitError } from "../providers/codex";
-import { isOpencodeFreeTierRefusal } from "../providers/opencode";
+import {
+  isOpencodeFreeTierRefusal,
+  needsOpenCodeFreeTierRelay,
+} from "../providers/opencode";
+import {
+  ensureZenRelay,
+  ZEN_RELAY_INSECURE_HEADER,
+  ZEN_RELAY_PROXY_HEADER,
+  ZEN_RELAY_TARGET_HEADER,
+  ZEN_RELAY_TOKEN_HEADER,
+  type ZenRelay,
+} from "../providers/opencode-zen-relay";
 import {
   contextWindowLimit,
   countInputTokens,
@@ -173,7 +184,7 @@ export class ForwardingEngine {
   private readonly keyHealth: KeyHealthStore;
   /** Whether committed responses carry `x-gateway-provider`. Mirrors the
    *  providerHeaderEnabled setting; kept in sync by GatewayRouter.reload(). */
-  private providerHeaderEnabled = true;
+  private providerHeaderEnabled = false;
 
   constructor(
     private readonly db: DB,
@@ -841,7 +852,14 @@ export class ForwardingEngine {
                 result.status,
               );
             }
-          } else if (result.status === 429) {
+          } else if (
+            result.status === 429 &&
+            // A Zen free-tier refusal arrives as 429 FreeUsageLimitError but is
+            // a verdict on the REQUEST (transport/prompt profile/burst window),
+            // not on the credential: no cooldown, no key-health penalty - the
+            // anonymous `public` key must stay usable for the next request.
+            !result.refusal
+          ) {
             if (
               result.rateLimitScope === "model" &&
               result.rateLimitModelClass
@@ -1164,6 +1182,9 @@ export class ForwardingEngine {
         resolve,
         url: defaultUrl,
         headers: defaultHeaders,
+        // Lets a bespoke builder record what it injected into the wire body
+        // (e.g. Zen's free-tier tool entries) for the response-side guards.
+        state: attemptCtx.state,
       });
 
       // JSON.stringify can throw on a BigInt / circular structure a transform or
@@ -1196,11 +1217,51 @@ export class ForwardingEngine {
       };
     }
 
+    // OpenCode Zen's anonymous free tier only accepts its own TLS ClientHello
+    // (Bun fetch; see src/providers/opencode.ts). Node cannot emit it, so those
+    // attempts are handed to a loopback Bun relay: same URL/headers/body, but
+    // re-issued over Bun's fetch, with status/headers/body mirrored back so the
+    // SSE pipeline below is unchanged. A relayed hop must not also use a Node
+    // proxy agent - it dials 127.0.0.1 - so the provider's proxy travels as a
+    // header instead and the relay applies it to its own fetch.
+    let relay: ZenRelay | null = null;
+    if (
+      provider.catalogId === "opencode" &&
+      upstreamUrl.protocol === "https:" &&
+      needsOpenCodeFreeTierRelay(provider.catalogId, key, upstreamModel)
+    ) {
+      // Bun's fetch - the only stack whose ClientHello the gate accepts -
+      // speaks HTTP(S) proxies and nothing else. A SOCKS proxy therefore cannot
+      // carry these attempts at all; say so instead of letting Bun answer
+      // `UnsupportedProxyProtocol` from inside the relay.
+      const scheme = proxyScheme(provider.proxy);
+      if (scheme.startsWith("socks")) {
+        return {
+          committed: false,
+          reason: `provider proxy ${redactedProxyUrl(provider.proxy!)} cannot be used for OpenCode Zen free-tier requests: they leave over Bun's fetch, which only supports http:// and https:// proxies - configure an HTTP(S) proxy for this provider`,
+        };
+      }
+      relay = await ensureZenRelay(this.logger);
+      if (relay) {
+        const target = upstreamUrl.toString();
+        upstreamUrl = new URL(relay.url);
+        headers = {
+          ...headers,
+          [ZEN_RELAY_TARGET_HEADER]: target,
+          [ZEN_RELAY_TOKEN_HEADER]: relay.token,
+          ...(provider.tlsVerify ? {} : { [ZEN_RELAY_INSECURE_HEADER]: "1" }),
+          ...(provider.proxy
+            ? { [ZEN_RELAY_PROXY_HEADER]: provider.proxy }
+            : {}),
+        };
+      }
+    }
+
     const isHttps = upstreamUrl.protocol === "https:";
     const transport = isHttps ? https : http;
     let proxyAgent: ReturnType<typeof dispatchAgent>;
     try {
-      proxyAgent = dispatchAgent(provider.proxy, isHttps);
+      proxyAgent = dispatchAgent(relay ? null : provider.proxy, isHttps);
     } catch (err) {
       return {
         committed: false,
@@ -1395,6 +1456,31 @@ export class ForwardingEngine {
     };
   }
 
+  // Commit an upstream's non-2xx body to the client verbatim: same status,
+  // same headers (encoding stripped, `content-length` recomputed for the
+  // decoded body - `filteredHeaders` may drop content-encoding) and the
+  // provider stamp. Used by the generic error path and by the Zen free-tier
+  // refusal, which is a verdict on the REQUEST and must reach the client as-is.
+  private commitUpstreamBody(
+    res: Response,
+    provider: Provider,
+    status: number,
+    headers: IncomingHttpHeaders,
+    body: string,
+  ): void {
+    if (res.headersSent) return;
+    const seeded = filteredHeaders(headers, { stripEncoding: true });
+    const out =
+      provider.catalogId === "claude-code"
+        ? bareResponseHeaders(seeded)
+        : seeded;
+    const buf = Buffer.from(body, "utf8");
+    out["content-length"] = String(buf.length);
+    this.stampProvider(out, provider);
+    res.writeHead(status, out);
+    res.end(buf);
+  }
+
   private async handleUpstreamResponse(
     upRes: IncomingMessage,
     res: Response,
@@ -1443,6 +1529,34 @@ export class ForwardingEngine {
 
     if (RETRY_STATUS.has(status)) {
       const errBody = await readErrorBody(upRes, MAX_BUFFER_BYTES);
+      // OpenCode Zen free tier: the gate answers 429 FreeUsageLimitError (and
+      // the older 403/451 FreeTierError) for a request it does not accept -
+      // transport ClientHello or prompt profile. That verdicts the REQUEST,
+      // never the credential: commit the upstream body verbatim, spend no retry
+      // and touch no key health (an identical retry gets an identical answer).
+      if (
+        provider.catalogId === "opencode" &&
+        isOpencodeFreeTierRefusal(status, errBody)
+      ) {
+        logUpstreamNon2xx(this.logger, {
+          status,
+          provider: provider.id,
+          upstreamModel,
+          path: ctx.clientPath,
+          keyMask: upstreamKey.mask,
+          requestHeaders,
+          responseHeaders: headers,
+          body: errBody,
+          category: "non-retryable",
+        });
+        this.commitUpstreamBody(res, provider, status, headers, errBody);
+        return {
+          committed: true,
+          status,
+          error: `upstream ${status}`,
+          refusal: true,
+        };
+      }
       if (
         isClaudeCodeUsageCreditsError({
           status,
@@ -1748,18 +1862,7 @@ export class ForwardingEngine {
         body: errText,
         category: "non-retryable",
       });
-      if (!res.headersSent) {
-        const seeded = filteredHeaders(headers, { stripEncoding: true });
-        const out =
-          provider.catalogId === "claude-code"
-            ? bareResponseHeaders(seeded)
-            : seeded;
-        const buf = Buffer.from(errText, "utf8");
-        out["content-length"] = String(buf.length);
-        this.stampProvider(out, provider);
-        res.writeHead(status, out);
-        res.end(buf);
-      }
+      this.commitUpstreamBody(res, provider, status, headers, errText);
       return {
         committed: true,
         status,

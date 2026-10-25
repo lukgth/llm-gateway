@@ -18,6 +18,10 @@ import {
   guardOpenCodeResponsesStreamEvent,
   isOpencodeFreeTierModel,
   isOpencodeFreeTierRefusal,
+  needsOpenCodeFreeTierRelay,
+  openCodeEnvMarker,
+  applyOpenCodeFreeTierContract,
+  forceOpenCodeFreeTierStream,
   openCodeFreeTierPlaceholderTools,
   openCodeSessionFromBody,
   opencodeToolPlanFrom,
@@ -208,6 +212,52 @@ test("a stale caller session id is re-derived, never forwarded", () => {
   );
   assert.match(built.headers["x-opencode-session"], OPENCODE_ID_RE);
   assert.match(built.headers["x-opencode-request"], OPENCODE_ID_RE);
+});
+
+test("anonymous free-tier builds mint a fresh id pair per call", () => {
+  // Zen's free allowance is metered per session id, so a conversation-stable id
+  // (or a replayed one) eventually answers FreeUsageLimitError. The CLI mints a
+  // new Identifier per request; mirrored here.
+  const build = () =>
+    opencode.chatCompletions(
+      buildCtx({
+        apiKey: "public",
+        model: "big-pickle",
+        body: { model: "big-pickle", user: "session-a" },
+        headers: {
+          authorization: "Bearer public",
+          "content-type": "application/json",
+        },
+      }),
+    );
+  const first = build();
+  const second = build();
+  assert.match(first.headers["x-opencode-session"], OPENCODE_ID_RE);
+  assert.match(first.headers["x-opencode-request"], OPENCODE_ID_RE);
+  assert.notEqual(
+    first.headers["x-opencode-session"],
+    second.headers["x-opencode-session"],
+  );
+  assert.notEqual(
+    first.headers["x-opencode-request"],
+    second.headers["x-opencode-request"],
+  );
+  // Session heads descend from the clock, request heads ascend, exactly like the
+  // CLI's Identifier helpers.
+  const clock = (id: string) => BigInt(`0x${id.slice(4, 16)}`);
+  assert.ok(clock(first.headers["x-opencode-session"]) > 1n << 47n);
+  assert.ok(clock(first.headers["x-opencode-request"]) < 1n << 47n);
+  // The low 12 bits are the CLI's per-millisecond counter, which starts at 1:
+  // Zen refuses a zero counter as a fabricated id, so no minted id may have it.
+  for (const id of [
+    first.headers["x-opencode-session"],
+    first.headers["x-opencode-request"],
+  ]) {
+    const raw = id.startsWith("ses_")
+      ? ~clock(id) & ((1n << 48n) - 1n)
+      : clock(id);
+    assert.notEqual(raw & 0xfffn, 0n, `zero counter in ${id}`);
+  }
 });
 
 test("missing identity falls back to the stable gateway session, never empty", () => {
@@ -439,13 +489,28 @@ function runStage(
     (s) => s.format === clientFmt,
   );
   assert.ok(stage, `no opencode:session stage tagged ${clientFmt}`);
-  return stage.apply(
+  const staged = stage.apply(
     { ...body },
     {
       ...transformCtx({}, clientFmt),
       ...ctx,
     },
   ) as Record<string, unknown>;
+  // The free-tier BODY contract runs at build time on the provider's wire body
+  // (see the adapter's chatCompletions/responses); emulate that last step so
+  // these tests assert the body the provider actually receives. A Messages
+  // client is converted to Chat before the build, which the contract tests
+  // below cover through the builder itself.
+  if (clientFmt !== WireKind.Messages) {
+    forceOpenCodeFreeTierStream(staged, ctx.apiKey ?? null);
+    applyOpenCodeFreeTierContract(
+      staged,
+      clientFmt === WireKind.Responses ? "responses" : "chat",
+      ctx.apiKey ?? null,
+      ctx.upstreamModel ?? (staged.model as string | undefined),
+    );
+  }
+  return staged;
 }
 
 function chatToolNames(body: Record<string, unknown>): string[] {
@@ -477,15 +542,15 @@ function assertInjectedCliDefinition(fn: Record<string, unknown>): void {
   assert.deepEqual(fn.parameters, definition.parameters);
 }
 
-test("anonymous free-tier chat body gains stream + the CLI's required tools", () => {
+test("anonymous free-tier chat body gains stream + the gate's read tool and env block", () => {
   const out = runStage({ model: FREE_MODEL }, WireKind.Chat, {
     apiKey: "public",
     upstreamModel: FREE_MODEL,
   });
   assert.equal(out.stream, true);
-  // `read` is the name the live gate requires; glob/grep/shell ride along as
-  // the CLI's other read-only tools, in the CLI's sorted order.
-  assert.deepEqual(chatToolNames(out), ["glob", "grep", "read", "shell"]);
+  // `read` is the only name the live gate requires, so it is the only entry
+  // injected: extra names would just hand the model tools nobody can run.
+  assert.deepEqual(chatToolNames(out), ["read"]);
   for (const tool of out.tools as Record<string, unknown>[]) {
     assert.equal(tool.type, "function");
     assertInjectedCliDefinition(tool.function as Record<string, unknown>);
@@ -493,21 +558,24 @@ test("anonymous free-tier chat body gains stream + the CLI's required tools", ()
   }
   // The old "do not call this" stand-in is gone from the wire body entirely.
   assert.ok(!JSON.stringify(out).includes("must never be invoked"));
-  // Spot-check one entry against the CLI's captured schema: `shell` carries the
-  // `command` property and requires it.
-  const shellSchema = cliToolDefinition("shell").parameters as {
+  // Spot-check the entry against the CLI's captured schema: `read` carries the
+  // `path` property and requires it.
+  const readSchema = cliToolDefinition("read").parameters as {
     properties?: Record<string, unknown>;
     required?: unknown[];
   };
   assert.ok(
-    shellSchema.properties !== undefined && "command" in shellSchema.properties,
-    "shell must carry the CLI's own `command` property",
+    readSchema.properties !== undefined && "path" in readSchema.properties,
+    "read must carry the CLI's own `path` property",
   );
   assert.ok(
-    Array.isArray(shellSchema.required) &&
-      shellSchema.required.includes("command"),
-    "shell must require `command`",
+    Array.isArray(readSchema.required) && readSchema.required.includes("path"),
+    "read must require `path`",
   );
+  // The prompt profile's other half (the <env> system block) is covered by the
+  // dedicated marker tests below. This body carries no messages, so nothing is
+  // invented for it.
+  assert.equal("messages" in out, false);
   // The CLI asks for usage on the stream it forces.
   assert.deepEqual(out.stream_options, { include_usage: true });
   // Our placeholders are gate-satisfying artifacts, not tools the caller can
@@ -523,7 +591,7 @@ test("a null key (no key configured) is the same anonymous caller", () => {
     upstreamModel: FREE_MODEL,
   });
   assert.equal(out.stream, true);
-  assert.deepEqual(chatToolNames(out), ["glob", "grep", "read", "shell"]);
+  assert.deepEqual(chatToolNames(out), ["read"]);
 });
 
 test("caller tools are kept verbatim and only the missing names are merged in", () => {
@@ -547,28 +615,19 @@ test("caller tools are kept verbatim and only the missing names are merged in", 
   // definition, which is never replaced) and the absent names are appended.
   const merged = out.tools as Record<string, unknown>[];
   assert.deepEqual(merged.slice(0, 2), tools);
-  assert.deepEqual(chatToolNames(out), [
-    "read_file",
-    "bash",
-    "glob",
-    "grep",
-    "read",
-    "shell",
-  ]);
-  // The appended entries are the CLI's real definitions (the caller's own
-  // entries above stay untouched); `shell` aliases the caller's `bash`.
-  for (const tool of merged.slice(2, 5)) {
-    assertInjectedCliDefinition(tool.function as Record<string, unknown>);
-  }
-  const shell = injectedFunction(out, "shell");
-  assert.deepEqual(shell.description, clientFunction(tools[1]).description);
-  assert.deepEqual(shell.parameters, clientFunction(tools[1]).parameters);
+  assert.deepEqual(chatToolNames(out), ["read_file", "bash", "read"]);
+  // The appended entry is the CLI's real definition (the caller's own entries
+  // above stay untouched); this caller declares no `Read`, so `read` is foreign
+  // rather than an alias of the caller's differently-named `read_file`.
+  assertInjectedCliDefinition(
+    (merged[2].function as Record<string, unknown>) ?? {},
+  );
   // An empty array is refused upstream exactly like a missing one.
   const empty = runStage({ model: FREE_MODEL, tools: [] }, WireKind.Chat, {
     apiKey: "public",
     upstreamModel: FREE_MODEL,
   });
-  assert.deepEqual(chatToolNames(empty), ["glob", "grep", "read", "shell"]);
+  assert.deepEqual(chatToolNames(empty), ["read"]);
   // A caller that brought its own tools keeps its own tool_choice (never
   // pinned to "none").
   const callerChoice = runStage(
@@ -589,7 +648,7 @@ test("caller tools are kept verbatim and only the missing names are merged in", 
   });
 });
 
-test("anonymous free-tier responses body gains flat placeholder tools", () => {
+test("anonymous free-tier responses body gains the flat read tool and env block", () => {
   const out = runStage(
     { model: "muse-spark-1.3-contributor-free" },
     WireKind.Responses,
@@ -602,7 +661,7 @@ test("anonymous free-tier responses body gains flat placeholder tools", () => {
   const tools = out.tools as Record<string, unknown>[];
   assert.deepEqual(
     tools.map((t) => t.name),
-    ["glob", "grep", "read", "shell"],
+    ["read"],
   );
   for (const tool of tools) {
     assert.equal(tool.type, "function");
@@ -617,6 +676,132 @@ test("anonymous free-tier responses body gains flat placeholder tools", () => {
   // (the Responses endpoint rejects tool_choice "none" with a 400).
   assert.equal("stream_options" in out, false);
   assert.equal("tool_choice" in out, false);
+});
+
+test("the free-tier prompt profile gains an <env> system block", () => {
+  const body: Record<string, unknown> = {
+    model: FREE_MODEL,
+    messages: [
+      { role: "system", content: "You are a terse assistant." },
+      { role: "user", content: "hi" },
+    ],
+  };
+  ensureOpenCodeFreeTierBody(body, "chat");
+  const messages = body.messages as Record<string, unknown>[];
+  // Appended after the caller's own system turn: context, not an instruction,
+  // so the caller's system prompt keeps its position and precedence.
+  assert.deepEqual(
+    messages.map((message) => message.role),
+    ["system", "system", "user"],
+  );
+  assert.equal(messages[0].content, "You are a terse assistant.");
+  assert.match(String(messages[1].content), /^<env>[\s\S]*<\/env>$/);
+  assert.match(String(messages[1].content), /Working directory:/);
+
+  // A caller that already forwards an OpenCode-shaped prompt (the CLI's agent
+  // system prompt embeds one) is left alone: no duplicate block.
+  const already: Record<string, unknown> = {
+    model: FREE_MODEL,
+    messages: [
+      { role: "system", content: "agent\n<env>Working directory: /</env>" },
+      { role: "user", content: "hi" },
+    ],
+  };
+  ensureOpenCodeFreeTierBody(already, "chat");
+  assert.equal((already.messages as unknown[]).length, 2);
+
+  // No system turn at all: the marker leads the history.
+  const bare: Record<string, unknown> = {
+    model: FREE_MODEL,
+    messages: [{ role: "user", content: "hi" }],
+  };
+  ensureOpenCodeFreeTierBody(bare, "chat");
+  assert.deepEqual(
+    (bare.messages as Record<string, unknown>[]).map((m) => m.role),
+    ["system", "user"],
+  );
+});
+
+test("the responses wire carries the <env> block in instructions", () => {
+  const body: Record<string, unknown> = {
+    model: FREE_MODEL,
+    instructions: "You are a terse assistant.",
+    input: "hi",
+  };
+  ensureOpenCodeFreeTierBody(body, "responses");
+  assert.match(
+    String(body.instructions),
+    /^You are a terse assistant\.[\s\S]*<env>[\s\S]*<\/env>$/,
+  );
+
+  const empty: Record<string, unknown> = {
+    model: FREE_MODEL,
+    input: "hi",
+  };
+  ensureOpenCodeFreeTierBody(empty, "responses");
+  assert.match(String(empty.instructions), /^<env>[\s\S]*<\/env>$/);
+
+  // An existing block is never duplicated.
+  const already: Record<string, unknown> = {
+    model: FREE_MODEL,
+    instructions: "agent <env>Platform: linux</env>",
+    input: "hi",
+  };
+  ensureOpenCodeFreeTierBody(already, "responses");
+  assert.equal(already.instructions, "agent <env>Platform: linux</env>");
+});
+
+test("the env marker is a complete, date-stamped block", () => {
+  const marker = openCodeEnvMarker(new Date("2026-10-25T08:00:00Z"));
+  assert.match(marker, /^<env>\n/);
+  assert.match(marker, /\n<\/env>$/);
+  assert.match(marker, /Today's date: \w{3} \w{3} \d{2} 2026/);
+});
+
+test("only anonymous free-tier Zen requests need the Bun relay", () => {
+  // Anonymous + free model: Zen's ClientHello gate applies.
+  assert.equal(
+    needsOpenCodeFreeTierRelay("opencode", "public", FREE_MODEL),
+    true,
+  );
+  assert.equal(
+    needsOpenCodeFreeTierRelay("opencode", null, "big-pickle"),
+    true,
+  );
+  // A real key is its own credential: the free-tier gate does not apply.
+  assert.equal(
+    needsOpenCodeFreeTierRelay("opencode", "zen-key", FREE_MODEL),
+    false,
+  );
+  // Paid model: never rewritten, never relayed.
+  assert.equal(
+    needsOpenCodeFreeTierRelay("opencode", "public", PAID_MODEL),
+    false,
+  );
+  // OpenCode Go has no anonymous tier.
+  assert.equal(
+    needsOpenCodeFreeTierRelay("opencode-go", "public", FREE_MODEL),
+    false,
+  );
+});
+
+test("a 429 FreeUsageLimitError is a free-tier refusal, not a dead key", () => {
+  const body = JSON.stringify({
+    type: "error",
+    error: {
+      type: "FreeUsageLimitError",
+      message: "Free usage limit reached. Free models work in OpenCode",
+    },
+  });
+  assert.equal(isOpencodeFreeTierRefusal(429, body), true);
+  assert.equal(isOpencodeFreeTierRefusal(403, body), true);
+  assert.equal(isOpencodeFreeTierRefusal(451, body), true);
+  // A genuine rate limit or an unrelated 429 keeps normal key handling.
+  assert.equal(
+    isOpencodeFreeTierRefusal(429, '{"error":{"message":"slow down"}}'),
+    false,
+  );
+  assert.equal(isOpencodeFreeTierRefusal(500, body), false);
 });
 
 test("a paid model or a real key is left verbatim", () => {
@@ -659,12 +844,7 @@ test("free-tier model detection covers the suffix and the unsuffixed roster", ()
 });
 
 test("placeholder names are operator-overridable, invalid entries dropped", () => {
-  assert.deepEqual(openCodeFreeTierPlaceholderTools({}), [
-    "glob",
-    "grep",
-    "read",
-    "shell",
-  ]);
+  assert.deepEqual(openCodeFreeTierPlaceholderTools({}), ["read"]);
   assert.deepEqual(
     openCodeFreeTierPlaceholderTools({
       [OPENCODE_PLACEHOLDER_TOOLS_ENV]: "read, 9bad, bash",
@@ -683,7 +863,7 @@ test("placeholder names are operator-overridable, invalid entries dropped", () =
     openCodeFreeTierPlaceholderTools({
       [OPENCODE_PLACEHOLDER_TOOLS_ENV]: "  9bad, ",
     }),
-    ["glob", "grep", "read", "shell"],
+    ["read"],
   );
 
   // ...and the body builder reads the override off the environment.
@@ -919,6 +1099,25 @@ function toolPlan(
   return ensureOpenCodeFreeTierBody({ model: FREE_MODEL, tools }, kind);
 }
 
+// A plan whose injected set also carries `glob`/`grep`/`shell`: the guard's
+// job is to police whatever the operator configured, so its tests keep a mixed
+// injected list (the default is just `read`) via the documented override.
+function toolPlanWith(
+  extra: string,
+  tools: unknown[],
+  kind: FreeTierBodyKind = "chat",
+): OpencodeToolPlan {
+  const previous = process.env[OPENCODE_PLACEHOLDER_TOOLS_ENV];
+  process.env[OPENCODE_PLACEHOLDER_TOOLS_ENV] = `read,${extra}`;
+  try {
+    return ensureOpenCodeFreeTierBody({ model: FREE_MODEL, tools }, kind);
+  } finally {
+    if (previous === undefined)
+      delete process.env[OPENCODE_PLACEHOLDER_TOOLS_ENV];
+    else process.env[OPENCODE_PLACEHOLDER_TOOLS_ENV] = previous;
+  }
+}
+
 function chatCall(
   id: string,
   name: string,
@@ -971,32 +1170,21 @@ test("an injected name aliases the client's own tool instead of the CLI's", () =
   };
   const plan = ensureOpenCodeFreeTierBody(body, "chat");
 
-  // The caller's entries survive untouched and the gate names are appended.
-  assert.deepEqual(chatToolNames(body), [
-    "Bash",
-    "Read",
-    "glob",
-    "grep",
-    "read",
-    "shell",
-  ]);
+  // The caller's entries survive untouched and the gate name is appended.
+  assert.deepEqual(chatToolNames(body), ["Bash", "Read", "read"]);
 
   // `read` stands in for the caller's `Read`, so it carries the CLIENT's
   // description and parameter schema - a call the model makes against it is
-  // already valid for the tool the client will actually run. `shell` does the
-  // same for the caller's legacy `Bash`.
+  // already valid for the tool the client will actually run.
   const read = injectedFunction(body, "read");
   assert.deepEqual(read.description, clientFunction(CLIENT_READ).description);
   assert.deepEqual(read.parameters, clientFunction(CLIENT_READ).parameters);
-  const shell = injectedFunction(body, "shell");
-  assert.deepEqual(shell.description, clientFunction(CLIENT_BASH).description);
-  assert.deepEqual(shell.parameters, clientFunction(CLIENT_BASH).parameters);
 
-  // The plan names the client tool each injected name stands in for, which is
+  // The plan names the client tool the injected name stands in for, which is
   // what lets the response side rename a call back.
-  assert.deepEqual(plan.injected, ["glob", "grep", "read", "shell"]);
-  assert.deepEqual(plan.aliases, { read: "Read", shell: "Bash" });
-  assert.deepEqual(plan.foreign, { glob: true, grep: true });
+  assert.deepEqual(plan.injected, ["read"]);
+  assert.deepEqual(plan.aliases, { read: "Read" });
+  assert.deepEqual(plan.foreign, {});
 });
 
 test("an injected name with no client counterpart keeps the CLI's captured definition", () => {
@@ -1006,14 +1194,20 @@ test("an injected name with no client counterpart keeps the CLI's captured defin
   };
   const plan = ensureOpenCodeFreeTierBody(body, "chat");
 
-  // `read` is an alias; the three names this client never declared are not, so
-  // the model is handed the CLI's own definitions for them - and a call to one
-  // has no client tool to be delivered as.
+  // `read` is an alias of the caller's `Read`; nothing else is injected.
   assert.deepEqual(plan.aliases, { read: "Read" });
-  assert.deepEqual(plan.foreign, { glob: true, grep: true, shell: true });
-  for (const name of ["glob", "grep", "shell"]) {
-    assertInjectedCliDefinition(injectedFunction(body, name));
-  }
+  assert.deepEqual(plan.foreign, {});
+
+  // A client that declares no `Read` gets the CLI's own `read` definition, and
+  // a call to it has no client tool to be delivered as.
+  const lonely: Record<string, unknown> = {
+    model: FREE_MODEL,
+    tools: [CLIENT_BASH],
+  };
+  const lonelyPlan = ensureOpenCodeFreeTierBody(lonely, "chat");
+  assert.deepEqual(lonelyPlan.aliases, {});
+  assert.deepEqual(lonelyPlan.foreign, { read: true });
+  assertInjectedCliDefinition(injectedFunction(lonely, "read"));
 });
 
 test("two case-insensitively equal client tools leave the alias ambiguous, never guessed", () => {
@@ -1032,12 +1226,7 @@ test("two case-insensitively equal client tools leave the alias ambiguous, never
   // Renaming a call into either one would hand the client a tool it may not
   // route, so the CLI's own definition is forwarded and the call is dropped.
   assert.deepEqual(plan.aliases, {});
-  assert.deepEqual(plan.foreign, {
-    glob: true,
-    grep: true,
-    read: true,
-    shell: true,
-  });
+  assert.deepEqual(plan.foreign, { read: true });
   assertInjectedCliDefinition(injectedFunction(body, "read"));
   // Neither of the caller's own entries is touched.
   assert.deepEqual((body.tools as unknown[]).slice(0, 2), [
@@ -1046,40 +1235,55 @@ test("two case-insensitively equal client tools leave the alias ambiguous, never
   ]);
 });
 
-test("the chat request stage records the injected-tool plan for the response side", () => {
+test("the build records the injected-tool plan for the response side", () => {
   // The response/stream guards read the plan off the attempt's state bag, which
-  // only the request stage (pre-conversion, on the client-shaped body) fills.
+  // the build fills for the wire body it actually produced.
   const state: Record<string, unknown> = {};
-  const out = runStage(
-    { model: FREE_MODEL, tools: CLIENT_TOOLS },
-    WireKind.Chat,
-    {
+  const built = opencode.chatCompletions(
+    buildCtx({
+      body: { model: FREE_MODEL, tools: CLIENT_TOOLS },
       apiKey: "public",
-      upstreamModel: FREE_MODEL,
+      model: FREE_MODEL,
       state,
-    },
+    }),
   );
 
   const plan = opencodeToolPlanFrom(state);
-  assert.ok(plan, "the stage must hand the response side what it injected");
+  assert.ok(plan, "the build must hand the response side what it injected");
   assert.deepEqual(plan, {
-    injected: ["glob", "grep", "read", "shell"],
-    aliases: { read: "Read", shell: "Bash" },
-    foreign: { glob: true, grep: true },
+    injected: ["read"],
+    aliases: { read: "Read" },
+    foreign: {},
   });
-  // ...and the recorded plan describes the body the stage actually produced.
-  assert.deepEqual(chatToolNames(out), [
-    "Bash",
-    "Read",
-    "glob",
-    "grep",
-    "read",
-    "shell",
-  ]);
+  // ...and the recorded plan describes the body the build actually produced.
+  assert.deepEqual(chatToolNames(built.body), ["Bash", "Read", "read"]);
+});
+
+test("a converted Messages client gets the free-tier contract on the wire body", () => {
+  // The converters drop a Messages client's detail into a Chat body before the
+  // build; the contract must land on THAT body, not on the pre-conversion one.
+  const state: Record<string, unknown> = {};
+  const built = opencode.chatCompletions(
+    buildCtx({
+      body: {
+        model: FREE_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+      },
+      apiKey: "public",
+      model: FREE_MODEL,
+      state,
+    }),
+  );
+  assert.equal(built.body.stream, true);
+  assert.deepEqual(chatToolNames(built.body), ["read"]);
+  assert.equal(opencodeToolPlanFrom(state)?.injected[0], "read");
+  const messages = built.body.messages as Record<string, unknown>[];
+  assert.equal(messages[0].role, "system");
+  assert.match(String(messages[0].content), /<env>/);
 });
 
 test("the buffered chat guard renames an aliased call and drops a foreign one", () => {
-  const plan = toolPlan(CLIENT_TOOLS);
+  const plan = toolPlanWith("glob,grep,shell", CLIENT_TOOLS);
   const body = chatTurn([
     chatCall("a", "read", '{"file_path":"/tmp/x"}'),
     chatCall("b", "Bash", '{"command":"ls"}'),
@@ -1110,7 +1314,7 @@ test("the buffered chat guard renames an aliased call and drops a foreign one", 
 });
 
 test("a chat turn whose calls were all foreign loses tool_calls and ends as stop", () => {
-  const plan = toolPlan(CLIENT_TOOLS);
+  const plan = toolPlanWith("glob,grep,shell", CLIENT_TOOLS);
   const body = chatTurn([chatCall("a", "glob"), chatCall("b", "grep")]);
 
   guardOpenCodeInjectedToolCalls(body, "chat", plan);
@@ -1124,7 +1328,7 @@ test("a chat turn whose calls were all foreign loses tool_calls and ends as stop
 });
 
 test("a chat response calling only names the client knows is left byte-identical", () => {
-  const plan = toolPlan(CLIENT_TOOLS);
+  const plan = toolPlanWith("glob,grep,shell", CLIENT_TOOLS);
   const body = chatTurn([
     chatCall("a", "Bash", '{"command":"ls"}'),
     chatCall("b", "Write"),
@@ -1139,7 +1343,7 @@ test("a chat response calling only names the client knows is left byte-identical
 });
 
 test("the buffered responses guard renames an aliased function_call and drops a foreign one", () => {
-  const plan = toolPlan(CLIENT_TOOLS, "responses");
+  const plan = toolPlanWith("glob,grep,shell", CLIENT_TOOLS, "responses");
   const body: Record<string, unknown> = {
     output: [
       { type: "message", role: "assistant", content: [] },
@@ -1168,7 +1372,7 @@ test("the buffered responses guard renames an aliased function_call and drops a 
 });
 
 test("a streamed aliased call is renamed as it is announced, its fragments pass through", () => {
-  const plan = toolPlan(CLIENT_TOOLS);
+  const plan = toolPlanWith("glob,grep,shell", CLIENT_TOOLS);
   const state: Record<string, unknown> = {};
 
   // The name arrives alone, in the first delta for that call index.
@@ -1190,7 +1394,7 @@ test("a streamed aliased call is renamed as it is announced, its fragments pass 
 });
 
 test("a streamed foreign call is dropped with every fragment that follows its index", () => {
-  const plan = toolPlan(CLIENT_TOOLS);
+  const plan = toolPlanWith("glob,grep,shell", CLIENT_TOOLS);
   const state: Record<string, unknown> = {};
 
   const announce = chatStreamDelta({
@@ -1211,7 +1415,7 @@ test("a streamed foreign call is dropped with every fragment that follows its in
 });
 
 test("a streamed tool_calls turn nobody can answer ends as an ordinary stop", () => {
-  const plan = toolPlan(CLIENT_TOOLS);
+  const plan = toolPlanWith("glob,grep,shell", CLIENT_TOOLS);
   const state: Record<string, unknown> = {};
 
   // The turn's only call was ours and foreign, so it was dropped here.
@@ -1242,7 +1446,7 @@ test("a streamed tool_calls turn nobody can answer ends as an ordinary stop", ()
 });
 
 test("a streamed turn with a surviving call keeps its tool_calls finish reason", () => {
-  const plan = toolPlan(CLIENT_TOOLS);
+  const plan = toolPlanWith("glob,grep,shell", CLIENT_TOOLS);
   const state: Record<string, unknown> = {};
 
   assert.ok(
@@ -1265,7 +1469,7 @@ test("a streamed turn with a surviving call keeps its tool_calls finish reason",
 });
 
 test("the responses stream guard renames an aliased call and drops a foreign one", () => {
-  const plan = toolPlan(CLIENT_TOOLS, "responses");
+  const plan = toolPlanWith("glob,grep,shell", CLIENT_TOOLS, "responses");
   const state: Record<string, unknown> = {};
 
   // A foreign call is dropped where it is announced, and its argument deltas -

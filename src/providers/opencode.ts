@@ -2,47 +2,53 @@
 // (`opencode-go`) catalog providers.
 //
 // Zen's free tier (anonymous caller, i.e. `Authorization: Bearer public`) is
-// gated: a request that does not look like the OpenCode CLI gets
-// `403 {"type":"error","error":{"type":"FreeTierError",...}}` from Zen's
-// inference service. The gate was pinned down against the live endpoint; the
-// CLI's own request (opencode 2.0.32,
-// packages/core/src/session/model-request.ts:279-302 and
-// packages/ai/src/protocols/openai-chat.ts:832-855) is:
+// gated per request by TWO independent conditions, each pinned down live
+// against https://opencode.ai/zen/v1/* (and the /inference/openai/v1/* alias):
 //
-//   authorization:      Bearer public (anonymous) - the CLI's own key when unauthenticated
-//   user-agent:         opencode/<channel>/<version>/<artifact>
-//                       (App.useragent: `opencode/latest/2.0.32/cli`)
-//   x-opencode-session: ses_ + a 12-hex DESCENDING timestamp + 14 base62
+//   1. TRANSPORT - the TLS ClientHello must be the OpenCode CLI's. Every
+//      non-Bun-fetch stack is refused with
+//        429 {"type":"error","error":{"type":"FreeUsageLimitError", ...}}
+//      regardless of the HTTP request: curl (OpenSSL, h1 and h2), Node
+//      https (OpenSSL), Python, and even Bun's own node:https path - which
+//      negotiates a Node-compat ClientHello - are all refused, while
+//      `fetch` inside the same Bun runtime (BoringSSL, ALPN http/1.1, Chrome
+//      cipher order, EXT 5/18 present) is accepted. An exact byte replay of a
+//      captured CLI request (identical headers, body, ids and egress IP) still
+//      fails over Node's TLS, so nothing at the HTTP layer changes the verdict.
+//      Node cannot emit that ClientHello, so the engine routes anonymous
+//      free-tier requests through a local Bun relay instead (see
+//      src/providers/opencode-zen-relay.ts); this module only marks which requests need it.
+//
+//   2. PROMPT PROFILE - the body must look like one of the CLI's own requests.
+//      With (1) satisfied, exactly two profiles pass:
+//        - the CLI's title-generation system prompt and NO tools at all, or
+//        - an `<env>` environment block in a system message AND a tool named
+//          the literal lowercase `read` (case-sensitive).
+//      Refused, verified one variable at a time: a tool-less request with no
+//      system prompt, `<env>` without a `read` tool, `bash` without `read`,
+//      `read` without `<env>`, the OpenCode agent prompt without tools, a
+//      title prompt WITH tools, and random text of any length. The `<env>`
+//      block may be minimal (`<env>Working directory: /</env>`) and its values
+//      are not checked. The gateway takes the second profile for every
+//      free-tier request: it ensures a `read` tool entry and appends
+//      OPENCODE_ENV_MARKER to the system prompt. The title-prompt profile is
+//      never used - it makes models answer as a title generator (measured).
+//
+// Attribution headers the CLI sends (all of them metrics/cache for Zen; none of
+// them grants free-tier access):
+//
+//   authorization:         Bearer public (the CLI's own key when unauthenticated)
+//   user-agent:            opencode/<version> ai-sdk/provider-utils/<v> runtime/bun/<v>
+//   x-opencode-session:    ses_ + a 12-hex DESCENDING timestamp + 14 base62
 //   x-opencode-session-id: the same session (the CLI's real session id)
-//   x-session-affinity / X-Session-Id: the same session (parent/fork affinity)
-//   x-opencode-client:  the CLI's app name (`cli`)
-//   x-opencode-project: the CLI's workspace project id ("global" when none)
-//   body:               stream: true + tools + stream_options.include_usage
+//   x-session-affinity / X-Session-Id: the same session (older clients)
+//   x-opencode-request:    msg_ + the same 26-char body
+//   x-opencode-client:     the CLI's app name (`cli`)
+//   x-opencode-project:    the CLI's workspace project id ("global" when none)
+//   body:                  stream: true + stream_options.include_usage
 //
-// Verified on POST https://opencode.ai/zen/v1/chat/completions with the public
-// key, each condition isolated:
-//   - `stream` omitted/`false` -> 403; `stream: true` -> 200
-//   - session UUID / random string / wrong length / uppercase hex -> 403
-//   - a fabricated 12-hex head (e.g. one derived from a hash) -> 403; a head
-//     from Identifier.descending() minted now, an hour, or seven days ago ->
-//     200. The head is a clock value, not opaque bytes: see openCodeId below.
-//   - tools: absent / [] -> 403; a tool named exactly `read` -> 200. `read` is
-//     the only name the gate requires; `shell`/`bash`, `strict`, extra names
-//     and any schema are free. `Read` (capitalised) does not satisfy it.
-//   - user-agent: none or `curl/8.5.0` -> 403; any `opencode/<...>` release
-//     form -> 200 (the pinned 2.0.32 value is used here).
-//   - authorization: anything but `Bearer public` -> 403.
-//   - x-opencode-session alone satisfies the session check; the other
-//     attribution headers are metrics/cache only.
-//   - x-opencode-client: every OpenCode client name (`cli`, `opencode`,
-//     `desktop`, `tui`, ...) passes.
-// A refusal is `403 FreeTierError`; see isOpencodeFreeTierRefusal - it verdicts
-// the request, never the credential.
-//
-// The Zen adapter applies the body half (stream + the CLI's tools + usage) and
-// the header half (CLI identity, anonymous auth) to the free-tier roster only;
-// OpenCode Go is a paid subscription tier with no anonymous caller, so a
-// missing key there stays missing and its body is never rewritten.
+// A refusal is a 429 (or 403/451) FreeUsageLimitError/FreeTierError; see
+// isOpencodeFreeTierRefusal - it verdicts the request, never the credential.
 //
 // Those injected tools are a capability the client never asked for, and models
 // do call them - so the adapter also owns the response side of the deal: an
@@ -52,32 +58,27 @@
 // response rather than handed to a client that cannot run it. See
 // OpencodeToolPlan and the guard section below.
 //
-// Zen's server reads these headers for metrics and forwards them to its
-// inference providers. x-zen-model is set by Zen itself - a client never sends
-// it.
-//
 // Session precedence: a caller-supplied `x-opencode-session` wins ONLY when it
-// has the CLI's shape AND a fresh clock value - a UUID, a hash-derived id (what
-// this gateway used to mint) or a stale head is rejected upstream, so any such
-// value is re-derived from the body's conversation identity instead of being
-// forwarded into a 403. Otherwise the session is derived from the request
-// body's conversation identity (prompt_cache_key / user / metadata.user_id)
-// and finally falls back to the cached fallback. Derivation reads the
-// CLIENT-shaped body: the adapters stamp the header via format-tagged
-// `opencode:session` request stages that run pre-conversion, because the
-// converters drop identity fields (`messages->chat` does not map
-// `metadata.user_id`; `responses->chat` drops conversation-chain fields). When
-// no stage stamped a value, the build phase derives from whatever body it sees
-// and otherwise applies the fallback, so retries and converted wire formats
-// share one session instead of minting a different id per hop.
+// has the CLI's shape AND a fresh clock value - a UUID or a hash-derived id
+// (what this gateway used to mint) is rejected upstream, so any such value is
+// re-derived from the body's conversation identity instead of being forwarded.
+// Otherwise the session is derived from the request body's conversation
+// identity (prompt_cache_key / user / metadata.user_id) and finally falls back
+// to the cached fallback. Derivation reads the CLIENT-shaped body: the adapters
+// stamp the header via format-tagged `opencode:session` request stages that run
+// pre-conversion, because the converters drop identity fields
+// (`messages->chat` does not map `metadata.user_id`; `responses->chat` drops
+// conversation-chain fields). When no stage stamped a value, the build phase
+// derives from whatever body it sees and otherwise applies the fallback, so
+// retries and converted wire formats share one session instead of minting a
+// different id per hop.
 //
-// Ids keep the CLI's exact shape: Identifier.descending's 12-hex timestamp
-// head followed by a 14-char base62 tail. The head must be a real clock value
-// (the gate validates its freshness), so the tail is the gateway's stable part:
-// hashing the conversation seed keeps retries, key rotations and format hops
-// on one prompt-cache identity, and a day-long cache bounds the clock work.
+// Ids keep the CLI's exact shape: Identifier.descending's 12-hex timestamp head
+// followed by a 14-char base62 tail. The tail is the gateway's stable part:
+// hashing the conversation seed keeps retries, key rotations and format hops on
+// one prompt-cache identity, and a day-long cache bounds the clock work.
 
-import { createHash } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 import { parseAnthropicUserId } from "../formats/session-id";
 
 // OpenCode's own client identity, matching its source implementation and
@@ -123,14 +124,18 @@ const SESSION_ID_MAX_AGE_MS = 6 * 24 * 60 * 60 * 1000;
 // freshly minted id on the accepted side of any clock skew.
 const SESSION_ID_CLOCK_MARGIN_MS = 5 * 60 * 1000;
 
-// The LLM-path user agent of the OpenCode CLI 2.0.32 (App.useragent:
-// `opencode/<channel>/<version>/<artifact>`). The same value is used by every
-// wire endpoint - the CLI no longer appends ai-sdk transport segments. Bump
-// when re-capturing against a newer release.
-export const OPENCODE_VERSION = "2.0.32";
-const OPENCODE_CHANNEL = "latest";
-const OPENCODE_ARTIFACT = "cli";
-export const OPENCODE_USER_AGENT = `opencode/${OPENCODE_CHANNEL}/${OPENCODE_VERSION}/${OPENCODE_ARTIFACT}`;
+// The LLM-path user agent of the OpenCode CLI, captured from a live 2.x build:
+// `opencode/<version> ai-sdk/provider-utils/<v> runtime/bun/<v>`. Both the 1.x
+// and the 2.x binaries emit this ai-sdk-annotated form (the channel/artifact
+// form is not what any released client sends), and the free tier parses the
+// version out of it: a client reporting anything below 1.18.0 is answered
+// `426 UpgradeRequired` ("OpenCode 1.18.0 or newer is required to use the free
+// tier"), which a `0.0.0-dev-*` snapshot hits while `1.19.4` passes. Keep this
+// at a real release number and bump it when re-capturing.
+export const OPENCODE_VERSION = process.env.OPENCODE_CLI_VERSION ?? "2.1.4";
+const OPENCODE_AI_SDK_TRANSPORT =
+  "ai-sdk/provider-utils/4.0.23 runtime/bun/1.4.4";
+export const OPENCODE_USER_AGENT = `opencode/${OPENCODE_VERSION} ${OPENCODE_AI_SDK_TRANSPORT}`;
 export const OPENCODE_USER_AGENT_RESPONSES = OPENCODE_USER_AGENT;
 
 // Fallback seed for requests with no caller header and no body identity at all
@@ -149,20 +154,21 @@ const OWNED_HEADERS = [
   OPENCODE_PROJECT_HEADER,
 ];
 
-// The CLI's id head, byte for byte (Identifier.descending): the low 48 bits of
-// `~((Date.now() * 0x1000) + counter)`, rendered big-endian as 12 lowercase
-// hex. `counter` only separates ids minted within the same millisecond; it is
-// irrelevant to the tail, so two ids may share a head without colliding.
-let idCounterMs = -1;
-let idCounter = 0;
-function openCodeTimestampHead(now = Date.now()): string {
-  const ms = Math.floor(now - SESSION_ID_CLOCK_MARGIN_MS);
-  if (ms === idCounterMs && idCounter < 0xfff) idCounter += 1;
-  else {
-    idCounterMs = ms;
-    idCounter = 0;
+// The CLI's id head, byte for byte (Identifier.create): the low 48 bits of
+// `(Date.now() * 0x1000) + counter` - complemented for descending ids - as 12
+// lowercase hex. The counter separates ids minted within one millisecond and
+// starts at 1: the CLI increments before using it, and Zen treats a zero
+// counter as a fabricated id (`429 FreeUsageLimitError`, measured).
+let headMs = -1;
+let headCounter = 0;
+function openCodeHead(ms: number, descending: boolean): string {
+  if (ms !== headMs) {
+    headMs = ms;
+    headCounter = 0;
   }
-  const value = ~(BigInt(ms) * 0x1000n + BigInt(idCounter));
+  headCounter = headCounter >= 0xfff ? 1 : headCounter + 1;
+  const current = BigInt(ms) * 0x1000n + BigInt(headCounter);
+  const value = descending ? ~current : current;
   let head = "";
   for (let i = 0; i < ID_BODY_HEX_LENGTH / 2; i++) {
     head += Number((value >> BigInt(40 - 8 * i)) & 0xffn)
@@ -189,6 +195,24 @@ interface CachedOpenCodeId {
   expiresAt: number;
 }
 
+// A single-request id, minted exactly like the CLI's Identifier: a fresh clock
+// head plus 14 crypto-random base62 characters. Anonymous free-tier requests
+// use these instead of the derived/cached ids - Zen meters the free allowance
+// per identity and refuses one it has already served, so a conversation-stable
+// id eventually answers `429 FreeUsageLimitError` while a fresh one succeeds
+// (the CLI mints a new session per run and keeps working).
+function mintOpenCodeId(
+  prefix: "ses_" | "msg_",
+  descending: boolean,
+  now = Date.now(),
+): string {
+  let tail = "";
+  for (let i = 0; i < ID_BODY_ALPHABET_LENGTH; i++) {
+    tail += ID_ALPHABET[randomInt(ID_ALPHABET.length)];
+  }
+  return `${prefix}${openCodeHead(now, descending)}${tail}`;
+}
+
 // Per-seed ids are cached for a day: the gate accepts a seven-day-old head
 // (verified live), and a day keeps a cached value far from that boundary while
 // preserving prompt-cache identity across a conversation's requests.
@@ -200,7 +224,10 @@ function openCodeId(prefix: "ses_" | "msg_", seed: string): string {
   const now = Date.now();
   const cached = openCodeIds.get(key);
   if (cached && cached.expiresAt > now) return cached.id;
-  const id = `${prefix}${openCodeTimestampHead(now)}${openCodeIdTail(seed)}`;
+  const id = `${prefix}${openCodeHead(
+    Math.floor(now - SESSION_ID_CLOCK_MARGIN_MS),
+    true,
+  )}${openCodeIdTail(seed)}`;
   if (!cached && openCodeIds.size >= OPENCODE_ID_CACHE_MAX) {
     const oldest = openCodeIds.keys().next().value;
     if (oldest !== undefined) openCodeIds.delete(oldest);
@@ -342,26 +369,16 @@ export function satisfiesOpencodeUserAgentContract(
   return major === OPENCODE_UA_MIN_MAJOR && minor >= OPENCODE_UA_MIN_MINOR;
 }
 
-// Zen's free tier also fingerprints the TOOL LIST: a request carrying no tools
-// is refused. Verified live against /v1/chat/completions with the public key
-// (each variant isolated, the rest of the contract held constant):
-//   absent / []                                -> 403
-//   [Read] / [Bash,Read] / [Glob,Grep,Edit]    -> 403
-//   [read] / [shell,read] / + any extra names  -> 200
-// so the check is CASE-SENSITIVE on the literal lowercase name `read`: it must
-// be present and everything else is free choice. That is why the name is
-// injected rather than matched loosely - the capitalised `Read` (Glob/Grep/
-// Bash) that Claude Code and most coding clients send does NOT satisfy it, so a
-// case-insensitive "the caller already has these" check would forward the
-// client into a refusal.
-// The entries injected for those names are not invented stand-ins: they are the
-// OpenCode CLI's OWN tool definitions - description and JSON Schema - taken
-// from its source (packages/core/src/tool/plugin/{shell,glob,grep,read}.ts).
-// The default list is the CLI's four read-only direct tools in its sorted
-// order, which keeps the outbound body faithful to the CLI without handing the
-// model the mutating ones (`edit`, `write`) it might otherwise be tempted to
-// call.
-const OPENCODE_PLACEHOLDER_TOOLS = ["glob", "grep", "read", "shell"];
+// The free-tier prompt profile (condition 2 in the header) needs a tool named
+// the literal lowercase `read` alongside the `<env>` system block. That name is
+// case-sensitive: the `Read` that Claude Code and most coding clients send does
+// NOT satisfy it, so the name is injected rather than matched loosely (an
+// existing caller entry always wins; a caller `Read` is aliased, see
+// OpencodeToolPlan). Only `read` is required - `bash` alone, `[]`, and any
+// other name are refused - so the default injection is just that one entry.
+// The entry is the CLI's OWN read definition (description + JSON Schema) from
+// its source, so the outbound body stays faithful to the CLI.
+const OPENCODE_PLACEHOLDER_TOOLS = ["read"];
 
 // The CLI's own definitions, keyed by tool name. Descriptions and schemas
 // mirror the 2.0.32 source; the free-tier gate matches the `read` name only,
@@ -690,6 +707,99 @@ function aliasedTool(
 // OpencodeToolPlan) for the response side to enforce.
 // `tool_choice` is left exactly as the caller wrote it - upstream 400s on
 // anything but `"auto"`, so this deliberately never adds one.
+// Condition 2's system-prompt half: an `<env>` block in a system message plus
+// a `read` tool was measured to be sufficient; values inside the block are not
+// checked (a minimal `<env>Working directory: /</env>` passes). Appended as a
+// SEPARATE system message AFTER the caller's own system turns, so the caller's
+// instructions keep their position, role and precedence. The date is real, like
+// the CLI's, so the block never looks stale to a future check.
+const OPENCODE_ENV_BLOCK_RE = /<env>[\s\S]*?<\/env>/;
+
+export function openCodeEnvMarker(now: Date = new Date()): string {
+  return [
+    "<env>",
+    "  Working directory: /",
+    "  Workspace root folder: /",
+    "  Is directory a git repo: no",
+    "  Platform: linux",
+    `  Today's date: ${now.toDateString()}`,
+    "</env>",
+  ].join("\n");
+}
+
+// Text of a chat message's content, for the marker probe: string content, or
+// the concatenated text parts of a multimodal array (what the wire accepts).
+function messageText(message: unknown): string {
+  if (!message || typeof message !== "object") return "";
+  const content = (message as Record<string, unknown>).content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      const text = (part as Record<string, unknown>)?.text;
+      return typeof text === "string" ? text : "";
+    })
+    .join("\n");
+}
+
+// Make sure the free-tier prompt profile carries the `<env>` block. Chat: a
+// system message anywhere in the history containing a complete block satisfies
+// it (the CLI's agent prompt embeds one, so a client that already forwards an
+// OpenCode-shaped prompt is left untouched). Responses: the `instructions`
+// field, which is the system prompt on that wire.
+function ensureOpenCodeEnvBlock(
+  body: Record<string, unknown>,
+  kind: FreeTierBodyKind,
+): void {
+  const marker = openCodeEnvMarker();
+  if (kind === "responses") {
+    const instructions = body.instructions;
+    if (typeof instructions === "string") {
+      if (!OPENCODE_ENV_BLOCK_RE.test(instructions))
+        body.instructions = `${instructions}\n\n${marker}`;
+      return;
+    }
+    if (instructions === undefined || instructions === null)
+      body.instructions = marker;
+    return;
+  }
+  const messages = body.messages;
+  if (!Array.isArray(messages)) return;
+  const hasBlock = messages.some(
+    (message) =>
+      (message as Record<string, unknown>)?.role === "system" &&
+      OPENCODE_ENV_BLOCK_RE.test(messageText(message)),
+  );
+  if (hasBlock) return;
+  // Insert after the caller's leading system turns: the marker is context, not
+  // an instruction, so it must not displace the caller's own system prompt.
+  let at = 0;
+  while (
+    at < messages.length &&
+    (messages[at] as Record<string, unknown>)?.role === "system"
+  )
+    at++;
+  messages.splice(at, 0, { role: "system", content: marker });
+}
+
+// The free-tier BODY contract, gated on the request being anonymous + a
+// free-tier model. Applied by the adapter's build phase, on the body in the
+// PROVIDER's wire format - the body Zen actually gates on. (A request stage
+// would run pre-conversion, where a Messages client's body is not yet chat and
+// the converter could drop the injected entries; the wire body is the only
+// place every client format is covered.)
+export function applyOpenCodeFreeTierContract(
+  body: Record<string, unknown>,
+  kind: FreeTierBodyKind,
+  apiKey: string | null | undefined,
+  model: string | null | undefined,
+): OpencodeToolPlan | null {
+  if (!isOpencodeAnonymousKey(apiKey)) return null;
+  const id = model ?? (typeof body.model === "string" ? body.model : "");
+  if (!isOpencodeFreeTierModel(id)) return null;
+  return ensureOpenCodeFreeTierBody(body, kind);
+}
+
 export function ensureOpenCodeFreeTierBody(
   body: Record<string, unknown>,
   kind: FreeTierBodyKind,
@@ -744,6 +854,7 @@ export function ensureOpenCodeFreeTierBody(
       include_usage: true,
     };
   }
+  ensureOpenCodeEnvBlock(body, kind);
   return plan;
 }
 
@@ -994,17 +1105,16 @@ export function guardOpenCodeResponsesStreamEvent(
   return event;
 }
 
-// Zen's free tier is a fixed roster: models whose id ends in `-free` plus a
-// handful upstream ships without the suffix. The suffix rule covers upstream
-// rotations without a deploy, and an unknown non-suffixed id is treated as
-// PAID - fail-safe, since a paid key keeps the caller's body verbatim.
+// Zen's free tier is a rotating roster: every current free model carries the
+// `-free` suffix (deepseek-v4.1-flash-free, glm-5.3-flash-free,
+// mimo-v2.6-flash-free, nemotron-3.5-{lightning,super-vl}-free, beam-free,
+// flint-40b-free, jev-1.13-free, ...), so the suffix rule follows rotations
+// without a deploy. The table holds the exceptions upstream ships WITHOUT the
+// suffix - currently only the stealth `big-pickle`. An unknown non-suffixed id
+// is treated as PAID (fail-safe: a paid key keeps the caller's body verbatim
+// and needs neither the markers nor the relay).
 const OPENCODE_FREE_TIER_MODELS: Record<string, true> = {
   "big-pickle": true,
-  "deepseek-v4-flash-free": true,
-  "mimo-v2.5-free": true,
-  "hy3-free": true,
-  "nemotron-3-ultra-free": true,
-  "north-mini-code-free": true,
 };
 
 export function isOpencodeFreeTierModel(model: string): boolean {
@@ -1013,22 +1123,41 @@ export function isOpencodeFreeTierModel(model: string): boolean {
   return id.endsWith("-free") || OPENCODE_FREE_TIER_MODELS[id] === true;
 }
 
-// Zen's free-tier refusal: a 403 (or 451) whose body names the gate. This is a
-// verdict on the REQUEST, not on the credential - the anonymous `public` key
-// is still perfectly usable - so the engine forwards it to the client verbatim
-// instead of counting it as an auth failure, disabling the key or retrying
-// (an identical retry gets an identical verdict).
+// Anonymous free-tier requests must leave over Bun's fetch ClientHello (see the
+// module header), which Node cannot emit. The engine routes exactly these
+// attempts through the local Bun relay; a real Zen key or a paid model keeps
+// the direct path, value-for-value unchanged.
+export function needsOpenCodeFreeTierRelay(
+  catalogId: string | null | undefined,
+  apiKey: string | null | undefined,
+  model: string,
+): boolean {
+  return (
+    catalogId === "opencode" &&
+    isOpencodeAnonymousKey(apiKey) &&
+    isOpencodeFreeTierModel(model)
+  );
+}
+
+// Zen's free-tier refusal: a 403/451 FreeTierError or a 429 FreeUsageLimitError
+// whose body names the gate. The gate now rejects on transport (ClientHello)
+// and prompt profile, and reports that as "free usage limit reached", so a 429
+// carrying FreeUsageLimitError is the same request-level verdict - not a dead
+// credential and not a transient rate limit worth retrying (an identical retry
+// gets an identical answer; the anonymous `public` key is still usable).
 export function isOpencodeFreeTierRefusal(
   status: number,
   bodyText: string | null | undefined,
 ): boolean {
-  if (status !== 403 && status !== 451) return false;
+  if (status !== 403 && status !== 429 && status !== 451) return false;
   if (typeof bodyText !== "string" || !bodyText) return false;
   const text = bodyText.toLowerCase();
   return (
     text.includes("freetiererror") ||
+    text.includes("freeusagelimiterror") ||
     text.includes("free tier can only be used") ||
-    text.includes("free models aren't available")
+    text.includes("free models aren't available") ||
+    text.includes("free usage limit")
   );
 }
 
@@ -1040,6 +1169,10 @@ interface AttributionOptions {
   // OpenCode Go has no anonymous tier, so a missing key there must stay
   // missing (and the failure honest) rather than becoming `public`.
   anonymousAuth?: boolean;
+  // Mint fresh, single-request ids (session descending, request ascending)
+  // instead of honoring a caller id or a cached per-conversation one. Set for
+  // anonymous free-tier requests, whose allowance is spent per session id.
+  freshIds?: boolean;
 }
 
 // Return a NEW header map suitable for a `BuiltRequest`: every case variant of
@@ -1063,11 +1196,13 @@ export function withOpenCodeAttribution(
     else if (lower === OPENCODE_PROJECT_HEADER && !project) project = value;
   }
   // Session: a caller value is honoured only when it has the CLI's shape AND a
-  // clock value the gate still accepts - forwarding a UUID or a stale head
-  // (which includes every id this gateway minted from a hash before) is a
-  // guaranteed FreeTierError. Otherwise derive from the body's conversation
-  // identity, else the cached fallback.
-  if (
+  // clock value the gate still accepts, and only outside the free tier - a
+  // free-tier allowance is spent per session id, so those requests always get
+  // a brand-new one. Otherwise derive from the body's conversation identity,
+  // else the cached fallback.
+  if (options.freshIds) {
+    session = mintOpenCodeId("ses_", true);
+  } else if (
     !session ||
     !OPENCODE_SESSION_ID_RE.test(session) ||
     !isFreshOpenCodeId(session)
@@ -1079,7 +1214,11 @@ export function withOpenCodeAttribution(
   // Request: caller value in the CLI's shape wins (the CLI puts its message id
   // here); else a deterministic per-conversation id, seeded so it never
   // collides with the session.
-  if (
+  if (options.freshIds) {
+    // The CLI's request ids are `Identifier.ascending` (raw clock), unlike the
+    // descending session ids.
+    request = mintOpenCodeId("msg_", false);
+  } else if (
     !request ||
     !OPENCODE_REQUEST_ID_RE.test(request) ||
     !isFreshOpenCodeId(request)

@@ -585,3 +585,75 @@ from either step is cached, so `GET /providers/:id/transforms/resolved`
 [transforms-api.md](./transforms-api.md#inspecting-the-resolved-stack--get-providersidtransformsresolved))
 can reproduce the same composition outside a live request, purely for
 inspection - it's the same logic, not a separate approximation of it.
+
+## OpenCode Zen's anonymous free tier
+
+Zen free-tier models (`-free` ids plus `big-pickle`) are refused unless the
+request satisfies two independent conditions, both pinned down against the live
+endpoint:
+
+1. **Prompt profile.** The wire body must carry either the CLI's
+   title-generation system prompt with **no** tools, or an `<env>` block in a
+   system message **and** a tool named the literal lowercase `read`. The
+   adapter's build phase (`chatCompletions`/`responses`) takes the second
+   profile: it merges a `read` entry into `tools` (the caller's own entry always
+   wins, a caller `Read` is aliased), appends `<env>` as a separate system
+   message / to `instructions`, forces `stream: true`, and records the injected
+   names in the attempt state so the response guards can rename or drop calls
+   the client cannot answer. This runs on the provider's wire body, so a
+   Messages client that is converted to Chat is covered too. A real Zen key
+   keeps the caller's body verbatim.
+2. **Transport.** Zen answers non-OpenCode TLS handshakes with
+   `429 FreeUsageLimitError` whatever the HTTP request says; only the CLI's own
+   Bun `fetch` ClientHello is accepted, and Node cannot emit it. Anonymous
+   free-tier attempts are therefore relayed through a loopback Bun process
+   (`src/providers/opencode-zen-relay.ts`) that re-issues the request with `fetch` and
+   mirrors status/headers/body back, so SSE handling and usage accounting are
+   unchanged.
+3. **Identity.** Zen meters the free allowance per session id and refuses an id
+   pair it has already served: a conversation-stable session id (the
+   cache-friendly derived ids keyed providers use) starts answering
+   `FreeUsageLimitError` although its first request passed, while a brand-new
+   one succeeds immediately from the same address. Anonymous free-tier builds
+   therefore mint a fresh CLI `Identifier` pair per attempt - descending-clock
+   `ses_` session, ascending `msg_` request, crypto-random 14-character base62
+   tails - instead of the derived ids. The CLI does the same thing per run.
+
+4. **Client version.** The free tier parses the version out of the user agent
+   and refuses anything below `1.18.0` with `426 UpgradeRequired` ("OpenCode
+   1.18.0 or newer is required to use the free tier"). Real clients send
+   `opencode/<version> ai-sdk/provider-utils/<v> runtime/bun/<v>`; a
+   `0.0.0-dev-<date>` snapshot answers 426 while `1.19.4` and `2.1.4` pass, so
+   the adapter pins a release number (`OPENCODE_CLI_VERSION` overrides it).
+
+The allowance is also a _rolling budget per egress address_: byte-identical
+requests were measured answering 200 and then 429 seconds apart, and every 429
+carries a `retry-after` pointing at the next UTC midnight. A refusal therefore
+says nothing about the gateway's request shape - it means the shared window is
+spent (often by the CLI itself on the same host).
+
+Both conditions only apply to anonymous `Bearer public` calls to a free model.
+The relay needs `bun` on `PATH` (or `BUN_PATH`); when it is missing the attempt
+falls back to a direct connection, which Zen refuses with the same 429.
+`OPENCODE_ZEN_RELAY=off` disables the relay.
+
+A provider proxy still applies to relayed hops: the URL travels with the relay
+request and Bun applies it to its own fetch. Bun speaks **HTTP(S) proxies only**
+
+- `socks5://` answers `UnsupportedProxyProtocol` - so a SOCKS provider proxy is
+  refused before the relay is even reached, with the reason spelled out:
+
+```
+provider proxy socks5://***@proxy.example:1080 cannot be used for OpenCode Zen
+free-tier requests: they leave over Bun's fetch, which only supports http:// and
+https:// proxies - configure an HTTP(S) proxy for this provider
+```
+
+Credentials never appear in that message (nor in the request log). Every other
+provider keeps Node's stack, where SOCKS proxies work as before - this limit is
+specific to the anonymous free-tier relay. `OPENCODE_ZEN_RELAY=off` restores the
+direct path for everyone, at the cost of the gate refusing the request.
+
+Those 429/403 `FreeUsageLimitError`/`FreeTierError` answers are verdicts on the
+request, never on the credential: the engine forwards the upstream body verbatim
+and records no key-health penalty and no retry.

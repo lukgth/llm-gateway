@@ -6,25 +6,23 @@ import {
 import { WireKind } from "../../types";
 import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 import {
-  ensureOpenCodeFreeTierBody,
+  applyOpenCodeFreeTierContract,
   forceOpenCodeFreeTierStream,
   guardOpenCodeChatStreamEvent,
   guardOpenCodeInjectedToolCalls,
   guardOpenCodeResponsesStreamEvent,
   isOpencodeAnonymousKey,
-  isOpencodeFreeTierModel,
+  needsOpenCodeFreeTierRelay,
   OPENCODE_USER_AGENT_RESPONSES,
   opencodeToolPlanFrom,
   rememberOpencodeToolPlan,
   stampOpenCodeSessionHeader,
   withOpenCodeAttribution,
-  type OpencodeToolPlan,
 } from "../opencode";
 import type {
   AnyRequestTransform,
   AnyResponseTransform,
   AnyStreamTransform,
-  TransformCtx,
 } from "../../formats/pipeline";
 import { onRequest, onResponse, onStreamEvent } from "../../formats/pipeline";
 import type { Provider } from "../../types";
@@ -32,19 +30,31 @@ import type { Provider } from "../../types";
 // OpenCode Zen - OpenAI-compatible gateway aimed at coding agents.
 // Every completion request carries the CLI-shaped OpenCode attribution. Free
 // anonymous attempts also stream upstream, matching the CLI's request body.
+// The anonymous free tier meters its allowance per session id, so those
+// requests mint a new one per attempt; everything else keeps the
+// conversation-stable (cache-friendly) identity. Same predicate the engine uses
+// to decide the Bun relay, so the two can never disagree.
+function isFreeTierRelay(ctx: BuildCtx): boolean {
+  return needsOpenCodeFreeTierRelay(
+    ctx.provider.catalogId,
+    ctx.apiKey,
+    String(ctx.model ?? ""),
+  );
+}
+
 class OpenCodeAdapter extends OpenAICompatibleAdapter {
-  // Stamp identity and apply the free-tier streaming requirement before any
-  // format conversion. The converters can drop conversation fields, so the
-  // session must be derived from the client-shaped body. The final
-  // canonicalizer fills a shape-valid static fallback when needed.
+  // Stamp identity before any format conversion: the converters can drop
+  // conversation fields, so the session must be derived from the client-shaped
+  // body. The free-tier BODY contract (stream forcing, the `read` tool, the
+  // <env> block) is applied later, in the build phase, because it belongs on
+  // the provider's wire body - see chatCompletions/responses below.
   override requestTransforms(_provider: Provider): AnyRequestTransform[] {
     return [
       onRequest("chat", "opencode:session", (body, ctx) => {
-        const typedBody = body as unknown as Record<string, unknown>;
-        stampOpenCodeSessionHeader(typedBody, ctx.headers);
-        forceOpenCodeFreeTierStream(typedBody, ctx.apiKey);
-        const plan = applyFreeTierBody(typedBody, ctx, "chat");
-        if (plan) rememberOpencodeToolPlan(ctx.state, plan);
+        stampOpenCodeSessionHeader(
+          body as unknown as Record<string, unknown>,
+          ctx.headers,
+        );
         return body;
       }),
       onRequest("messages", "opencode:session", (body, ctx) => {
@@ -55,11 +65,10 @@ class OpenCodeAdapter extends OpenAICompatibleAdapter {
         return body;
       }),
       onRequest("responses", "opencode:session", (body, ctx) => {
-        const typedBody = body as unknown as Record<string, unknown>;
-        stampOpenCodeSessionHeader(typedBody, ctx.headers);
-        forceOpenCodeFreeTierStream(typedBody, ctx.apiKey);
-        const plan = applyFreeTierBody(typedBody, ctx, "responses");
-        if (plan) rememberOpencodeToolPlan(ctx.state, plan);
+        stampOpenCodeSessionHeader(
+          body as unknown as Record<string, unknown>,
+          ctx.headers,
+        );
         return body;
       }),
     ];
@@ -118,45 +127,46 @@ class OpenCodeAdapter extends OpenAICompatibleAdapter {
     ];
   }
 
+  // The free-tier body contract runs HERE, on the provider-shaped wire body:
+  // it is the body Zen gates on, and it is the only place a converted client
+  // (Messages -> Chat, Responses -> Chat) is covered. `stream` forcing rides
+  // along with it for the same reason.
   override chatCompletions(ctx: BuildCtx): BuiltRequest {
+    forceOpenCodeFreeTierStream(ctx.body, ctx.apiKey);
+    const plan = applyOpenCodeFreeTierContract(
+      ctx.body,
+      "chat",
+      ctx.apiKey,
+      ctx.model,
+    );
+    if (plan) rememberOpencodeToolPlan(ctx.state, plan);
     return super.chatCompletions({
       ...ctx,
       headers: withOpenCodeAttribution(ctx.headers, ctx.body, {
         anonymousAuth: isOpencodeAnonymousKey(ctx.apiKey),
+        freshIds: isFreeTierRelay(ctx),
       }),
     });
   }
 
   override responses(ctx: BuildCtx): BuiltRequest {
+    forceOpenCodeFreeTierStream(ctx.body, ctx.apiKey);
+    const plan = applyOpenCodeFreeTierContract(
+      ctx.body,
+      "responses",
+      ctx.apiKey,
+      ctx.model,
+    );
+    if (plan) rememberOpencodeToolPlan(ctx.state, plan);
     return super.responses({
       ...ctx,
       headers: withOpenCodeAttribution(ctx.headers, ctx.body, {
         userAgent: OPENCODE_USER_AGENT_RESPONSES,
         anonymousAuth: isOpencodeAnonymousKey(ctx.apiKey),
+        freshIds: isFreeTierRelay(ctx),
       }),
     });
   }
-}
-
-// The rest of the free-tier body contract (`stream: true`, the CLI's core tools
-// merged into `tools`, and usage on the stream), applied only to a FREE-TIER
-// model reached anonymously: a real Zen-credit key keeps the caller's body
-// verbatim even for a `-free` model, and an unknown/paid id is never rewritten.
-// Runs on whatever body is in THIS stage's format (pre-conversion for the
-// client's format, post-conversion for the provider's), because that is the
-// body Zen gates on; the converter may drop a caller's tools, so the stage for
-// the format actually on the wire is the one that guarantees they are present.
-function applyFreeTierBody(
-  body: Record<string, unknown>,
-  ctx: TransformCtx,
-  kind: "chat" | "responses",
-): OpencodeToolPlan | null {
-  if (typeof body !== "object" || body === null) return null;
-  if (!isOpencodeAnonymousKey(ctx.apiKey)) return null;
-  const model =
-    ctx.upstreamModel ?? (typeof body.model === "string" ? body.model : "");
-  if (!isOpencodeFreeTierModel(model)) return null;
-  return ensureOpenCodeFreeTierBody(body, kind);
 }
 
 export const opencode = new OpenCodeAdapter({
