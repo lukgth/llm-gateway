@@ -116,30 +116,6 @@ export function agentFor(
   return agent;
 }
 
-/** Scheme of a proxy URL (`socks5`, `http`, ...); "" when none is configured. */
-export function proxyScheme(proxyUrl: string | null | undefined): string {
-  const url = (proxyUrl ?? "").trim();
-  if (!url) return "";
-  const colon = url.indexOf(":");
-  return colon === -1 ? "" : url.slice(0, colon).toLowerCase();
-}
-
-/**
- * Proxy URL safe to put in an error message: credentials are dropped, because
- * a refusal is logged and shown to the caller. `socks5://user:pass@host:80`
- * becomes `socks5://host:80`.
- */
-export function redactedProxyUrl(proxyUrl: string): string {
-  const url = proxyUrl.trim();
-  try {
-    const parsed = new URL(url);
-    const credentials = parsed.username || parsed.password ? "***@" : "";
-    return `${parsed.protocol}//${credentials}${parsed.host}`;
-  } catch {
-    return "<invalid proxy URL>";
-  }
-}
-
 const directCache = new Map<string, Agent>();
 
 /**

@@ -417,59 +417,6 @@ test("forward() sends the adapter-built request to the wire (verbatim default)",
   }
 });
 
-test("a SOCKS provider proxy is refused with an actionable message for free-tier Zen", async () => {
-  // Relayed Zen attempts leave over Bun's fetch, which cannot speak SOCKS.
-  // The engine must say that plainly - and never echo proxy credentials.
-  let reached = false;
-  const server = http.createServer((_req, res) => {
-    reached = true;
-    res.writeHead(200).end("{}");
-  });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const port = (server.address() as AddressInfo).port;
-
-  const db = openDatabase(":memory:");
-  try {
-    createProvider(db, {
-      id: "zen",
-      name: "zen",
-      baseUrl: `https://127.0.0.1:${port}/zen`,
-      apiKeys: [],
-      catalogId: "opencode",
-      authScheme: "bearer",
-      retryAttempts: 1,
-      proxy: "socks5://alice:s3cret@127.0.0.1:1080",
-    });
-    const m = createModel(db, {
-      alias: "big-pickle",
-      providers: [{ providerId: "zen", upstreamModel: "big-pickle" }],
-    });
-    const model = getModel(db, m.id)!;
-    const engine = new ForwardingEngine(
-      db,
-      quietLogger(),
-      new ThinkingConverter(),
-      0,
-    );
-    const { res, state } = mockRes();
-    await engine.forward(
-      { method: "POST", headers: {} } as never,
-      res as never,
-      ctxFor(model, {
-        model: "big-pickle",
-        messages: [{ role: "user", content: "hi" }],
-      }),
-    );
-    const text = JSON.stringify(state.body);
-    assert.match(text, /only supports http:\/\/ and https:\/\/ proxies/);
-    assert.match(text, /socks5:\/\/\*\*\*@127\.0\.0\.1:1080/);
-    assert.doesNotMatch(text, /s3cret/, "credentials must not leak");
-    assert.equal(reached, false);
-  } finally {
-    closeDatabase(db);
-    await new Promise<void>((r) => server.close(() => r()));
-  }
-});
 test("provider response header is off by default and strictly opt-in", async () => {
   const server = http.createServer((req, res) => {
     req.resume();

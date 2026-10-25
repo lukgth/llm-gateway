@@ -18,7 +18,7 @@ import {
   guardOpenCodeResponsesStreamEvent,
   isOpencodeFreeTierModel,
   isOpencodeFreeTierRefusal,
-  needsOpenCodeFreeTierRelay,
+  needsOpenCodeFreeTierTransport,
   openCodeEnvMarker,
   applyOpenCodeFreeTierContract,
   forceOpenCodeFreeTierStream,
@@ -761,26 +761,26 @@ test("the env marker is a complete, date-stamped block", () => {
 test("only anonymous free-tier Zen requests need the Bun relay", () => {
   // Anonymous + free model: Zen's ClientHello gate applies.
   assert.equal(
-    needsOpenCodeFreeTierRelay("opencode", "public", FREE_MODEL),
+    needsOpenCodeFreeTierTransport("opencode", "public", FREE_MODEL),
     true,
   );
   assert.equal(
-    needsOpenCodeFreeTierRelay("opencode", null, "big-pickle"),
+    needsOpenCodeFreeTierTransport("opencode", null, "big-pickle"),
     true,
   );
   // A real key is its own credential: the free-tier gate does not apply.
   assert.equal(
-    needsOpenCodeFreeTierRelay("opencode", "zen-key", FREE_MODEL),
+    needsOpenCodeFreeTierTransport("opencode", "zen-key", FREE_MODEL),
     false,
   );
   // Paid model: never rewritten, never relayed.
   assert.equal(
-    needsOpenCodeFreeTierRelay("opencode", "public", PAID_MODEL),
+    needsOpenCodeFreeTierTransport("opencode", "public", PAID_MODEL),
     false,
   );
   // OpenCode Go has no anonymous tier.
   assert.equal(
-    needsOpenCodeFreeTierRelay("opencode-go", "public", FREE_MODEL),
+    needsOpenCodeFreeTierTransport("opencode-go", "public", FREE_MODEL),
     false,
   );
 });

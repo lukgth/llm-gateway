@@ -12,7 +12,7 @@ import {
   guardOpenCodeInjectedToolCalls,
   guardOpenCodeResponsesStreamEvent,
   isOpencodeAnonymousKey,
-  needsOpenCodeFreeTierRelay,
+  needsOpenCodeFreeTierTransport,
   OPENCODE_USER_AGENT_RESPONSES,
   opencodeToolPlanFrom,
   rememberOpencodeToolPlan,
@@ -35,7 +35,7 @@ import type { Provider } from "../../types";
 // conversation-stable (cache-friendly) identity. Same predicate the engine uses
 // to decide the Bun relay, so the two can never disagree.
 function isFreeTierRelay(ctx: BuildCtx): boolean {
-  return needsOpenCodeFreeTierRelay(
+  return needsOpenCodeFreeTierTransport(
     ctx.provider.catalogId,
     ctx.apiKey,
     String(ctx.model ?? ""),

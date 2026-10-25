@@ -15,7 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import dns from "node:dns";
-import { ipv4FirstLookup, proxyScheme, redactedProxyUrl } from "./proxy-agent";
+import { ipv4FirstLookup } from "./proxy-agent";
 
 interface Addr {
   address: string;
@@ -144,22 +144,4 @@ test("ipv4FirstLookup: a resolution failure surfaces as an error", async () => {
     const { error } = await lookup({ all: true });
     assert.ok(error, "expected an error for an unresolvable host");
   });
-});
-
-test("proxy scheme and redaction never leak credentials", () => {
-  assert.equal(proxyScheme(null), "");
-  assert.equal(proxyScheme("   "), "");
-  assert.equal(proxyScheme("Socks5://u:p@host:1080"), "socks5");
-  assert.equal(proxyScheme("http://127.0.0.1:8080"), "http");
-  assert.equal(proxyScheme("garbage"), "");
-
-  assert.equal(
-    redactedProxyUrl("socks5://alice:s3cret@proxy.example:1080"),
-    "socks5://***@proxy.example:1080",
-  );
-  assert.equal(
-    redactedProxyUrl("http://proxy.example:3128"),
-    "http://proxy.example:3128",
-  );
-  assert.equal(redactedProxyUrl("not a url"), "<invalid proxy URL>");
 });

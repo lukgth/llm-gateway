@@ -27,7 +27,8 @@ import type { Request, Response } from "express";
 import type { Database as DB } from "better-sqlite3";
 import type { Logger } from "../logger";
 import type { Model, Provider } from "../types";
-import { dispatchAgent, proxyScheme, redactedProxyUrl } from "./proxy-agent";
+import { dispatchAgent } from "./proxy-agent";
+import { zenTlsAgent } from "../providers/opencode-tls/agent";
 import { buildUpstreamUrl, hostFromUrl } from "./url";
 import {
   adapterForProvider,
@@ -107,16 +108,8 @@ import {
 import { codexRetryDelayMs, isCodexUsageLimitError } from "../providers/codex";
 import {
   isOpencodeFreeTierRefusal,
-  needsOpenCodeFreeTierRelay,
+  needsOpenCodeFreeTierTransport,
 } from "../providers/opencode";
-import {
-  ensureZenRelay,
-  ZEN_RELAY_INSECURE_HEADER,
-  ZEN_RELAY_PROXY_HEADER,
-  ZEN_RELAY_TARGET_HEADER,
-  ZEN_RELAY_TOKEN_HEADER,
-  type ZenRelay,
-} from "../providers/opencode-zen-relay";
 import {
   contextWindowLimit,
   countInputTokens,
@@ -1217,51 +1210,27 @@ export class ForwardingEngine {
       };
     }
 
-    // OpenCode Zen's anonymous free tier only accepts its own TLS ClientHello
-    // (Bun fetch; see src/providers/opencode.ts). Node cannot emit it, so those
-    // attempts are handed to a loopback Bun relay: same URL/headers/body, but
-    // re-issued over Bun's fetch, with status/headers/body mirrored back so the
-    // SSE pipeline below is unchanged. A relayed hop must not also use a Node
-    // proxy agent - it dials 127.0.0.1 - so the provider's proxy travels as a
-    // header instead and the relay applies it to its own fetch.
-    let relay: ZenRelay | null = null;
-    if (
-      provider.catalogId === "opencode" &&
-      upstreamUrl.protocol === "https:" &&
-      needsOpenCodeFreeTierRelay(provider.catalogId, key, upstreamModel)
-    ) {
-      // Bun's fetch - the only stack whose ClientHello the gate accepts -
-      // speaks HTTP(S) proxies and nothing else. A SOCKS proxy therefore cannot
-      // carry these attempts at all; say so instead of letting Bun answer
-      // `UnsupportedProxyProtocol` from inside the relay.
-      const scheme = proxyScheme(provider.proxy);
-      if (scheme.startsWith("socks")) {
-        return {
-          committed: false,
-          reason: `provider proxy ${redactedProxyUrl(provider.proxy!)} cannot be used for OpenCode Zen free-tier requests: they leave over Bun's fetch, which only supports http:// and https:// proxies - configure an HTTP(S) proxy for this provider`,
-        };
-      }
-      relay = await ensureZenRelay(this.logger);
-      if (relay) {
-        const target = upstreamUrl.toString();
-        upstreamUrl = new URL(relay.url);
-        headers = {
-          ...headers,
-          [ZEN_RELAY_TARGET_HEADER]: target,
-          [ZEN_RELAY_TOKEN_HEADER]: relay.token,
-          ...(provider.tlsVerify ? {} : { [ZEN_RELAY_INSECURE_HEADER]: "1" }),
-          ...(provider.proxy
-            ? { [ZEN_RELAY_PROXY_HEADER]: provider.proxy }
-            : {}),
-        };
-      }
-    }
-
     const isHttps = upstreamUrl.protocol === "https:";
     const transport = isHttps ? https : http;
+
+    // OpenCode Zen's anonymous free tier only accepts the CLI's own TLS
+    // ClientHello, which no OpenSSL client can produce (see
+    // src/providers/opencode-tls). Those attempts therefore ride the gateway's own
+    // TLS 1.3 client, which speaks the captured hello over the provider's
+    // connection (directly or through its proxy). Everything else keeps Node's
+    // stack untouched.
+    const freeTierTransport =
+      isHttps &&
+      needsOpenCodeFreeTierTransport(provider.catalogId, key, upstreamModel);
     let proxyAgent: ReturnType<typeof dispatchAgent>;
     try {
-      proxyAgent = dispatchAgent(relay ? null : provider.proxy, isHttps);
+      proxyAgent = freeTierTransport
+        ? (zenTlsAgent({
+            proxy: provider.proxy,
+            rejectUnauthorized: provider.tlsVerify,
+            logger: this.logger,
+          }) as unknown as ReturnType<typeof dispatchAgent>)
+        : dispatchAgent(provider.proxy, isHttps);
     } catch (err) {
       return {
         committed: false,

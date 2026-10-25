@@ -604,12 +604,16 @@ endpoint:
    Messages client that is converted to Chat is covered too. A real Zen key
    keeps the caller's body verbatim.
 2. **Transport.** Zen answers non-OpenCode TLS handshakes with
-   `429 FreeUsageLimitError` whatever the HTTP request says; only the CLI's own
-   Bun `fetch` ClientHello is accepted, and Node cannot emit it. Anonymous
-   free-tier attempts are therefore relayed through a loopback Bun process
-   (`src/providers/opencode-zen-relay.ts`) that re-issues the request with `fetch` and
-   mirrors status/headers/body back, so SSE handling and usage accounting are
-   unchanged.
+   `429 FreeUsageLimitError` whatever the HTTP request says, so the gateway
+   speaks the CLI's handshake itself: `src/providers/opencode-tls/` is a TLS 1.3
+   client built on `node:crypto` that reproduces the captured ClientHello byte
+   for byte (cipher order, extension order, ALPN, signature algorithms) and
+   then runs a normal record layer. Only the per-connection fields differ -
+   client random, legacy session id, X25519 key share - and the group list is
+   narrowed to X25519/P-256/P-384 because Node cannot compute the MLKEM half of
+   `X25519MLKEM768`; group _values_ are not part of a JA3/JA4 fingerprint.
+   No Bun, no extra process, no loopback hop: the request leaves from the
+   gateway's own connection, through the provider's proxy when one is set.
 3. **Identity.** Zen meters the free allowance per session id and refuses an id
    pair it has already served: a conversation-stable session id (the
    cache-friendly derived ids keyed providers use) starts answering
@@ -632,27 +636,30 @@ carries a `retry-after` pointing at the next UTC midnight. A refusal therefore
 says nothing about the gateway's request shape - it means the shared window is
 spent (often by the CLI itself on the same host).
 
+Peer authentication has two halves, both inside the handshake, both fatal:
+
+- **Proof of key possession.** `CertificateVerify` must carry a signature over
+  `64 * 0x20 || "TLS 1.3, server CertificateVerify" || 0x00 || Transcript-Hash`
+  (RFC 8446 §4.4.3) made by the leaf's private key under the negotiated scheme
+  (`ecdsa_*`, `rsa_pss_*`, `rsa_pkcs1_*`, `ed25519`/`ed448`). Without it a
+  chain comparison proves nothing: certificates are public, so an on-path party
+  can replay a genuine chain, terminate with its own key share and forge a
+  Finished. Omitting the context string - signing the bare transcript - is the
+  near-miss this check exists to catch.
+- **Trust.** `chain.ts` builds the path from the leaf to a trust anchor in
+  Node's bundled root store (plus any `ca` bundle): every certificate must be
+  issued and signed by its successor, be inside its validity window, and the
+  leaf must be valid for the SNI host. A cross-signed root is anchored by SPKI,
+  which is how Cloudflare's `GTS Root R4`-signed-by-GlobalSign chain verifies.
+
+No extra connection is opened, so authentication cannot be TOCTOU'd and a
+conversation costs nothing but the handshake it already pays for.
+
 Both conditions only apply to anonymous `Bearer public` calls to a free model.
-The relay needs `bun` on `PATH` (or `BUN_PATH`); when it is missing the attempt
-falls back to a direct connection, which Zen refuses with the same 429.
-`OPENCODE_ZEN_RELAY=off` disables the relay.
 
-A provider proxy still applies to relayed hops: the URL travels with the relay
-request and Bun applies it to its own fetch. Bun speaks **HTTP(S) proxies only**
-
-- `socks5://` answers `UnsupportedProxyProtocol` - so a SOCKS provider proxy is
-  refused before the relay is even reached, with the reason spelled out:
-
-```
-provider proxy socks5://***@proxy.example:1080 cannot be used for OpenCode Zen
-free-tier requests: they leave over Bun's fetch, which only supports http:// and
-https:// proxies - configure an HTTP(S) proxy for this provider
-```
-
-Credentials never appear in that message (nor in the request log). Every other
-provider keeps Node's stack, where SOCKS proxies work as before - this limit is
-specific to the anonymous free-tier relay. `OPENCODE_ZEN_RELAY=off` restores the
-direct path for everyone, at the cost of the gate refusing the request.
+A provider proxy applies unchanged: `http`, `https` and `socks5` all work,
+with inline credentials, because the proxy is only used to open a plain tunnel
+(`CONNECT` / SOCKS5) and the TLS handshake happens inside it.
 
 Those 429/403 `FreeUsageLimitError`/`FreeTierError` answers are verdicts on the
 request, never on the credential: the engine forwards the upstream body verbatim

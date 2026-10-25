@@ -16,8 +16,8 @@
 //      captured CLI request (identical headers, body, ids and egress IP) still
 //      fails over Node's TLS, so nothing at the HTTP layer changes the verdict.
 //      Node cannot emit that ClientHello, so the engine routes anonymous
-//      free-tier requests through a local Bun relay instead (see
-//      src/providers/opencode-zen-relay.ts); this module only marks which requests need it.
+//      free-tier requests through its own TLS client instead (see
+//      src/providers/opencode-tls); this module only marks which requests need it.
 //
 //   2. PROMPT PROFILE - the body must look like one of the CLI's own requests.
 //      With (1) satisfied, exactly two profiles pass:
@@ -1112,7 +1112,7 @@ export function guardOpenCodeResponsesStreamEvent(
 // without a deploy. The table holds the exceptions upstream ships WITHOUT the
 // suffix - currently only the stealth `big-pickle`. An unknown non-suffixed id
 // is treated as PAID (fail-safe: a paid key keeps the caller's body verbatim
-// and needs neither the markers nor the relay).
+// and needs neither the markers nor the custom transport).
 const OPENCODE_FREE_TIER_MODELS: Record<string, true> = {
   "big-pickle": true,
 };
@@ -1123,11 +1123,11 @@ export function isOpencodeFreeTierModel(model: string): boolean {
   return id.endsWith("-free") || OPENCODE_FREE_TIER_MODELS[id] === true;
 }
 
-// Anonymous free-tier requests must leave over Bun's fetch ClientHello (see the
-// module header), which Node cannot emit. The engine routes exactly these
-// attempts through the local Bun relay; a real Zen key or a paid model keeps
-// the direct path, value-for-value unchanged.
-export function needsOpenCodeFreeTierRelay(
+// Anonymous free-tier requests must present the CLI's ClientHello (see the
+// module header), which Node's own TLS cannot emit. The engine routes exactly
+// these attempts through src/providers/opencode-tls; a real Zen key or a paid model
+// keeps the plain Node path, value-for-value unchanged.
+export function needsOpenCodeFreeTierTransport(
   catalogId: string | null | undefined,
   apiKey: string | null | undefined,
   model: string,
