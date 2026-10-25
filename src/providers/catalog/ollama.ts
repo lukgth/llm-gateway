@@ -9,66 +9,75 @@ import { OPENAI_DEFAULT_TRANSFORMS } from "./openai";
 
 class OllamaLocalAdapter extends OpenAICompatibleAdapter {}
 
-// Ollama Cloud usage envelope from GET /api/usage. The endpoint is
-// undocumented and has flipped shapes over time: legacy plans report `session`
-// (5h) + `weekly` (7d) buckets, while newer credits-based plans report a single
-// `monthly` bucket. It has served monthly-only, both legacy buckets, or a mix,
-// so every bucket is optional and whichever are present are reported.
-// Each `usage` is a consumed fraction [0,1] of that bucket's own cap, not a
-// wall-clock timestamp. The endpoint carries no reset timestamps: only the 5h
-// / 7d cadences are known (with community-observed anchor grids), and the
-// monthly reset day is tied to the account's signup date, which is not exposed,
-// so the monthly window omits `resetsAt` and all windows render as
-// percent-consumed rather than layering session on top of weekly.
-interface OllamaUsagePeriod {
-  type?: string;
+// Ollama Cloud reports a key's standing through two documented endpoints:
+//   GET /api/balance - the live quota. `included` is either credits
+//     ({ balance_usd, allowance_usd, period }) or, on legacy plans, per-window
+//     limits ({ session, weekly } of { remaining_percent, resets_at });
+//     `purchased` is the unexpired prepaid credit balance (one-shot - it never
+//     refills). Both included shapes carry their own reset timestamps, so no
+//     cadence is guessed here.
+//   GET /api/usage?range=24h - recorded spend (request/token/USD totals) over
+//     the trailing 24 hours.
+// Balance is authoritative for the bars; usage totals only annotate the card's
+// message line. Every field is optional on the wire, so each is validated on
+// its own and a malformed one is skipped rather than failing the whole key.
+interface OllamaBalancePeriod {
+  from?: unknown;
+  until?: unknown;
 }
-interface OllamaUsageActivity {
-  cost?: unknown;
-  period?: OllamaUsagePeriod;
+interface OllamaLegacyLimit {
+  remaining_percent?: unknown;
+  resets_at?: unknown;
 }
-interface OllamaUsageLimit {
-  usage?: unknown;
+interface OllamaBalanceResponse {
+  included?: {
+    balance_usd?: unknown;
+    allowance_usd?: unknown;
+    period?: OllamaBalancePeriod;
+    session?: OllamaLegacyLimit;
+    weekly?: OllamaLegacyLimit;
+  };
+  purchased?: { balance_usd?: unknown };
+}
+interface OllamaUsageTotals {
+  request_count?: unknown;
+  usage_usd?: unknown;
+  input_tokens?: unknown;
+  cached_input_tokens?: unknown;
+  output_tokens?: unknown;
 }
 interface OllamaUsageResponse {
-  activity?: OllamaUsageActivity;
-  limits?: {
-    session?: OllamaUsageLimit;
-    weekly?: OllamaUsageLimit;
-    monthly?: OllamaUsageLimit;
-  };
+  totals?: OllamaUsageTotals;
 }
 
-const HOUR_MS = 3_600_000;
-const DAY_MS = 86_400_000;
-
-// /api/usage returns no reset timestamps, only cadences (session 5h, weekly 7d).
-// The anchors below are the community-observed convention: the 5-hour session
-// clock rides the Unix-epoch grid, while the weekly clock resets Monday 00:00
-// UTC. Always UTC (DST-free).
-
-// Monday 00:00:00.000Z of the UTC week containing `ms`.
-export function ollamaWeeklyResetAnchor(ms: number): number {
-  const monday = new Date(ms);
-  monday.setUTCHours(0, 0, 0, 0);
-  const back = (monday.getUTCDay() + 6) % 7; // days since Monday
-  monday.setUTCDate(monday.getUTCDate() - back);
-  return monday.getTime();
+// A non-negative finite number, or null when the field is absent/malformed.
+function nonNegative(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
 }
 
-// Next weekly reset: the next Monday 00:00 UTC strictly after `ms`.
-export function ollamaNextWeeklyReset(ms: number): number {
-  return ollamaWeeklyResetAnchor(ms) + 7 * DAY_MS;
+// An ISO timestamp from an upstream date string, or undefined if unparseable.
+function isoTime(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : undefined;
 }
 
-// Next session reset: the next 5-hour tick strictly after `ms`, on a fixed
-// grid measured from the Unix epoch (1970-01-01T00:00:00Z), NOT from Monday
-// 00:00 UTC - the two grids differ because a week (168h) is not a whole number
-// of 5h sessions. Community observation (ollama/ollama#12532) confirms
-// reset_in = 18000 - epoch%18000.
-export function ollamaNextSessionReset(ms: number): number {
-  const periodMs = 5 * HOUR_MS;
-  return (Math.floor(ms / periodMs) + 1) * periodMs;
+// Compact counts for the message line: 999, 12.4k, 1.2M.
+function compactCount(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) {
+    const k = n / 1000;
+    return `${k < 100 ? k.toFixed(1).replace(/\.0$/, "") : Math.round(k)}k`;
+  }
+  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+}
+
+// USD, keeping sub-cent spend readable ($0.0004) instead of rounding it to $0.00.
+function usd(n: number): string {
+  if (n === 0) return "$0.00";
+  return n >= 0.01 ? `$${n.toFixed(2)}` : `$${n.toFixed(4)}`;
 }
 
 class OllamaCloudAdapter extends OpenAICompatibleAdapter {
@@ -85,14 +94,16 @@ class OllamaCloudAdapter extends OpenAICompatibleAdapter {
       };
     }
 
+    const authHeaders = {
+      authorization: `Bearer ${ctx.apiKey}`,
+      accept: "application/json",
+    };
+
     let res;
     try {
-      res = await ctx.request(ctx.resolve("/api/usage"), {
+      res = await ctx.request(ctx.resolve("/api/balance"), {
         method: "GET",
-        headers: {
-          authorization: `Bearer ${ctx.apiKey}`,
-          accept: "application/json",
-        },
+        headers: authHeaders,
         signal: ctx.signal,
       });
     } catch (err) {
@@ -111,9 +122,9 @@ class OllamaCloudAdapter extends OpenAICompatibleAdapter {
       };
     }
 
-    let parsed: OllamaUsageResponse;
+    let parsed: OllamaBalanceResponse;
     try {
-      parsed = res.json() as OllamaUsageResponse;
+      parsed = res.json() as OllamaBalanceResponse;
     } catch {
       return {
         windows: [],
@@ -122,69 +133,109 @@ class OllamaCloudAdapter extends OpenAICompatibleAdapter {
       };
     }
 
-    const limits = parsed?.limits;
-    const activity = parsed?.activity;
-    if (!limits || typeof limits !== "object" || Array.isArray(limits)) {
-      return {
-        windows: [],
-        unavailable: true,
-        message: "Could not parse quota data.",
-      };
-    }
+    const included = parsed?.included;
+    const quota =
+      included && typeof included === "object" && !Array.isArray(included)
+        ? included
+        : null;
 
-    // A valid usage entry is a finite fraction in [0,1]; an invalid entry is
-    // skipped independently rather than failing the other window.
-    const ratio = (entry: OllamaUsageLimit | undefined): number | null => {
-      const value = entry?.usage;
-      if (
-        typeof value !== "number" ||
-        !Number.isFinite(value) ||
-        value < 0 ||
-        value > 1
-      ) {
-        return null;
-      }
-      return value * 100;
-    };
-
-    const now = Date.now();
     const windows: ProviderKeyUsageWindow[] = [];
-    const session = ratio(limits.session);
-    if (session !== null) {
+
+    // Legacy plans report what REMAINS per window, so used = 100 - remaining.
+    // `resets_at` is the upstream's own timestamp - no cadence guessing.
+    const percentWindow = (
+      id: string,
+      label: string,
+      entry: OllamaLegacyLimit | undefined,
+    ): void => {
+      const remaining = nonNegative(entry?.remaining_percent);
+      if (remaining === null || remaining > 100) return;
+      const resetsAt = isoTime(entry?.resets_at);
       windows.push({
-        id: "session",
-        label: "5-hour usage",
-        used: session,
+        id,
+        label,
+        used: 100 - remaining,
         limit: 100,
         unit: "percent",
-        resetsAt: new Date(ollamaNextSessionReset(now)).toISOString(),
+        ...(resetsAt ? { resetsAt } : {}),
       });
-    }
-    const weekly = ratio(limits.weekly);
-    if (weekly !== null) {
+    };
+    percentWindow("session", "5-hour usage", quota?.session);
+    percentWindow("weekly", "Weekly usage", quota?.weekly);
+
+    // Credits plans: included allowance consumed against the period's cap. The
+    // period carries the real reset time, so this bar is exact.
+    const remainingUsd = nonNegative(quota?.balance_usd);
+    const allowanceUsd = nonNegative(quota?.allowance_usd);
+    if (remainingUsd !== null && allowanceUsd !== null && allowanceUsd > 0) {
+      const resetsAt = isoTime(quota?.period?.until);
       windows.push({
-        id: "weekly",
-        label: "Weekly usage",
-        used: weekly,
-        limit: 100,
-        unit: "percent",
-        resetsAt: new Date(ollamaNextWeeklyReset(now)).toISOString(),
-      });
-    }
-    // Monthly has no exposed reset day (tied to the account's signup date), so
-    // it carries no resetsAt - the endpoint exposes no timestamp for it.
-    const monthly = ratio(limits.monthly);
-    if (monthly !== null) {
-      windows.push({
-        id: "monthly",
-        label: "Monthly usage",
-        used: monthly,
-        limit: 100,
-        unit: "percent",
+        id: "included",
+        label: "Included credits",
+        // Round away float subtraction noise (2.5 - 2.49657 = 0.003430000000000822).
+        used:
+          Math.round(
+            Math.min(allowanceUsd, Math.max(0, allowanceUsd - remainingUsd)) *
+              1e6,
+          ) / 1e6,
+        limit: allowanceUsd,
+        unit: "dollars",
+        ...(resetsAt ? { resetsAt } : {}),
       });
     }
 
-    if (windows.length === 0) {
+    // Spend totals are decoration for the message line: a failing /api/usage
+    // must not blank the quota bars the balance just produced.
+    let totals: OllamaUsageTotals | null = null;
+    try {
+      const usageRes = await ctx.request(ctx.resolve("/api/usage?range=24h"), {
+        method: "GET",
+        headers: authHeaders,
+        signal: ctx.signal,
+      });
+      if (usageRes.ok) {
+        const body = usageRes.json() as OllamaUsageResponse;
+        const t = body?.totals;
+        if (t && typeof t === "object" && !Array.isArray(t)) totals = t;
+      }
+    } catch {
+      totals = null;
+    }
+
+    const notes: string[] = [];
+    if (totals) {
+      const requests = nonNegative(totals.request_count);
+      const spent = nonNegative(totals.usage_usd);
+      const input = nonNegative(totals.input_tokens);
+      const cached = nonNegative(totals.cached_input_tokens);
+      const output = nonNegative(totals.output_tokens);
+      const bits: string[] = [];
+      if (requests !== null) {
+        bits.push(
+          `${compactCount(requests)} request${requests === 1 ? "" : "s"}`,
+        );
+      }
+      if (spent !== null) bits.push(usd(spent));
+      if (input !== null && output !== null && input + output > 0) {
+        const cachedNote =
+          cached !== null && cached > 0
+            ? ` (${compactCount(cached)} cached)`
+            : "";
+        bits.push(
+          `${compactCount(input)} in${cachedNote} / ${compactCount(output)} out`,
+        );
+      }
+      if (bits.length > 0) notes.push(`24h: ${bits.join(" · ")}`);
+    }
+    // Purchased credits are a one-shot balance with no cap to fill, so they
+    // belong in the note rather than as a 0/0 bar.
+    const purchasedUsd = nonNegative(parsed?.purchased?.balance_usd);
+    if (purchasedUsd !== null && purchasedUsd > 0) {
+      notes.push(`Purchased credits: ${usd(purchasedUsd)}`);
+    }
+    const message = notes.length > 0 ? notes.join(" · ") : undefined;
+
+    if (windows.length === 0 && !message) {
       return {
         windows: [],
         unavailable: true,
@@ -192,25 +243,7 @@ class OllamaCloudAdapter extends OpenAICompatibleAdapter {
       };
     }
 
-    const result: KeyUsageResult = { windows };
-
-    // Attach the 4-week cost when valid activity exists. The upstream sends a
-    // lossy string like "0.00000"; parse it and render clean currency ($0.00)
-    // rather than echoing the raw digits.
-    const hasCost =
-      activity &&
-      typeof activity === "object" &&
-      !Array.isArray(activity) &&
-      typeof activity.cost === "string" &&
-      activity.period?.type === "last_4_weeks";
-    if (hasCost) {
-      const cost = Number(activity.cost);
-      result.message = Number.isFinite(cost)
-        ? `Last 4 weeks cost: $${cost.toFixed(2)}`
-        : `Last 4 weeks cost: $${activity.cost}`;
-    }
-
-    return result;
+    return { windows, ...(message ? { message } : {}) };
   }
 }
 
